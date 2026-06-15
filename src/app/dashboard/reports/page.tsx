@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Bar } from "@/components/reports/bar";
+import { AddMonth } from "@/components/reports/add-month";
 import { cn } from "@/lib/utils";
 import {
   SEVERITIES,
@@ -63,7 +64,15 @@ export default async function ReportsPage({
     .map((r) => r.deliveryMonth!)
     .filter(Boolean);
 
-  const selected = month && months.includes(month) ? month : months[0] ?? null;
+  // Accept any valid YYYY-MM (lets you open/plan a month with no pages yet),
+  // otherwise default to the most recent month with data.
+  const isValidMonth = !!month && /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
+  const selected = isValidMonth ? month! : months[0] ?? null;
+
+  // Show a tab for the selected month even if it has no pages yet.
+  const displayMonths = [
+    ...new Set([...(selected ? [selected] : []), ...months]),
+  ].sort((a, b) => b.localeCompare(a));
 
   const pages = await db.page.findMany({
     where: selected ? { deliveryMonth: selected } : {},
@@ -117,26 +126,25 @@ export default async function ReportsPage({
       />
 
       {/* Month picker */}
-      {months.length > 0 && (
-        <div className="mb-6 flex flex-wrap gap-2">
-          {months.map((m) => {
-            const active = m === selected;
-            return (
-              <Link
-                key={m}
-                href={`/dashboard/reports?month=${m}`}
-                className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-all ${
-                  active
-                    ? "bg-accent text-text-on-dark shadow-sm"
-                    : "border border-border-soft bg-card text-text-secondary hover:border-accent/40 hover:text-text-primary"
-                }`}
-              >
-                {monthLabel(m)}
-              </Link>
-            );
-          })}
-        </div>
-      )}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        {displayMonths.map((m) => {
+          const active = m === selected;
+          return (
+            <Link
+              key={m}
+              href={`/dashboard/reports?month=${m}`}
+              className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-all ${
+                active
+                  ? "bg-accent text-text-on-dark shadow-sm"
+                  : "border border-border-soft bg-card text-text-secondary hover:border-accent/40 hover:text-text-primary"
+              }`}
+            >
+              {monthLabel(m)}
+            </Link>
+          );
+        })}
+        <AddMonth />
+      </div>
 
       {totalPages === 0 ? (
         <Card className="p-8 text-center">
