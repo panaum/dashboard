@@ -78,10 +78,11 @@ export default async function ClientDetailPage({
         />
       ) : (
         <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
-          {client.projects.map((p) => (
+          {client.projects.map((p, i) => (
             <div
               key={p.id}
-              className="flex items-center gap-4 border-t border-border-soft px-4 py-3.5 transition-colors first:border-t-0 hover:bg-card-soft"
+              style={{ animationDelay: `${Math.min(i, 14) * 35}ms` }}
+              className="animate-in flex items-center gap-4 border-t border-border-soft px-4 py-3.5 transition-colors first:border-t-0 hover:bg-card-soft"
             >
               <Link
                 href={`/dashboard/clients/${client.id}/${p.id}`}

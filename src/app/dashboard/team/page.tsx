@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { PageHeader } from "@/components/shared/page-header";
 import { AddMemberButton } from "@/components/forms/dialogs";
 import { TeamTable, type MemberRow } from "@/components/team/team-table";
+import { AnimatedNumber } from "@/components/shared/animated-number";
 
 type Stat = { built: number; tested: number; issuesBuilt: number; repetitive: number; issuesFound: number };
 
@@ -64,7 +65,8 @@ export default async function TeamPage() {
         <Stat value={developers.length} unit="Developers" index={1} />
         <Stat value={totalBuilt} unit="Pages built" index={2} />
         <Stat
-          value={totalBuilt ? (totalIssues / totalBuilt).toFixed(1) : "0"}
+          value={totalBuilt ? totalIssues / totalBuilt : 0}
+          decimals={1}
           unit="Avg issues / page"
           index={3}
         />
@@ -79,10 +81,12 @@ function Stat({
   value,
   unit,
   index = 0,
+  decimals = 0,
 }: {
-  value: string | number;
+  value: number;
   unit: string;
   index?: number;
+  decimals?: number;
 }) {
   return (
     <div
@@ -93,7 +97,7 @@ function Stat({
         {unit}
       </div>
       <div className="mt-2.5 text-[28px] font-semibold leading-none tracking-tight tabular-nums text-text-primary">
-        {value}
+        <AnimatedNumber value={value} decimals={decimals} />
       </div>
     </div>
   );

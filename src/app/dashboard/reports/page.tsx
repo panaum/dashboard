@@ -8,6 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Bar } from "@/components/reports/bar";
 import { AddMonth } from "@/components/reports/add-month";
+import { AnimatedNumber } from "@/components/shared/animated-number";
 import { cn } from "@/lib/utils";
 import {
   SEVERITIES,
@@ -37,10 +38,12 @@ function Stat({
   value,
   unit,
   index = 0,
+  decimals = 0,
 }: {
-  value: string | number;
+  value: number;
   unit: string;
   index?: number;
+  decimals?: number;
 }) {
   return (
     <div
@@ -51,7 +54,7 @@ function Stat({
         {unit}
       </div>
       <div className="mt-2.5 text-[28px] font-semibold leading-none tracking-tight tabular-nums text-text-primary">
-        {value}
+        <AnimatedNumber value={value} decimals={decimals} />
       </div>
     </div>
   );
@@ -100,9 +103,7 @@ export default async function ReportsPage({
   const totalPages = pages.length;
   const allIssues = pages.flatMap((p) => p.issues);
   const totalIssues = allIssues.length;
-  const avgIssues = totalPages ? (totalIssues / totalPages).toFixed(2) : "0";
   const totalDelay = pages.reduce((s, p) => s + p.delayDays, 0);
-  const avgDelay = totalPages ? (totalDelay / totalPages).toFixed(1) : "0";
 
   const severityCounts = SEVERITIES.reduce<Record<string, number>>((acc, s) => {
     acc[s] = allIssues.filter((i) => i.severity === s).length;
@@ -170,8 +171,18 @@ export default async function ReportsPage({
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <Stat value={totalPages} unit="Pages delivered" index={0} />
             <Stat value={totalIssues} unit="Total issues" index={1} />
-            <Stat value={avgIssues} unit="Avg issues / page" index={2} />
-            <Stat value={`${avgDelay}`} unit="Avg delay (days)" index={3} />
+            <Stat
+              value={totalPages ? totalIssues / totalPages : 0}
+              decimals={2}
+              unit="Avg issues / page"
+              index={2}
+            />
+            <Stat
+              value={totalPages ? totalDelay / totalPages : 0}
+              decimals={1}
+              unit="Avg delay (days)"
+              index={3}
+            />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">

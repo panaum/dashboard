@@ -108,10 +108,11 @@ export default async function ProjectDetailPage({
         />
       ) : (
         <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
-          {project.pages.map((pg) => (
+          {project.pages.map((pg, i) => (
             <div
               key={pg.id}
-              className="flex items-center gap-3 border-t border-border-soft px-4 py-3 transition-colors first:border-t-0 hover:bg-card-soft sm:gap-4"
+              style={{ animationDelay: `${Math.min(i, 14) * 30}ms` }}
+              className="animate-in flex items-center gap-3 border-t border-border-soft px-4 py-3 transition-colors first:border-t-0 hover:bg-card-soft sm:gap-4"
             >
               <Link
                 href={`/dashboard/clients/${clientId}/${projectId}/${pg.id}`}

@@ -1,3 +1,6 @@
+"use client";
+
+import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
 
 type Counts = { passed: number; failed: number; na: number; total: number };
@@ -5,7 +8,7 @@ type Counts = { passed: number; failed: number; na: number; total: number };
 function health({ passed, failed, na, total }: Counts) {
   const graded = passed + failed + na;
   const pct = total ? graded / total : 0;
-  // Amber if anything failed; green when fully graded & clean; violet while in progress.
+  // Amber if anything failed; green when fully graded & clean; indigo while in progress.
   const stroke =
     failed > 0
       ? "stroke-warning"
@@ -15,7 +18,7 @@ function health({ passed, failed, na, total }: Counts) {
   return { graded, pct, stroke };
 }
 
-/** Circular QA completion gauge — arc = checks graded / total, colour = health. */
+/** Circular QA completion gauge — arc draws in on mount, colour = health. */
 export function QARing({
   passed,
   failed,
@@ -49,15 +52,18 @@ export function QARing({
           strokeWidth={stroke}
           className="stroke-card-soft"
         />
-        <circle
+        <motion.circle
           cx={size / 2}
           cy={size / 2}
           r={r}
           fill="none"
           strokeWidth={stroke}
           strokeLinecap="round"
-          strokeDasharray={`${circ * pct} ${circ}`}
-          className={cn("transition-all", strokeClass)}
+          strokeDasharray={circ}
+          initial={{ strokeDashoffset: circ }}
+          animate={{ strokeDashoffset: circ * (1 - pct) }}
+          transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+          className={strokeClass}
         />
       </svg>
       {showLabel && (
