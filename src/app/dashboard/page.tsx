@@ -1,0 +1,169 @@
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
+import { db } from "@/lib/db";
+import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/shared/page-header";
+import { StatCard } from "@/components/shared/stat-card";
+import { Bar } from "@/components/reports/bar";
+import {
+  SEVERITIES,
+  SEVERITY_TONE,
+  STATUSES,
+  label,
+  type Severity,
+  type Status,
+} from "@/lib/constants";
+
+const SEV_BAR: Record<Severity, string> = {
+  CRITICAL_HIGH: "bg-error",
+  MEDIUM: "bg-warning",
+  LOW: "bg-brand-blue",
+  REPETITIVE: "bg-brand-purple",
+};
+
+const STATUS_DOT: Record<Status, string> = {
+  IN_PROGRESS: "bg-warning",
+  IN_QA: "bg-info",
+  LIVE: "bg-success",
+};
+
+export default async function OverviewPage() {
+  const [clients, projects, pages, openIssues, inQa, recentProjects, issues, pageStatuses] =
+    await Promise.all([
+      db.client.count(),
+      db.project.count(),
+      db.page.count(),
+      db.issue.count({ where: { status: "OPEN" } }),
+      db.page.count({ where: { status: "IN_QA" } }),
+      db.project.findMany({
+        take: 7,
+        orderBy: { updatedAt: "desc" },
+        include: { client: true, _count: { select: { pages: true } } },
+      }),
+      db.issue.findMany({ select: { severity: true } }),
+      db.page.findMany({ select: { status: true } }),
+    ]);
+
+  const totalIssues = issues.length;
+  const sevCount = (s: Severity) => issues.filter((i) => i.severity === s).length;
+  const statusCount = (s: Status) =>
+    pageStatuses.filter((p) => p.status === s).length;
+
+  return (
+    <>
+      <PageHeader
+        title="Overview"
+        subtitle="Snapshot of clients, deliverables and QA across the team."
+      />
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
+        <StatCard value={clients} unit="Clients" />
+        <StatCard value={projects} unit="Projects" />
+        <StatCard value={pages} unit="Pages" />
+        <StatCard value={inQa} unit="In QA" />
+        <StatCard value={openIssues} unit="Open issues" danger />
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        {/* Recent projects */}
+        <section className="lg:col-span-2">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-text-primary">
+              Recent projects
+            </h2>
+            <Link
+              href="/dashboard/clients"
+              className="text-[13px] font-medium text-text-secondary transition-colors hover:text-text-primary"
+            >
+              View all clients →
+            </Link>
+          </div>
+
+          <div className="divide-y divide-border-soft overflow-hidden rounded-xl border border-border-soft bg-card">
+            {recentProjects.map((p) => (
+              <Link
+                key={p.id}
+                href={`/dashboard/clients/${p.clientId}/${p.id}`}
+                className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-card-soft"
+              >
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-medium text-text-primary">
+                    {p.name}
+                  </span>
+                  <span className="truncate text-[13px] text-text-secondary">
+                    {p.client.name} · {p._count.pages} page
+                    {p._count.pages === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <Badge tone="neutral" className="shrink-0">
+                  {label(p.platform)}
+                </Badge>
+                <ChevronRight className="size-4 shrink-0 text-text-muted transition-transform duration-200 group-hover:translate-x-0.5" />
+              </Link>
+            ))}
+            {recentProjects.length === 0 && (
+              <div className="px-4 py-10 text-center text-sm text-text-secondary">
+                No projects yet. Add your first client to get started.
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Right rail: live QA signal */}
+        <div className="flex flex-col gap-5">
+          <div className="rounded-xl border border-border-soft bg-card p-5">
+            <div className="mb-4 flex items-baseline justify-between">
+              <h2 className="text-sm font-semibold text-text-primary">
+                Issues by severity
+              </h2>
+              <span className="text-[13px] tabular-nums text-text-muted">
+                {totalIssues} total
+              </span>
+            </div>
+            <div className="flex flex-col gap-3">
+              {SEVERITIES.map((s, i) => {
+                const count = sevCount(s);
+                const pct = totalIssues ? (count / totalIssues) * 100 : 0;
+                return (
+                  <div key={s} className="flex items-center gap-3">
+                    <span className="w-24 shrink-0">
+                      <Badge tone={SEVERITY_TONE[s]}>{label(s)}</Badge>
+                    </span>
+                    <Bar pct={pct} colorClass={SEV_BAR[s]} delay={i * 0.07} />
+                    <span className="w-7 shrink-0 text-right text-sm font-semibold tabular-nums text-text-primary">
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border-soft bg-card p-5">
+            <h2 className="mb-4 text-sm font-semibold text-text-primary">
+              Delivery pipeline
+            </h2>
+            <div className="flex flex-col gap-3">
+              {STATUSES.map((s, i) => {
+                const count = statusCount(s);
+                const pct = pages ? (count / pages) * 100 : 0;
+                return (
+                  <div key={s} className="flex items-center gap-3">
+                    <span className="flex w-24 shrink-0 items-center gap-2 text-[13px] font-medium text-text-secondary">
+                      <span className={`size-2 rounded-full ${STATUS_DOT[s]}`} />
+                      {label(s)}
+                    </span>
+                    <Bar pct={pct} colorClass={STATUS_DOT[s]} delay={i * 0.07} />
+                    <span className="w-7 shrink-0 text-right text-sm font-semibold tabular-nums text-text-primary">
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

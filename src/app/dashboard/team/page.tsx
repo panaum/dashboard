@@ -1,0 +1,88 @@
+import { db } from "@/lib/db";
+import { PageHeader } from "@/components/shared/page-header";
+import { AddMemberButton } from "@/components/forms/dialogs";
+import { TeamTable, type MemberRow } from "@/components/team/team-table";
+
+type Stat = { built: number; tested: number; issuesBuilt: number; repetitive: number; issuesFound: number };
+
+export default async function TeamPage() {
+  const [members, pages] = await Promise.all([
+    db.teamMember.findMany({ orderBy: { name: "asc" } }),
+    db.page.findMany({
+      select: {
+        developerId: true,
+        testerId: true,
+        issues: { select: { severity: true } },
+      },
+    }),
+  ]);
+
+  const stats = new Map<string, Stat>();
+  const ensure = (id: string) =>
+    stats.get(id) ?? stats.set(id, { built: 0, tested: 0, issuesBuilt: 0, repetitive: 0, issuesFound: 0 }).get(id)!;
+
+  for (const p of pages) {
+    if (p.developerId) {
+      const s = ensure(p.developerId);
+      s.built++;
+      s.issuesBuilt += p.issues.length;
+      s.repetitive += p.issues.filter((i) => i.severity === "REPETITIVE").length;
+    }
+    if (p.testerId) {
+      const s = ensure(p.testerId);
+      s.tested++;
+      s.issuesFound += p.issues.length;
+    }
+  }
+
+  const developers = members.filter((m) => stats.get(m.id)?.built);
+  const totalBuilt = pages.filter((p) => p.developerId).length;
+  const totalIssues = pages.reduce((n, p) => n + p.issues.length, 0);
+
+  const rows: MemberRow[] = members.map((m) => {
+    const s = stats.get(m.id);
+    return {
+      id: m.id,
+      name: m.name,
+      role: m.role,
+      built: s?.built ?? 0,
+      tested: s?.tested ?? 0,
+      repetitive: s?.repetitive ?? 0,
+    };
+  });
+
+  return (
+    <>
+      <PageHeader
+        title="Team"
+        subtitle="Workload and quality across developers and testers."
+        action={<AddMemberButton />}
+      />
+
+      <div className="mb-7 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat value={members.length} unit="People" />
+        <Stat value={developers.length} unit="Developers" />
+        <Stat value={totalBuilt} unit="Pages built" />
+        <Stat
+          value={totalBuilt ? (totalIssues / totalBuilt).toFixed(1) : "0"}
+          unit="Avg issues / page"
+        />
+      </div>
+
+      <TeamTable members={rows} />
+    </>
+  );
+}
+
+function Stat({ value, unit }: { value: string | number; unit: string }) {
+  return (
+    <div className="rounded-xl border border-border-soft bg-card px-5 py-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">
+        {unit}
+      </div>
+      <div className="mt-2.5 text-[28px] font-semibold leading-none tracking-tight tabular-nums text-text-primary">
+        {value}
+      </div>
+    </div>
+  );
+}
