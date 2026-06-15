@@ -124,7 +124,7 @@ export default async function MemberDetailPage({
               <div key={p.month} className="flex flex-1 flex-col items-center gap-1.5">
                 <div className="flex w-full flex-1 items-end">
                   <div
-                    className="w-full rounded-t-md bg-brand-purple/70"
+                    className="w-full rounded-t-md bg-accent/70"
                     style={{ height: `${(p.count / maxCount) * 100}%` }}
                     title={`${p.count} built, ${p.rep} repetitive`}
                   />

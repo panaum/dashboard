@@ -50,7 +50,7 @@ export function StatusSelect({
           });
         }}
         aria-label="Change page status"
-        className="cursor-pointer appearance-none rounded-full bg-transparent py-0.5 pl-2.5 pr-6 outline-none focus-visible:ring-2 focus-visible:ring-brand-purple/50"
+        className="cursor-pointer appearance-none rounded-full bg-transparent py-0.5 pl-2.5 pr-6 outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
       >
         {STATUSES.map((s) => (
           <option key={s} value={s} className="bg-card text-text-primary">

@@ -43,7 +43,7 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Filter by name or role…"
-          className="h-10 w-full rounded-lg border border-border-soft bg-card pl-9 pr-3 text-sm text-text-primary shadow-xs outline-none transition-colors placeholder:text-text-muted focus:border-brand-purple/50"
+          className="h-10 w-full rounded-lg border border-border-soft bg-card pl-9 pr-3 text-sm text-text-primary shadow-xs outline-none transition-colors placeholder:text-text-muted focus:border-accent/50"
         />
       </div>
 

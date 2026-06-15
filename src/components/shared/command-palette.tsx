@@ -209,14 +209,14 @@ export function CommandPalette({ items }: { items: CommandItem[] }) {
                   onClick={() => select(r)}
                   className={cn(
                     "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
-                    i === active ? "bg-brand-purple/15" : "hover:bg-card-soft",
+                    i === active ? "bg-accent/10" : "hover:bg-card-soft",
                   )}
                 >
                   <span
                     className={cn(
                       "flex size-8 shrink-0 items-center justify-center rounded-lg",
                       i === active
-                        ? "bg-brand-purple/25 text-brand-primary"
+                        ? "bg-accent/15 text-accent"
                         : "bg-card-soft text-text-secondary",
                     )}
                   >

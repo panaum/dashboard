@@ -27,7 +27,7 @@ export function StatCard({
   }, [value]);
 
   return (
-    <div className="rounded-xl border border-border-soft bg-card px-5 py-4 transition-colors duration-200 hover:border-brand-purple/40">
+    <div className="rounded-xl border border-border-soft bg-card px-5 py-4 transition-colors duration-200 hover:border-accent/40">
       <div className="flex items-center gap-1.5">
         {active && <span className="size-1.5 rounded-full bg-error" />}
         <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">

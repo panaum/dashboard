@@ -22,7 +22,7 @@ const SEV_DOT: Record<Severity, string> = {
   CRITICAL_HIGH: "bg-error",
   MEDIUM: "bg-warning",
   LOW: "bg-brand-blue",
-  REPETITIVE: "bg-brand-purple",
+  REPETITIVE: "bg-accent",
 };
 
 function Field({ k, v }: { k: string; v: React.ReactNode }) {

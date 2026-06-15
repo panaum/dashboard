@@ -12,7 +12,7 @@ const badgeVariants = cva(
         warning: "bg-warning/15 text-warning",
         error: "bg-error/12 text-error",
         info: "bg-info/12 text-info",
-        brand: "bg-brand-purple/25 text-brand-primary",
+        brand: "bg-accent/12 text-accent",
       },
     },
     defaultVariants: { tone: "neutral" },

@@ -8,11 +8,11 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          "bg-gradient-to-b from-[#2a2a48] to-brand-primary text-text-on-dark rounded-full shadow-sm hover:shadow-brand active:from-brand-primary",
+          "bg-accent text-text-on-dark rounded-full shadow-sm hover:bg-accent-bright hover:shadow-brand active:bg-accent",
         secondary:
-          "border border-border-soft bg-card text-text-primary rounded-full shadow-xs hover:border-brand-purple/50 hover:bg-brand-purple/[0.06] active:bg-brand-purple/15",
+          "border border-border-soft bg-card text-text-primary rounded-full shadow-xs hover:border-accent/50 hover:bg-accent/[0.06] active:bg-accent/10",
         ghost:
-          "text-text-secondary rounded-full hover:bg-brand-purple/10 hover:text-text-primary active:bg-brand-purple/20",
+          "text-text-secondary rounded-full hover:bg-card-soft hover:text-text-primary active:bg-card-soft",
         destructive: "bg-error text-white rounded-full shadow-xs hover:opacity-90 active:brightness-95",
       },
       size: {

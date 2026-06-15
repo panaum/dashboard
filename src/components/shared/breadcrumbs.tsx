@@ -29,7 +29,7 @@ export function Breadcrumbs({
           href={parent.href}
           aria-label={`Back to ${parent.label}`}
           title={`Back to ${parent.label}`}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border-soft bg-card text-text-secondary shadow-xs transition-colors hover:border-brand-purple/40 hover:text-text-primary"
+          className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border-soft bg-card text-text-secondary shadow-xs transition-colors hover:border-accent/40 hover:text-text-primary"
         >
           <ArrowLeft className="size-4" />
         </Link>

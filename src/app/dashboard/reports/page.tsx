@@ -29,7 +29,7 @@ const SEVERITY_BAR: Record<Severity, string> = {
   CRITICAL_HIGH: "bg-error",
   MEDIUM: "bg-warning",
   LOW: "bg-brand-blue",
-  REPETITIVE: "bg-brand-purple",
+  REPETITIVE: "bg-accent",
 };
 
 function Stat({ value, unit }: { value: string | number; unit: string }) {
@@ -127,8 +127,8 @@ export default async function ReportsPage({
                 href={`/dashboard/reports?month=${m}`}
                 className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-all ${
                   active
-                    ? "bg-brand-primary text-text-on-dark shadow-sm"
-                    : "border border-border-soft bg-card text-text-secondary hover:border-brand-purple/40 hover:text-text-primary"
+                    ? "bg-accent text-text-on-dark shadow-sm"
+                    : "border border-border-soft bg-card text-text-secondary hover:border-accent/40 hover:text-text-primary"
                 }`}
               >
                 {monthLabel(m)}
@@ -195,7 +195,7 @@ export default async function ReportsPage({
                       <span className="w-28 shrink-0 text-[13px] text-text-secondary">
                         {label(plat)}
                       </span>
-                      <Bar pct={pct} colorClass="bg-brand-purple" delay={i * 0.08} />
+                      <Bar pct={pct} colorClass="bg-accent" delay={i * 0.08} />
                       <span className="w-8 shrink-0 text-right text-sm font-semibold text-text-primary">
                         {count}
                       </span>

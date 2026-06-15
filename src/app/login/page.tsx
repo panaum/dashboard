@@ -12,7 +12,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(160deg,#FAF9FF_0%,#EDE8F8_50%,#E0DBF5_100%)] p-4">
       <Card className="w-full max-w-sm p-8 shadow-lg">
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <div className="flex size-11 items-center justify-center rounded-full bg-brand-primary text-base font-bold text-text-on-dark">
+          <div className="flex size-11 items-center justify-center rounded-full bg-accent text-base font-bold text-text-on-dark">
             D
           </div>
           <h1 className="text-xl font-semibold text-text-primary">
@@ -37,7 +37,7 @@ export default function LoginPage() {
               type="password"
               autoFocus
               required
-              className="rounded-md border border-border-soft bg-card px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-purple"
+              className="rounded-md border border-border-soft bg-card px-3 py-2.5 text-sm text-text-primary outline-none focus:border-accent"
             />
           </div>
 

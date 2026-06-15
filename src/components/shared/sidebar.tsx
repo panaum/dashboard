@@ -20,9 +20,9 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border-soft bg-gradient-to-b from-[#faf9fe] to-[#f2f1f9] px-3 py-5 print:hidden">
+    <aside className="flex w-60 shrink-0 flex-col border-r border-border-soft bg-[#fbfbfd] px-3 py-5 print:hidden">
       <div className="mb-7 flex items-center gap-2.5 px-2">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-brand-primary text-sm font-bold text-text-on-dark shadow-sm">
+        <div className="flex size-9 items-center justify-center rounded-xl bg-accent text-sm font-bold text-text-on-dark shadow-sm">
           D
         </div>
         <div className="flex flex-col leading-tight">
@@ -36,7 +36,7 @@ export function Sidebar() {
       <button
         type="button"
         onClick={() => window.dispatchEvent(new Event("command-palette:open"))}
-        className="mb-5 flex items-center gap-2 rounded-lg border border-border-soft bg-card/60 px-3 py-2 text-sm text-text-muted shadow-xs transition-colors hover:border-brand-purple/40 hover:text-text-primary"
+        className="mb-5 flex items-center gap-2 rounded-lg border border-border-soft bg-card px-3 py-2 text-sm text-text-muted shadow-xs transition-colors hover:border-accent/40 hover:text-text-primary"
       >
         <Search className="size-4 shrink-0" strokeWidth={1.5} />
         <span className="flex-1 text-left">Search…</span>
@@ -61,14 +61,14 @@ export function Sidebar() {
               className={cn(
                 "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 active
-                  ? "text-brand-primary"
-                  : "text-text-secondary hover:bg-brand-purple/10 hover:text-text-primary",
+                  ? "text-accent"
+                  : "text-text-secondary hover:bg-card-soft hover:text-text-primary",
               )}
             >
               {active && (
                 <motion.span
                   layoutId="nav-active-pill"
-                  className="absolute inset-0 rounded-lg bg-gradient-to-r from-brand-purple/40 to-brand-blue/25 shadow-xs ring-1 ring-inset ring-brand-purple/20"
+                  className="absolute inset-0 rounded-lg bg-accent/10 ring-1 ring-inset ring-accent/15"
                   transition={{ type: "spring", stiffness: 420, damping: 34 }}
                 />
               )}

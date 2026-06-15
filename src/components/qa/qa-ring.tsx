@@ -11,7 +11,7 @@ function health({ passed, failed, na, total }: Counts) {
       ? "stroke-warning"
       : pct >= 1 && total > 0
         ? "stroke-success"
-        : "stroke-brand-purple";
+        : "stroke-accent";
   return { graded, pct, stroke };
 }
 
