@@ -1,0 +1,114 @@
+// Deliverables Dashboard — data model
+// Dev DB: SQLite (zero external setup). Enum-typed fields are stored as String
+// because SQLite has no native enums; the allowed values live in
+// src/lib/constants.ts. For production, switch the datasource to postgresql and
+// promote the String fields to real Prisma enums.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Client {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  notes     String?
+  projects  Project[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId  String
+  name      String
+  type      String   @default("WEBSITE") // ProjectType
+  platform  String   @default("OTHER") //   Platform
+  url       String?
+  status    String   @default("IN_PROGRESS") // Status
+  pages     Page[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+model Page {
+  id            String         @id @default(cuid())
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId     String
+  name          String
+  url           String?
+  status        String         @default("IN_PROGRESS") // Status
+  developer     TeamMember?    @relation("Dev", fields: [developerId], references: [id], onDelete: SetNull)
+  developerId   String?
+  tester        TeamMember?    @relation("Tester", fields: [testerId], references: [id], onDelete: SetNull)
+  testerId      String?
+  delayDays     Int            @default(0)
+  deliveryMonth String? //                              "2026-01" — powers monthly report
+  issues        Issue[]
+  certificate   QACertificate?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([projectId])
+  @@index([deliveryMonth])
+}
+
+model Issue {
+  id          String   @id @default(cuid())
+  page        Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  pageId      String
+  title       String
+  description String?
+  severity    String   @default("LOW") // Severity
+  status      String   @default("OPEN") // IssueStatus
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([pageId])
+}
+
+model TeamMember {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  role        String   @default("DEVELOPER") // MemberRole
+  active      Boolean  @default(true)
+  devPages    Page[]   @relation("Dev")
+  testerPages Page[]   @relation("Tester")
+  createdAt   DateTime @default(now())
+}
+
+model QACertificate {
+  id          String        @id @default(cuid())
+  page        Page          @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  pageId      String        @unique
+  status      String        @default("IN_PROGRESS") // CertStatus
+  testerName  String?
+  completedAt DateTime?
+  items       QACheckItem[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model QACheckItem {
+  id            String        @id @default(cuid())
+  certificate   QACertificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  certificateId String
+  category      String //        Performance | Functional | Tracking | UX | Conversion Goals
+  name          String
+  result        String        @default("NA") // CheckResult
+  valueDesktop  String?
+  valueMobile   String?
+  hasDualValue  Boolean       @default(false) // Desktop + Mobile inputs (browser tests, PageSpeed)
+  isMeasurement Boolean       @default(false) // free-text value (load time, page size)
+  notes         String?
+  order         Int           @default(0)
+
+  @@index([certificateId])
+}
