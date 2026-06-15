@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { LayoutDashboard, Users, BarChart3, UsersRound, Search, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, BarChart3, UsersRound, Search, ListChecks, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/app/dashboard/actions";
 
@@ -13,6 +13,7 @@ const NAV = [
   { href: "/dashboard/search", label: "Search", icon: Search },
   { href: "/dashboard/clients", label: "Clients", icon: Users },
   { href: "/dashboard/team", label: "Team", icon: UsersRound },
+  { href: "/dashboard/checklists", label: "Checklists", icon: ListChecks },
 ];
 
 export function Sidebar() {

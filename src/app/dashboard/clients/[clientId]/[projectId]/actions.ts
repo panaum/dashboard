@@ -43,7 +43,41 @@ export async function createPageWithCert(
   const cert = await db.qACertificate.create({
     data: { pageId: page.id, status: "IN_PROGRESS" },
   });
-  await db.qACheckItem.createMany({ data: buildChecklistItems(cert.id) });
+
+  // Seed the checklist from the best-matching template: a template for this
+  // project's platform, else the default, else the built-in QA_TEMPLATE.
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: { platform: true },
+  });
+  let template = project
+    ? await db.checklistTemplate.findFirst({
+        where: { platform: project.platform },
+        include: { items: { orderBy: { order: "asc" } } },
+      })
+    : null;
+  if (!template) {
+    template = await db.checklistTemplate.findFirst({
+      where: { isDefault: true },
+      include: { items: { orderBy: { order: "asc" } } },
+    });
+  }
+
+  if (template && template.items.length > 0) {
+    await db.qACheckItem.createMany({
+      data: template.items.map((it, i) => ({
+        certificateId: cert.id,
+        category: it.category,
+        name: it.name,
+        result: "NA",
+        hasDualValue: it.hasDualValue,
+        isMeasurement: it.isMeasurement,
+        order: i,
+      })),
+    });
+  } else {
+    await db.qACheckItem.createMany({ data: buildChecklistItems(cert.id) });
+  }
   return page;
 }
 

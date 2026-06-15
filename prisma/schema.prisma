@@ -112,3 +112,29 @@ model QACheckItem {
 
   @@index([certificateId])
 }
+
+// Reusable QA checklist templates. New certificates seed their items from the
+// matching template (by platform) or the default; falls back to the built-in
+// QA_TEMPLATE when none exist.
+model ChecklistTemplate {
+  id        String                  @id @default(cuid())
+  name      String
+  platform  String? //                 null = applies to any platform
+  isDefault Boolean                 @default(false)
+  items     ChecklistTemplateItem[]
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+}
+
+model ChecklistTemplateItem {
+  id            String            @id @default(cuid())
+  template      ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  templateId    String
+  category      String
+  name          String
+  hasDualValue  Boolean           @default(false)
+  isMeasurement Boolean           @default(false)
+  order         Int               @default(0)
+
+  @@index([templateId])
+}
