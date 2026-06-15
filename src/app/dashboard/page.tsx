@@ -57,11 +57,11 @@ export default async function OverviewPage() {
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatCard value={clients} unit="Clients" />
-        <StatCard value={projects} unit="Projects" />
-        <StatCard value={pages} unit="Pages" />
-        <StatCard value={inQa} unit="In QA" />
-        <StatCard value={openIssues} unit="Open issues" danger />
+        <StatCard value={clients} unit="Clients" index={0} />
+        <StatCard value={projects} unit="Projects" index={1} />
+        <StatCard value={pages} unit="Pages" index={2} />
+        <StatCard value={inQa} unit="In QA" index={3} />
+        <StatCard value={openIssues} unit="Open issues" danger index={4} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
@@ -80,11 +80,12 @@ export default async function OverviewPage() {
           </div>
 
           <div className="divide-y divide-border-soft overflow-hidden rounded-xl border border-border-soft bg-card">
-            {recentProjects.map((p) => (
+            {recentProjects.map((p, i) => (
               <Link
                 key={p.id}
                 href={`/dashboard/clients/${p.clientId}/${p.id}`}
-                className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-card-soft"
+                style={{ animationDelay: `${i * 45}ms` }}
+                className="animate-in group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-card-soft"
               >
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-medium text-text-primary">
@@ -111,7 +112,10 @@ export default async function OverviewPage() {
 
         {/* Right rail: live QA signal */}
         <div className="flex flex-col gap-5">
-          <div className="rounded-xl border border-border-soft bg-card p-5">
+          <div
+            className="animate-in rounded-xl border border-border-soft bg-card p-5"
+            style={{ animationDelay: "120ms" }}
+          >
             <div className="mb-4 flex items-baseline justify-between">
               <h2 className="text-sm font-semibold text-text-primary">
                 Issues by severity
@@ -139,7 +143,10 @@ export default async function OverviewPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-border-soft bg-card p-5">
+          <div
+            className="animate-in rounded-xl border border-border-soft bg-card p-5"
+            style={{ animationDelay: "180ms" }}
+          >
             <h2 className="mb-4 text-sm font-semibold text-text-primary">
               Delivery pipeline
             </h2>

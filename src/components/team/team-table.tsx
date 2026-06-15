@@ -63,10 +63,11 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
             No team members match “{q}”.
           </div>
         ) : (
-          filtered.map((m) => (
+          filtered.map((m, i) => (
             <div
               key={m.id}
-              className={`${ROW} border-t border-border-soft px-4 py-3 transition-colors first:border-t-0 hover:bg-card-soft`}
+              style={{ animationDelay: `${Math.min(i, 14) * 30}ms` }}
+              className={`${ROW} animate-in border-t border-border-soft px-4 py-3 transition-colors first:border-t-0 hover:bg-card-soft`}
             >
               <Link
                 href={`/dashboard/team/${m.id}`}

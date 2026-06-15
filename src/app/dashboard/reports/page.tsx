@@ -33,9 +33,20 @@ const SEVERITY_BAR: Record<Severity, string> = {
   REPETITIVE: "bg-accent",
 };
 
-function Stat({ value, unit }: { value: string | number; unit: string }) {
+function Stat({
+  value,
+  unit,
+  index = 0,
+}: {
+  value: string | number;
+  unit: string;
+  index?: number;
+}) {
   return (
-    <div className="rounded-xl border border-border-soft bg-card px-5 py-4">
+    <div
+      className="animate-in rounded-xl border border-border-soft bg-card px-5 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-sm"
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
       <div className="text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">
         {unit}
       </div>
@@ -157,10 +168,10 @@ export default async function ReportsPage({
         <div className="flex flex-col gap-6">
           {/* Summary */}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <Stat value={totalPages} unit="Pages delivered" />
-            <Stat value={totalIssues} unit="Total issues" />
-            <Stat value={avgIssues} unit="Avg issues / page" />
-            <Stat value={`${avgDelay}`} unit="Avg delay (days)" />
+            <Stat value={totalPages} unit="Pages delivered" index={0} />
+            <Stat value={totalIssues} unit="Total issues" index={1} />
+            <Stat value={avgIssues} unit="Avg issues / page" index={2} />
+            <Stat value={`${avgDelay}`} unit="Avg delay (days)" index={3} />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">

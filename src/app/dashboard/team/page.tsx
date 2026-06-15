@@ -60,12 +60,13 @@ export default async function TeamPage() {
       />
 
       <div className="mb-7 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat value={members.length} unit="People" />
-        <Stat value={developers.length} unit="Developers" />
-        <Stat value={totalBuilt} unit="Pages built" />
+        <Stat value={members.length} unit="People" index={0} />
+        <Stat value={developers.length} unit="Developers" index={1} />
+        <Stat value={totalBuilt} unit="Pages built" index={2} />
         <Stat
           value={totalBuilt ? (totalIssues / totalBuilt).toFixed(1) : "0"}
           unit="Avg issues / page"
+          index={3}
         />
       </div>
 
@@ -74,9 +75,20 @@ export default async function TeamPage() {
   );
 }
 
-function Stat({ value, unit }: { value: string | number; unit: string }) {
+function Stat({
+  value,
+  unit,
+  index = 0,
+}: {
+  value: string | number;
+  unit: string;
+  index?: number;
+}) {
   return (
-    <div className="rounded-xl border border-border-soft bg-card px-5 py-4">
+    <div
+      className="animate-in rounded-xl border border-border-soft bg-card px-5 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-sm"
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
       <div className="text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">
         {unit}
       </div>

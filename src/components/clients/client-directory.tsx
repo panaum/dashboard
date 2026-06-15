@@ -40,9 +40,13 @@ export function ClientDirectory({ clients }: { clients: ClientRow[] }) {
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((c) => (
+          {filtered.map((c, i) => (
             <Link key={c.id} href={`/dashboard/clients/${c.id}`}>
-              <Card hover className="group flex items-center gap-3 p-3.5">
+              <Card
+                hover
+                className="animate-in group flex items-center gap-3 p-3.5"
+                style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}
+              >
                 <Avatar name={c.name} />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-medium text-text-primary">
