@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { Bar } from "@/components/reports/bar";
@@ -85,18 +86,19 @@ export default async function OverviewPage() {
                 key={p.id}
                 href={`/dashboard/clients/${p.clientId}/${p.id}`}
                 style={{ animationDelay: `${i * 45}ms` }}
-                className="animate-in group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-card-soft"
+                className="animate-in group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-card-soft"
               >
+                <Avatar name={p.client.name} size="sm" />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-medium text-text-primary">
                     {p.name}
                   </span>
                   <span className="truncate text-[13px] text-text-secondary">
-                    {p.client.name} · {p._count.pages} page
-                    {p._count.pages === 1 ? "" : "s"}
+                    {p.client.name !== p.name ? `${p.client.name} · ` : ""}
+                    {p._count.pages} page{p._count.pages === 1 ? "" : "s"}
                   </span>
                 </div>
-                <Badge tone="neutral" className="shrink-0">
+                <Badge tone="neutral" className="hidden shrink-0 sm:inline-flex">
                   {label(p.platform)}
                 </Badge>
                 <ChevronRight className="size-4 shrink-0 text-text-muted transition-transform duration-200 group-hover:translate-x-0.5" />
@@ -130,8 +132,10 @@ export default async function OverviewPage() {
                 const pct = totalIssues ? (count / totalIssues) * 100 : 0;
                 return (
                   <div key={s} className="flex items-center gap-3">
-                    <span className="w-24 shrink-0">
-                      <Badge tone={SEVERITY_TONE[s]}>{label(s)}</Badge>
+                    <span className="w-[104px] shrink-0">
+                      <Badge tone={SEVERITY_TONE[s]} className="whitespace-nowrap">
+                        {label(s)}
+                      </Badge>
                     </span>
                     <Bar pct={pct} colorClass={SEV_BAR[s]} delay={i * 0.07} />
                     <span className="w-7 shrink-0 text-right text-sm font-semibold tabular-nums text-text-primary">

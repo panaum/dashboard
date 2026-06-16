@@ -30,23 +30,20 @@ export function StatCard({
   }, [value]);
 
   return (
-    <div
-      className="animate-in rounded-xl border border-border-soft bg-card px-5 py-4 transition-[colors,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-sm"
+    <div className="animate-in rounded-xl border border-border-soft bg-card px-5 py-4 transition-[colors,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-sm"
       style={{ animationDelay: `${index * 50}ms` }}
     >
-      <div className="flex items-center gap-1.5">
-        {active && <span className="size-1.5 rounded-full bg-error" />}
-        <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">
-          {unit}
-        </span>
-      </div>
       <div
         className={cn(
-          "mt-2.5 text-[30px] font-semibold leading-none tracking-tight tabular-nums",
+          "flex items-baseline gap-1.5 text-[32px] font-semibold leading-none tracking-tight tabular-nums",
           active ? "text-error" : "text-text-primary",
         )}
       >
+        {active && <span className="size-2 self-center rounded-full bg-error" />}
         {display}
+      </div>
+      <div className="mt-2.5 text-[12px] font-medium text-text-secondary">
+        {unit}
       </div>
     </div>
   );
