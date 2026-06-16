@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/shared/page-header";
-import { StatCard } from "@/components/shared/stat-card";
+import { AnimatedNumber } from "@/components/shared/animated-number";
+import { StatRailBar } from "@/components/shared/stat-rail-bar";
 import { Bar } from "@/components/reports/bar";
 import {
   SEVERITIES,
@@ -50,6 +51,15 @@ export default async function OverviewPage() {
   const statusCount = (s: Status) =>
     pageStatuses.filter((p) => p.status === s).length;
 
+  const max = Math.max(clients, projects, pages, 1);
+  const STATS = [
+    { label: "Clients", value: clients, descriptor: "Active", color: "bg-info", pct: (clients / max) * 100 },
+    { label: "Projects", value: projects, descriptor: "In progress", color: "bg-success", pct: (projects / max) * 100 },
+    { label: "Pages", value: pages, descriptor: "Total", color: "bg-warning", pct: (pages / max) * 100 },
+    { label: "In QA", value: inQa, descriptor: "Pending review", color: "bg-text-muted", pct: pages ? (inQa / pages) * 100 : 0 },
+    { label: "Open issues", value: openIssues, descriptor: "Unresolved", color: "bg-text-muted", pct: 0 },
+  ];
+
   return (
     <>
       <PageHeader
@@ -57,12 +67,22 @@ export default async function OverviewPage() {
         subtitle="Snapshot of clients, deliverables and QA across the team."
       />
 
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatCard value={clients} unit="Clients" index={0} />
-        <StatCard value={projects} unit="Projects" index={1} />
-        <StatCard value={pages} unit="Pages" index={2} />
-        <StatCard value={inQa} unit="In QA" index={3} />
-        <StatCard value={openIssues} unit="Open issues" danger index={4} />
+      {/* Connected stats rail */}
+      <div className="mb-9 grid grid-cols-5 divide-x divide-border-soft overflow-hidden rounded-xl border border-border-soft bg-card">
+        {STATS.map((s) => (
+          <div key={s.label} className="px-5 py-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
+              {s.label}
+            </div>
+            <div className="mt-2 text-[30px] font-semibold leading-none tracking-tight tabular-nums text-text-primary">
+              <AnimatedNumber value={s.value} />
+            </div>
+            <StatRailBar pct={s.pct} color={s.color} />
+            <div className="mt-2.5 text-[12px] text-text-muted">
+              {s.descriptor}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
