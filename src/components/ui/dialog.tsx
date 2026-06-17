@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { X } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -18,7 +19,10 @@ export function Dialog({
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
   const close = React.useCallback(() => setOpen(false), []);
+
+  React.useEffect(() => setMounted(true), []);
 
   React.useEffect(() => {
     if (!open) return;
@@ -31,13 +35,11 @@ export function Dialog({
     };
   }, [open, close]);
 
-  return (
-    <>
-      <span onClick={() => setOpen(true)} className="contents">
-        {trigger}
-      </span>
-      <AnimatePresence>
-        {open && (
+  // Portal to <body> so the fixed overlay escapes any transformed ancestor
+  // (e.g. the page-transition wrapper), which would otherwise break `fixed`.
+  const overlay = (
+    <AnimatePresence>
+      {open && (
           <motion.div
             className="fixed inset-0 z-50 overflow-y-auto bg-black/30"
             onClick={close}
@@ -78,6 +80,14 @@ export function Dialog({
           </motion.div>
         )}
       </AnimatePresence>
+  );
+
+  return (
+    <>
+      <span onClick={() => setOpen(true)} className="contents">
+        {trigger}
+      </span>
+      {mounted && createPortal(overlay, document.body)}
     </>
   );
 }
