@@ -2,7 +2,13 @@ import { PrismaClient } from "@prisma/client";
 import { buildChecklistItems } from "../src/lib/qa-template";
 import { DATA, type Proj, type Del } from "./import-data";
 
-const db = new PrismaClient();
+// Bulk imports use the DIRECT connection (session mode, port 5432) when set —
+// the transaction-mode pooler drops long-running scripts (P1017).
+const db = new PrismaClient(
+  process.env.DIRECT_URL
+    ? { datasources: { db: { url: process.env.DIRECT_URL } } }
+    : undefined,
+);
 
 // --- helpers ----------------------------------------------------------------
 

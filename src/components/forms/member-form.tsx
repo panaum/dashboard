@@ -33,7 +33,7 @@ export function MemberForm({
       </Field>
       <Field label="Role" htmlFor="role">
         <Select id="role" name="role" defaultValue={initial?.role ?? "DEVELOPER"}>
-          {MEMBER_ROLES.map((r) => (
+          {MEMBER_ROLES.filter((r) => r !== "BOTH").map((r) => (
             <option key={r} value={r}>
               {label(r)}
             </option>
