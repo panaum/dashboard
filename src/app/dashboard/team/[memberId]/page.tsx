@@ -5,7 +5,10 @@ import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
-import { label } from "@/lib/constants";
+import { label, MONTH_NAMES } from "@/lib/constants";
+
+const shortMonth = (m: string) =>
+  MONTH_NAMES[Number(m.slice(5, 7)) - 1]?.slice(0, 3) ?? m.slice(5);
 
 function Stat({ value, unit }: { value: string | number; unit: string }) {
   return (
@@ -118,20 +121,45 @@ export default async function MemberDetailPage({
 
       {perMonth.length > 0 && (
         <Card className="mb-6 p-5">
-          <h2 className="mb-4 text-sm font-semibold text-text-primary">Pages built per month</h2>
-          <div className="flex items-end gap-3" style={{ height: 120 }}>
-            {perMonth.map((p) => (
-              <div key={p.month} className="flex flex-1 flex-col items-center gap-1.5">
-                <div className="flex w-full flex-1 items-end">
+          <div className="mb-4 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold text-text-primary">
+              Pages built per month
+            </h2>
+            <span className="text-[13px] tabular-nums text-text-muted">
+              {built.length} total
+            </span>
+          </div>
+          <div
+            className="flex items-end gap-3 border-b border-border-soft"
+            style={{ height: 116 }}
+          >
+            {perMonth.map((p) => {
+              const h = Math.max(6, Math.round((p.count / maxCount) * 92));
+              return (
+                <div
+                  key={p.month}
+                  className="flex flex-1 flex-col items-center justify-end gap-1.5"
+                  title={`${p.count} built · ${p.rep} repetitive`}
+                >
+                  <span className="text-xs font-semibold tabular-nums text-text-primary">
+                    {p.count}
+                  </span>
                   <div
-                    className="w-full rounded-t-md bg-accent/70"
-                    style={{ height: `${(p.count / maxCount) * 100}%` }}
-                    title={`${p.count} built, ${p.rep} repetitive`}
+                    className="w-full max-w-[44px] rounded-t-md bg-accent transition-colors hover:bg-accent-bright"
+                    style={{ height: h }}
                   />
                 </div>
-                <span className="text-xs font-semibold text-text-primary">{p.count}</span>
-                <span className="text-[11px] text-text-muted">{p.month.slice(5)}</span>
-              </div>
+              );
+            })}
+          </div>
+          <div className="mt-2 flex gap-3">
+            {perMonth.map((p) => (
+              <span
+                key={p.month}
+                className="flex-1 text-center text-[11px] font-medium text-text-muted"
+              >
+                {shortMonth(p.month)}
+              </span>
             ))}
           </div>
         </Card>
