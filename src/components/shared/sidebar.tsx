@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { LayoutDashboard, Users, BarChart3, UsersRound, Search, ListChecks, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Logo } from "@/components/shared/logo";
 import { logout } from "@/app/dashboard/actions";
 
 const NAV = [
@@ -22,8 +23,8 @@ export function Sidebar() {
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-border-soft bg-[#fbfbfd] px-3 py-5 print:hidden">
       <div className="mb-7 flex items-center gap-2.5 px-2">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-accent text-sm font-bold text-text-on-dark shadow-sm">
-          D
+        <div className="flex size-9 items-center justify-center rounded-xl border border-border-soft bg-card shadow-sm">
+          <Logo className="size-6" />
         </div>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-semibold text-text-primary">

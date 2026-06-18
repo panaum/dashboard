@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import "./globals.css";
+import { Signature } from "@/components/shared/signature";
 
 export const metadata: Metadata = {
   title: "Deliverables Dashboard",
   description: "Client websites, landing pages and QA tracking.",
+  authors: [{ name: "Anaum" }],
+  creator: "Anaum",
 };
 
 export default function RootLayout({
@@ -12,7 +15,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${GeistSans.variable} h-full antialiased`}>
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        {children}
+        <Signature />
+      </body>
     </html>
   );
 }

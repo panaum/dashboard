@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { login } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Logo } from "@/components/shared/logo";
 
 export default function LoginPage() {
   const [state, formAction, pending] = useActionState(login, {});
@@ -12,8 +13,8 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(160deg,#FAF9FF_0%,#EDE8F8_50%,#E0DBF5_100%)] p-4">
       <Card className="w-full max-w-sm p-8 shadow-lg">
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <div className="flex size-11 items-center justify-center rounded-full bg-accent text-base font-bold text-text-on-dark">
-            D
+          <div className="flex size-12 items-center justify-center rounded-2xl border border-border-soft bg-card shadow-sm">
+            <Logo className="size-8" />
           </div>
           <h1 className="text-xl font-semibold text-text-primary">
             Deliverables Dashboard
