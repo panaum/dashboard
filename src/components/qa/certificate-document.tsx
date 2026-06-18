@@ -1,5 +1,7 @@
-import { ShieldCheck, CheckCircle2, XCircle, Clock, MinusCircle } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, MinusCircle } from "lucide-react";
+import QRCode from "qrcode";
 import { Avatar } from "@/components/ui/avatar";
+import { Logo } from "@/components/shared/logo";
 import { SitePreview } from "@/components/shared/site-preview";
 import { SEVERITIES, label, monthLabel, type Severity } from "@/lib/constants";
 
@@ -38,7 +40,6 @@ function Field({ k, v }: { k: string; v: React.ReactNode }) {
 }
 
 function ResultCell({ item }: { item: CheckItem }) {
-  // Measurement / dual-value checks show their recorded value(s).
   if (item.isMeasurement) {
     return (
       <span className="text-[12px] tabular-nums text-text-secondary">
@@ -90,7 +91,7 @@ export type CertPage = {
 };
 
 /** Read-only QA certificate, shared by the internal and public (client) views. */
-export function CertificateDocument({ page }: { page: CertPage }) {
+export async function CertificateDocument({ page }: { page: CertPage }) {
   const verdict = (page.certificate?.status as keyof typeof VERDICT) ?? "IN_PROGRESS";
   const v = VERDICT[verdict] ?? VERDICT.IN_PROGRESS;
 
@@ -113,13 +114,42 @@ export function CertificateDocument({ page }: { page: CertPage }) {
     month: "long",
     year: "numeric",
   });
+  const signedOff = page.certificate?.completedAt
+    ? page.certificate.completedAt.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : null;
+
+  // Plain-language summary for non-technical clients.
+  const summary =
+    verdict === "PASS"
+      ? `This deliverable passed Apexure's ${items.length}-point quality assurance review${signedOff ? ` on ${signedOff}` : ""}.`
+      : verdict === "FAIL"
+        ? `This deliverable was reviewed against Apexure's ${items.length}-point quality assurance checklist.`
+        : "Quality assurance is currently in progress for this deliverable.";
+
+  // QR code to the live page (generated inline, no external request).
+  let qrDataUrl: string | null = null;
+  if (page.url) {
+    try {
+      qrDataUrl = await QRCode.toDataURL(page.url, {
+        margin: 1,
+        width: 200,
+        color: { dark: "#1c1c2e", light: "#ffffff" },
+      });
+    } catch {
+      qrDataUrl = null;
+    }
+  }
 
   return (
     <article className="overflow-hidden rounded-2xl border border-border-soft bg-card shadow-sm print:border-0 print:shadow-none">
-      <header className="flex items-center justify-between gap-4 border-b border-border-soft bg-card-soft/50 px-8 py-6">
+      <header className="flex items-center justify-between gap-4 border-b border-border-soft bg-card-soft/50 px-5 py-6 sm:px-8">
         <div className="flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-brand-primary text-text-on-dark">
-            <ShieldCheck className="size-5" />
+          <div className="flex size-10 items-center justify-center rounded-xl border border-border-soft bg-card">
+            <Logo className="size-6" />
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-text-primary">
@@ -138,7 +168,7 @@ export function CertificateDocument({ page }: { page: CertPage }) {
         </div>
       </header>
 
-      <div className="px-8 py-7">
+      <div className="px-5 py-7 sm:px-8">
         <div className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
@@ -165,6 +195,10 @@ export function CertificateDocument({ page }: { page: CertPage }) {
             {v.text}
           </span>
         </div>
+
+        <p className="mt-4 text-[13px] leading-relaxed text-text-secondary">
+          {summary}
+        </p>
 
         {page.url && (
           <SitePreview
@@ -230,7 +264,7 @@ export function CertificateDocument({ page }: { page: CertPage }) {
             </div>
             <div className="flex flex-col gap-4">
               {categories.map((cat) => (
-                <div key={cat}>
+                <div key={cat} className="break-inside-avoid">
                   <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">
                     {cat}
                   </h3>
@@ -258,7 +292,7 @@ export function CertificateDocument({ page }: { page: CertPage }) {
         )}
 
         {/* Issues */}
-        <section className="mt-7">
+        <section className="mt-7 break-inside-avoid">
           <h2 className="mb-2 text-sm font-semibold text-text-primary">Issues</h2>
           <p className="text-[13px] text-text-secondary">
             {totalIssues === 0
@@ -281,26 +315,76 @@ export function CertificateDocument({ page }: { page: CertPage }) {
         </section>
       </div>
 
-      <footer className="flex items-end justify-between gap-4 border-t border-border-soft px-8 py-6">
-        <div className="flex flex-col gap-1">
-          <span className="text-[13px] text-text-secondary">
-            {page.tester
-              ? `Verified by ${page.tester.name}`
-              : "Verified by the Apexure QA team"}
-          </span>
-          <span className="text-[12px] text-text-muted">
-            {page.certificate?.completedAt
-              ? `Signed off ${page.certificate.completedAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`
-              : `Issued ${issued}`}
-          </span>
+      <footer className="break-inside-avoid border-t border-border-soft px-5 py-6 sm:px-8">
+        <div className="flex items-end justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <span className="text-[13px] text-text-secondary">
+              {page.tester
+                ? `Verified by ${page.tester.name}`
+                : "Verified by the Apexure QA team"}
+            </span>
+            <span className="text-[12px] text-text-muted">
+              {signedOff ? `Signed off ${signedOff}` : `Issued ${issued}`}
+            </span>
+          </div>
+          {verdict === "PASS" ? (
+            <div className="flex size-20 shrink-0 -rotate-6 flex-col items-center justify-center rounded-full border-2 border-success/50 text-success">
+              <CheckCircle2 className="size-5" />
+              <span className="mt-0.5 text-[8px] font-bold uppercase tracking-[0.15em]">
+                Verified
+              </span>
+              <span className="text-[7px] uppercase tracking-[0.1em] text-success/70">
+                Apexure QA
+              </span>
+            </div>
+          ) : (
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${v.cls}`}
+            >
+              <v.Icon className="size-3.5" />
+              {v.text}
+            </span>
+          )}
         </div>
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${v.cls}`}
-        >
-          <v.Icon className="size-3.5" />
-          {v.text}
-        </span>
+
+        {qrDataUrl && (
+          <div className="mt-5 flex items-center gap-3 border-t border-border-soft pt-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={qrDataUrl}
+              alt="QR code linking to the live page"
+              className="size-16 rounded-md border border-border-soft"
+            />
+            <div className="flex flex-col">
+              <span className="text-[12px] font-medium text-text-primary">
+                Scan to view the live page
+              </span>
+              <span className="text-[11px] text-text-muted">
+                Certificate reference {ref}
+              </span>
+            </div>
+          </div>
+        )}
       </footer>
+
+      <div className="border-t border-border-soft bg-card-soft/40 px-5 py-4 text-center text-[12px] text-text-muted sm:px-8">
+        Questions about this report?{" "}
+        <a
+          href="mailto:success@apexure.com"
+          className="text-info hover:underline"
+        >
+          success@apexure.com
+        </a>{" "}
+        ·{" "}
+        <a
+          href="https://apexure.com"
+          target="_blank"
+          rel="noreferrer"
+          className="text-info hover:underline"
+        >
+          apexure.com
+        </a>
+      </div>
     </article>
   );
 }
