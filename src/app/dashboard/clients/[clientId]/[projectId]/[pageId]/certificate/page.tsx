@@ -18,7 +18,22 @@ export default async function CertificatePage({
       project: { include: { client: true } },
       developer: true,
       tester: true,
-      certificate: { include: { items: { select: { result: true } } } },
+      certificate: {
+        include: {
+          items: {
+            orderBy: { order: "asc" },
+            select: {
+              category: true,
+              name: true,
+              result: true,
+              valueDesktop: true,
+              valueMobile: true,
+              isMeasurement: true,
+              hasDualValue: true,
+            },
+          },
+        },
+      },
       issues: { select: { severity: true, status: true } },
     },
   });

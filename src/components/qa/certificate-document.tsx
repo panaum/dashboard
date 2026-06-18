@@ -1,4 +1,4 @@
-import { ShieldCheck, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { ShieldCheck, CheckCircle2, XCircle, Clock, MinusCircle } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { SitePreview } from "@/components/shared/site-preview";
 import { SEVERITIES, label, monthLabel, type Severity } from "@/lib/constants";
@@ -16,6 +16,16 @@ const SEV_DOT: Record<Severity, string> = {
   REPETITIVE: "bg-accent",
 };
 
+type CheckItem = {
+  category: string;
+  name: string;
+  result: string | null;
+  valueDesktop: string | null;
+  valueMobile: string | null;
+  isMeasurement: boolean;
+  hasDualValue: boolean;
+};
+
 function Field({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
@@ -24,6 +34,41 @@ function Field({ k, v }: { k: string; v: React.ReactNode }) {
       </span>
       <span className="text-sm text-text-primary">{v}</span>
     </div>
+  );
+}
+
+function ResultCell({ item }: { item: CheckItem }) {
+  // Measurement / dual-value checks show their recorded value(s).
+  if (item.isMeasurement) {
+    return (
+      <span className="text-[12px] tabular-nums text-text-secondary">
+        {item.valueDesktop || "—"}
+      </span>
+    );
+  }
+  if (item.hasDualValue && (item.valueDesktop || item.valueMobile)) {
+    return (
+      <span className="text-[12px] text-text-secondary">
+        Desktop {item.valueDesktop || "—"} · Mobile {item.valueMobile || "—"}
+      </span>
+    );
+  }
+  if (item.result === "PASSED")
+    return (
+      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-success">
+        <CheckCircle2 className="size-3.5" /> Passed
+      </span>
+    );
+  if (item.result === "FAILED")
+    return (
+      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-error">
+        <XCircle className="size-3.5" /> Failed
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1 text-[12px] text-text-muted">
+      <MinusCircle className="size-3.5" /> N/A
+    </span>
   );
 }
 
@@ -39,7 +84,7 @@ export type CertPage = {
   certificate: {
     status: string;
     completedAt: Date | null;
-    items: { result: string | null }[];
+    items: CheckItem[];
   } | null;
   issues: { severity: string; status: string }[];
 };
@@ -50,7 +95,10 @@ export function CertificateDocument({ page }: { page: CertPage }) {
   const v = VERDICT[verdict] ?? VERDICT.IN_PROGRESS;
 
   const items = page.certificate?.items ?? [];
-  const reviewed = items.filter((i) => i.result).length;
+  const passed = items.filter((i) => i.result === "PASSED").length;
+  const failed = items.filter((i) => i.result === "FAILED").length;
+  const na = items.length - passed - failed;
+  const categories = [...new Set(items.map((i) => i.category))];
 
   const totalIssues = page.issues.length;
   const resolved = page.issues.filter((i) => i.status === "FIXED").length;
@@ -166,38 +214,71 @@ export function CertificateDocument({ page }: { page: CertPage }) {
           />
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div>
-            <h2 className="mb-2 text-sm font-semibold text-text-primary">
-              Checklist
-            </h2>
-            <p className="text-[13px] text-text-secondary">
-              {reviewed} of {items.length} standard checks reviewed against the
-              Apexure QA checklist.
-            </p>
-          </div>
-          <div>
-            <h2 className="mb-2 text-sm font-semibold text-text-primary">Issues</h2>
-            <p className="text-[13px] text-text-secondary">
-              {totalIssues === 0
-                ? "No issues logged."
-                : `${resolved} of ${totalIssues} issue${totalIssues === 1 ? "" : "s"} resolved.`}
-            </p>
-            {bySeverity.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                {bySeverity.map(({ s, n }) => (
-                  <span
-                    key={s}
-                    className="inline-flex items-center gap-1.5 text-[12px] text-text-secondary"
-                  >
-                    <span className={`size-2 rounded-full ${SEV_DOT[s]}`} />
-                    {n} {label(s)}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Full itemised checklist */}
+        {items.length > 0 && (
+          <section>
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold text-text-primary">
+                QA checklist
+              </h2>
+              <span className="text-[12px] text-text-secondary">
+                {items.length} checks
+                {passed > 0 && <> · <span className="text-success">{passed} passed</span></>}
+                {failed > 0 && <> · <span className="text-error">{failed} failed</span></>}
+                {na > 0 && <> · {na} N/A</>}
+              </span>
+            </div>
+            <div className="flex flex-col gap-4">
+              {categories.map((cat) => (
+                <div key={cat}>
+                  <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">
+                    {cat}
+                  </h3>
+                  <div className="overflow-hidden rounded-lg border border-border-soft">
+                    {items
+                      .filter((i) => i.category === cat)
+                      .map((it, idx) => (
+                        <div
+                          key={`${cat}-${idx}`}
+                          className="flex items-center justify-between gap-4 border-t border-border-soft px-3.5 py-2 first:border-t-0"
+                        >
+                          <span className="text-[13px] text-text-primary">
+                            {it.name}
+                          </span>
+                          <span className="shrink-0 text-right">
+                            <ResultCell item={it} />
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Issues */}
+        <section className="mt-7">
+          <h2 className="mb-2 text-sm font-semibold text-text-primary">Issues</h2>
+          <p className="text-[13px] text-text-secondary">
+            {totalIssues === 0
+              ? "No issues logged."
+              : `${resolved} of ${totalIssues} issue${totalIssues === 1 ? "" : "s"} resolved.`}
+          </p>
+          {bySeverity.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+              {bySeverity.map(({ s, n }) => (
+                <span
+                  key={s}
+                  className="inline-flex items-center gap-1.5 text-[12px] text-text-secondary"
+                >
+                  <span className={`size-2 rounded-full ${SEV_DOT[s]}`} />
+                  {n} {label(s)}
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       <footer className="flex items-end justify-between gap-4 border-t border-border-soft px-8 py-6">
