@@ -46,6 +46,7 @@ model Page {
   name          String
   url           String?
   status        String         @default("IN_PROGRESS") // Status
+  shareId       String?        @unique //                 public certificate link token (opt-in)
   developer     TeamMember?    @relation("Dev", fields: [developerId], references: [id], onDelete: SetNull)
   developerId   String?
   tester        TeamMember?    @relation("Tester", fields: [testerId], references: [id], onDelete: SetNull)

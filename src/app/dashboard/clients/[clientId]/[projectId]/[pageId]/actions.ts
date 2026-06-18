@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import {
   issueSchema,
@@ -109,6 +110,30 @@ export async function setPageUrl(input: { pageId: string; url: string; path: Pat
   await db.page.update({ where: { id: input.pageId }, data: { url: url || null } });
   revalidatePath(pagePath(input.path));
   return { ok: true };
+}
+
+// --- Public certificate share link -----------------------------------------
+
+/** Create (or return existing) a public share token for this page's certificate. */
+export async function createShareLink(input: { pageId: string; path: PathParts }) {
+  const existing = await db.page.findUnique({
+    where: { id: input.pageId },
+    select: { shareId: true },
+  });
+  let shareId = existing?.shareId ?? null;
+  if (!shareId) {
+    shareId = randomBytes(12).toString("base64url");
+    await db.page.update({ where: { id: input.pageId }, data: { shareId } });
+  }
+  revalidatePath(`${pagePath(input.path)}/certificate`);
+  return { ok: true as const, shareId };
+}
+
+/** Revoke the public link — the URL stops working immediately. */
+export async function revokeShareLink(input: { pageId: string; path: PathParts }) {
+  await db.page.update({ where: { id: input.pageId }, data: { shareId: null } });
+  revalidatePath(`${pagePath(input.path)}/certificate`);
+  return { ok: true as const };
 }
 
 // --- AI QA agent ------------------------------------------------------------
