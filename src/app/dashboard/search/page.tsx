@@ -19,6 +19,8 @@ import {
   type Status,
 } from "@/lib/constants";
 
+export const metadata = { title: "Search" };
+
 export default async function SearchPage({
   searchParams,
 }: {

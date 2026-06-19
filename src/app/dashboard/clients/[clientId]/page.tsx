@@ -17,6 +17,19 @@ import { deleteClient } from "../actions";
 import { deleteProject } from "./actions";
 import { label, type Status } from "@/lib/constants";
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ clientId: string }>;
+}) {
+  const { clientId } = await params;
+  const c = await db.client.findUnique({
+    where: { id: clientId },
+    select: { name: true },
+  });
+  return { title: c?.name ?? "Client" };
+}
+
 export default async function ClientDetailPage({
   params,
 }: {

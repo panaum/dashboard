@@ -59,6 +59,19 @@ function PageRow({
   );
 }
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ memberId: string }>;
+}) {
+  const { memberId } = await params;
+  const m = await db.teamMember.findUnique({
+    where: { id: memberId },
+    select: { name: true },
+  });
+  return { title: m?.name ?? "Team member" };
+}
+
 export default async function MemberDetailPage({
   params,
 }: {

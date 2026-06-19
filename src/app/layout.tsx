@@ -4,7 +4,10 @@ import "./globals.css";
 import { Signature } from "@/components/shared/signature";
 
 export const metadata: Metadata = {
-  title: "Deliverables Dashboard",
+  title: {
+    default: "Deliverables Dashboard",
+    template: "%s · Deliverables",
+  },
   description: "Client websites, landing pages and QA tracking.",
   authors: [{ name: "Anaum" }],
   creator: "Anaum",

@@ -7,6 +7,19 @@ import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { TemplateEditor } from "@/components/checklists/template-editor";
 import { deleteTemplate } from "../actions";
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ templateId: string }>;
+}) {
+  const { templateId } = await params;
+  const t = await db.checklistTemplate.findUnique({
+    where: { id: templateId },
+    select: { name: true },
+  });
+  return { title: t?.name ?? "Checklist" };
+}
+
 export default async function TemplateEditorPage({
   params,
 }: {

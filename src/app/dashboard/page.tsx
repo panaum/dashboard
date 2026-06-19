@@ -29,6 +29,8 @@ const STATUS_DOT: Record<Status, string> = {
   LIVE: "bg-success",
 };
 
+export const metadata = { title: "Overview" };
+
 export default async function OverviewPage() {
   const [clients, projects, pages, openIssues, inQa, recentProjects, issues, pageStatuses] =
     await Promise.all([

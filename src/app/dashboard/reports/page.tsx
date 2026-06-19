@@ -60,6 +60,8 @@ function Stat({
   );
 }
 
+export const metadata = { title: "Monthly report" };
+
 export default async function ReportsPage({
   searchParams,
 }: {

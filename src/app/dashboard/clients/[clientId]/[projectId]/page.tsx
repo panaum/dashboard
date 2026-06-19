@@ -21,6 +21,19 @@ import { deleteProject } from "../actions";
 import { deletePage } from "./actions";
 import { label, type Status } from "@/lib/constants";
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ clientId: string; projectId: string }>;
+}) {
+  const { projectId } = await params;
+  const p = await db.project.findUnique({
+    where: { id: projectId },
+    select: { name: true },
+  });
+  return { title: p?.name ?? "Project" };
+}
+
 export default async function ProjectDetailPage({
   params,
 }: {

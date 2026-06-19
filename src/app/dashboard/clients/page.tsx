@@ -5,6 +5,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { AddClientButton } from "@/components/forms/dialogs";
 import { ClientDirectory, type ClientRow } from "@/components/clients/client-directory";
 
+export const metadata = { title: "Clients" };
+
 export default async function ClientsPage() {
   const clients = await db.client.findMany({
     orderBy: { name: "asc" },

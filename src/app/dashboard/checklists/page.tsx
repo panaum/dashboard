@@ -9,6 +9,8 @@ import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { createTemplate, deleteTemplate } from "./actions";
 import { label } from "@/lib/constants";
 
+export const metadata = { title: "QA checklists" };
+
 export default async function ChecklistsPage() {
   const templates = await db.checklistTemplate.findMany({
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],

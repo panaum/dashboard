@@ -32,6 +32,19 @@ function Meta({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ clientId: string; projectId: string; pageId: string }>;
+}) {
+  const { pageId } = await params;
+  const pg = await db.page.findUnique({
+    where: { id: pageId },
+    select: { name: true },
+  });
+  return { title: pg?.name ?? "Page" };
+}
+
 export default async function PageDetailPage({
   params,
 }: {

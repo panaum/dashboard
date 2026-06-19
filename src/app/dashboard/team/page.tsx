@@ -6,6 +6,8 @@ import { AnimatedNumber } from "@/components/shared/animated-number";
 
 type Stat = { built: number; tested: number; issuesBuilt: number; repetitive: number; issuesFound: number };
 
+export const metadata = { title: "Team" };
+
 export default async function TeamPage() {
   const [members, pages] = await Promise.all([
     db.teamMember.findMany({ orderBy: { name: "asc" } }),
