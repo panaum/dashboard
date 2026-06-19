@@ -93,6 +93,13 @@ export function Sidebar() {
           Sign out
         </button>
       </form>
+
+      <p
+        className="mt-3 px-3 text-[10px] tracking-wide text-text-muted/40 transition-colors hover:text-text-muted print:hidden"
+        title="Crafted by Anaum"
+      >
+        anaum
+      </p>
     </aside>
   );
 }
