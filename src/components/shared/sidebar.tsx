@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { LayoutDashboard, Users, BarChart3, UsersRound, Search, ListChecks, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, BarChart3, UsersRound, Search, ListChecks, Sparkles, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/shared/logo";
 import { logout } from "@/app/dashboard/actions";
@@ -11,6 +11,7 @@ import { logout } from "@/app/dashboard/actions";
 const NAV = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/reports", label: "Monthly", icon: BarChart3 },
+  { href: "/dashboard/insights", label: "Insights", icon: Sparkles },
   { href: "/dashboard/search", label: "Search", icon: Search },
   { href: "/dashboard/clients", label: "Clients", icon: Users },
   { href: "/dashboard/team", label: "Team", icon: UsersRound },
