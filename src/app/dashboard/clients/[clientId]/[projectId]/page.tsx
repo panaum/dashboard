@@ -67,7 +67,20 @@ export default async function ProjectDetailPage({
         subtitle={`${label(project.type)} · ${label(project.platform)}`}
         action={
           <div className="flex items-center gap-1">
-            <EditProjectButton clientId={clientId} project={project} />
+            <EditProjectButton
+              clientId={clientId}
+              members={members}
+              project={{
+                id: project.id,
+                name: project.name,
+                type: project.type,
+                platform: project.platform,
+                url: project.url,
+                status: project.status,
+                developerId: project.pages[0]?.developerId ?? null,
+                testerId: project.pages[0]?.testerId ?? null,
+              }}
+            />
             <ConfirmDelete
               action={deleteProject}
               fields={{ id: project.id, clientId }}

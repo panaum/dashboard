@@ -1,15 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Field, Input, Select } from "@/components/ui/field";
 import { FormFooter, useOnOk } from "@/components/forms/form-parts";
 import { saveProject } from "@/app/dashboard/clients/[clientId]/actions";
-import {
-  PROJECT_TYPES,
-  PLATFORMS,
-  STATUSES,
-  label,
-} from "@/lib/constants";
+import { PROJECT_TYPES, PLATFORMS, STATUSES, label } from "@/lib/constants";
+
+type Member = { id: string; name: string; role: string };
 
 type ProjectInitial = {
   id: string;
@@ -18,19 +15,27 @@ type ProjectInitial = {
   platform: string;
   url: string | null;
   status: string;
+  developerId?: string | null;
+  testerId?: string | null;
 };
 
 export function ProjectForm({
   close,
   clientId,
+  members = [],
   initial,
 }: {
   close: () => void;
   clientId: string;
+  members?: Member[];
   initial?: ProjectInitial;
 }) {
   const [state, action, pending] = useActionState(saveProject, {});
   useOnOk(state, close);
+
+  const [type, setType] = useState(initial?.type ?? "WEBSITE");
+  const developers = members.filter((m) => m.role !== "TESTER");
+  const testers = members.filter((m) => m.role === "TESTER");
 
   return (
     <form action={action} className="flex flex-col gap-4">
@@ -50,7 +55,12 @@ export function ProjectForm({
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Type" htmlFor="type">
-          <Select id="type" name="type" defaultValue={initial?.type ?? "WEBSITE"}>
+          <Select
+            id="type"
+            name="type"
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+          >
             {PROJECT_TYPES.map((t) => (
               <option key={t} value={t}>
                 {label(t)}
@@ -86,6 +96,40 @@ export function ProjectForm({
           ))}
         </Select>
       </Field>
+
+      {/* Landing pages are a single page, so assign its developer/tester here. */}
+      {type === "LANDING_PAGE" && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Developer" htmlFor="developerId">
+            <Select
+              id="developerId"
+              name="developerId"
+              defaultValue={initial?.developerId ?? ""}
+            >
+              <option value="">Unassigned</option>
+              {developers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Tester" htmlFor="testerId">
+            <Select
+              id="testerId"
+              name="testerId"
+              defaultValue={initial?.testerId ?? ""}
+            >
+              <option value="">Unassigned</option>
+              {testers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      )}
 
       <Field label="URL" htmlFor="url" hint="Optional live or staging link.">
         <Input

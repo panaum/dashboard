@@ -15,10 +15,21 @@ export async function saveProject(
   const parsed = parseForm(projectSchema, formData);
   if ("error" in parsed) return { error: parsed.error };
 
+  // Landing pages are a single page, so the project form also assigns its
+  // developer/tester (which actually live on the page).
+  const developerId = String(formData.get("developerId") ?? "") || null;
+  const testerId = String(formData.get("testerId") ?? "") || null;
+
   const id = String(formData.get("id") ?? "");
   try {
     if (id) {
       await db.project.update({ where: { id }, data: parsed.data });
+      if (parsed.data.type === "LANDING_PAGE") {
+        await db.page.updateMany({
+          where: { projectId: id },
+          data: { developerId, testerId },
+        });
+      }
     } else {
       const project = await db.project.create({
         data: { ...parsed.data, clientId },
@@ -29,6 +40,8 @@ export async function saveProject(
           name: project.name,
           url: project.url,
           status: project.status,
+          developerId,
+          testerId,
         });
       }
     }

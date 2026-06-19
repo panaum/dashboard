@@ -23,15 +23,25 @@ export default async function ClientDetailPage({
   params: Promise<{ clientId: string }>;
 }) {
   const { clientId } = await params;
-  const client = await db.client.findUnique({
-    where: { id: clientId },
-    include: {
-      projects: {
-        orderBy: { updatedAt: "desc" },
-        include: { _count: { select: { pages: true } } },
+  const [client, members] = await Promise.all([
+    db.client.findUnique({
+      where: { id: clientId },
+      include: {
+        projects: {
+          orderBy: { updatedAt: "desc" },
+          include: {
+            _count: { select: { pages: true } },
+            pages: { select: { developerId: true, testerId: true } },
+          },
+        },
       },
-    },
-  });
+    }),
+    db.teamMember.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, role: true },
+    }),
+  ]);
   if (!client) notFound();
 
   return (
@@ -63,7 +73,7 @@ export default async function ClientDetailPage({
               }
             />
             <span className="ml-2">
-              <AddProjectButton clientId={client.id} />
+              <AddProjectButton clientId={client.id} members={members} />
             </span>
           </div>
         }
@@ -74,7 +84,7 @@ export default async function ClientDetailPage({
           icon={FolderKanban}
           title="No projects yet"
           description={`Add the first website or landing page for ${client.name}.`}
-          action={<AddProjectButton clientId={client.id} />}
+          action={<AddProjectButton clientId={client.id} members={members} />}
         />
       ) : (
         <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
@@ -103,7 +113,20 @@ export default async function ClientDetailPage({
                 </Badge>
               </Link>
               <div className="flex shrink-0 items-center gap-0.5">
-                <EditProjectButton clientId={client.id} project={p} />
+                <EditProjectButton
+                  clientId={client.id}
+                  members={members}
+                  project={{
+                    id: p.id,
+                    name: p.name,
+                    type: p.type,
+                    platform: p.platform,
+                    url: p.url,
+                    status: p.status,
+                    developerId: p.pages[0]?.developerId ?? null,
+                    testerId: p.pages[0]?.testerId ?? null,
+                  }}
+                />
                 <ConfirmDelete
                   action={deleteProject}
                   fields={{ id: p.id, clientId: client.id }}
