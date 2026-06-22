@@ -14,7 +14,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 **Test files today:** `e2e/login.spec.ts`, `e2e/auth.setup.ts`,
 `e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `e2e/overview.spec.ts`,
-`src/lib/insights.test.ts`, `src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
+`e2e/search.spec.ts`, `src/lib/insights.test.ts`, `src/lib/csv.test.ts`,
+`src/lib/page-search.test.ts`.
 
 ---
 
@@ -51,7 +52,7 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 ## Search (`/dashboard/search`)
 
-- [ ] Text query (q) returns matching pages — High → not yet covered
+- [x] Text query (q) returns matching pages, case-insensitively — High → `e2e/search.spec.ts`
 - [ ] Developer filter — High → not yet covered
 - [ ] Tester filter — High → not yet covered
 - [ ] Combined filters (`buildPageWhere`) — High → not yet covered
