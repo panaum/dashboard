@@ -13,7 +13,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 **Medium** (visible-ish, contained) · **Low** (cosmetic / convenience).
 
 **Test files today:** `e2e/login.spec.ts`, `e2e/auth.setup.ts`,
-`e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `src/lib/insights.test.ts`.
+`e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `src/lib/insights.test.ts`,
+`src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
 
 ---
 
@@ -112,6 +113,12 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 - [ ] Share certificate: create / revoke public link — High → not yet covered
 - [ ] Public certificate (`/c/[shareId]`) renders itemized cert (client-facing) — High → not yet covered
 - [ ] Internal certificate page render / print — Medium → not yet covered
+
+## Library / pure logic (unit tests)
+
+- [x] Insights aggregation (`computeInsights`) — totals, averages, ranking, zero / negative / empty — Medium → `src/lib/insights.test.ts`
+- [x] CSV builder (`toCsv` / `csvResponse`) — formula-injection guard, RFC-4180 quoting, numbers preserved, BOM — Medium → `src/lib/csv.test.ts`
+- [x] Page search (`buildPageWhere` case-insensitive mode, scalar/nested filters, `hasAnyFilter`) — High → `src/lib/page-search.test.ts`
 
 ---
 
