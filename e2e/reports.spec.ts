@@ -30,6 +30,41 @@ const kpiValue = async (page: Page, unit: string): Promise<number> => {
   return Number((await value.innerText()).replace(/[^\d.]/g, ""));
 };
 
+/** Minimal RFC-4180 parser: handles quoting, doubled quotes, commas/newlines in
+ *  fields, CRLF, and a leading BOM. Enough to verify the exported CSV. */
+function parseCsv(text: string): string[][] {
+  const s = text.replace(/^﻿/, "");
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inQuotes) {
+      if (c === '"' && s[i + 1] === '"') { field += '"'; i++; }
+      else if (c === '"') inQuotes = false;
+      else field += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+    else if (c !== "\r") field += c;
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+/** Sums the "Issues" column of the visible delivery table and returns the row count. */
+async function readTable(page: Page) {
+  const rows = page.locator("table tbody tr");
+  const rowCount = await rows.count();
+  let issues = 0;
+  for (let i = 0; i < rowCount; i++) {
+    // Columns: Page · Client · Developer · Tester · Issues · Delay → Issues is index 4.
+    issues += Number((await rows.nth(i).locator("td").nth(4).innerText()).replace(/\D/g, "")) || 0;
+  }
+  return { rowCount, issues };
+}
+
 async function assertInvariants(page: Page) {
   // The table only renders when the selected month has pages.
   await expect(page.locator("table")).toBeVisible({ timeout: 30_000 });
@@ -39,14 +74,7 @@ async function assertInvariants(page: Page) {
     'xpath=//h2[normalize-space()="Issues by severity"]/ancestor::div[contains(@class,"rounded-xl")][1]';
   const severitySum = await sumText(page, `${sevCard}//span[contains(@class,"text-right")]`);
 
-  const rows = page.locator("table tbody tr");
-  const rowCount = await rows.count();
-  let tableIssues = 0;
-  for (let i = 0; i < rowCount; i++) {
-    // Columns: Page · Client · Developer · Tester · Issues · Delay → Issues is index 4.
-    const cell = rows.nth(i).locator("td").nth(4);
-    tableIssues += Number((await cell.innerText()).replace(/\D/g, "")) || 0;
-  }
+  const { rowCount, issues: tableIssues } = await readTable(page);
 
   // Two independent static sources must already agree.
   expect(
@@ -95,5 +123,39 @@ test.describe("monthly report", () => {
 
     await expect(page).toHaveURL(new RegExp(`month=${month}$`));
     await assertInvariants(page);
+  });
+
+  test("Export CSV matches the report's filtered data", async ({ page }) => {
+    await page.goto("/dashboard/reports");
+    await expect(page.locator("table")).toBeVisible({ timeout: 30_000 });
+
+    // What the page currently shows.
+    const { rowCount, issues: tableIssues } = await readTable(page);
+
+    // Fetch the export through the same authenticated session as the page.
+    const href = await page
+      .getByRole("link", { name: /Export CSV/ })
+      .getAttribute("href");
+    expect(href, "Export CSV link should be present when a month has pages").toBeTruthy();
+
+    const res = await page.request.get(href!);
+    expect(res.status()).toBe(200);
+    expect(res.headers()["content-type"]).toMatch(/text\/csv/);
+    expect(res.headers()["content-disposition"]).toMatch(
+      /attachment; filename="delivery-report.*\.csv"/,
+    );
+
+    const records = parseCsv(await res.text());
+    const header = records[0];
+    const dataRows = records.slice(1);
+
+    // One CSV row per delivered page shown in the table.
+    expect(dataRows.length, "CSV row count should equal the delivery table").toBe(rowCount);
+
+    // The CSV's Issues column sums to the same total as the table.
+    const issuesIdx = header.indexOf("Issues");
+    expect(issuesIdx, "CSV should have an Issues column").toBeGreaterThanOrEqual(0);
+    const csvIssues = dataRows.reduce((n, r) => n + (Number(r[issuesIdx]) || 0), 0);
+    expect(csvIssues, "CSV Issues total should match the report").toBe(tableIssues);
   });
 });

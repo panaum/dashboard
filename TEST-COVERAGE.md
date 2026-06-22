@@ -46,7 +46,7 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 - [ ] Issues-by-severity chart — High → not yet covered
 - [ ] Pages-by-platform chart — Medium → not yet covered
 - [ ] Delivery table (page · client · developer · tester · issues · delay) — High → not yet covered
-- [ ] Export CSV matches the filtered data — Critical → not yet covered
+- [x] Export CSV matches the filtered data — Critical → `e2e/reports.spec.ts`
 - [ ] Empty-month state message — Low → not yet covered
 
 ## Search (`/dashboard/search`)
