@@ -16,7 +16,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 `e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `e2e/overview.spec.ts`,
 `e2e/search.spec.ts`, `e2e/team.spec.ts`, `e2e/team-crud.spec.ts`,
 `e2e/insights.spec.ts`, `e2e/certificate.spec.ts`, `e2e/issue-log.spec.ts`,
-`src/lib/insights.test.ts`, `src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
+`e2e/qa-checklist.spec.ts`, `src/lib/insights.test.ts`, `src/lib/csv.test.ts`,
+`src/lib/page-search.test.ts`.
 
 ---
 
@@ -109,7 +110,7 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 ## Client → Project → Page drill-down
 
 - [x] Page detail: issue log — add an issue then remove it (create-then-delete) — Critical → `e2e/issue-log.spec.ts`
-- [ ] Page detail: QA checklist editor (grade a check / measurement) — Critical → not yet covered
+- [x] Page detail: QA checklist editor — grade a check, progress updates, restore — Critical → `e2e/qa-checklist.spec.ts`
 - [ ] Page detail: AI QA analyse → apply proposal — High → not yet covered
 - [ ] Project detail: edit project incl. developer + tester — High → not yet covered
 - [ ] Client detail: projects list / add project — High → not yet covered
