@@ -13,7 +13,7 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 **Medium** (visible-ish, contained) · **Low** (cosmetic / convenience).
 
 **Test files today:** `e2e/login.spec.ts`, `e2e/auth.setup.ts`,
-`e2e/dashboard.spec.ts`, `src/lib/insights.test.ts`.
+`e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `src/lib/insights.test.ts`.
 
 ---
 
@@ -35,11 +35,11 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 ## Monthly report (`/dashboard/reports`)
 
-- [ ] Month picker actually filters the page (`?month=`) — Critical → not yet covered
-- [ ] Pages delivered KPI — Critical → not yet covered
-- [ ] Total issues KPI == sum of severity bars (invariant) — Critical → not yet covered
-- [ ] Total issues KPI == sum of table Issues column (invariant) — Critical → not yet covered
-- [ ] Pages delivered KPI == delivery-table row count (invariant) — Critical → not yet covered
+- [x] Month picker actually filters the page (`?month=`) — Critical → `e2e/reports.spec.ts`
+- [x] Pages delivered KPI — Critical → `e2e/reports.spec.ts`
+- [x] Total issues KPI == sum of severity bars (invariant) — Critical → `e2e/reports.spec.ts`
+- [x] Total issues KPI == sum of table Issues column (invariant) — Critical → `e2e/reports.spec.ts`
+- [x] Pages delivered KPI == delivery-table row count (invariant) — Critical → `e2e/reports.spec.ts`
 - [ ] Avg issues / page KPI — Critical → not yet covered
 - [ ] Avg delay (days) KPI — High → not yet covered
 - [ ] Issues-by-severity chart — High → not yet covered
