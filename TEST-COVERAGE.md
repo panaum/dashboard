@@ -14,8 +14,9 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 **Test files today:** `e2e/login.spec.ts`, `e2e/auth.setup.ts`,
 `e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `e2e/overview.spec.ts`,
-`e2e/search.spec.ts`, `e2e/team.spec.ts`, `e2e/insights.spec.ts`,
-`src/lib/insights.test.ts`, `src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
+`e2e/search.spec.ts`, `e2e/team.spec.ts`, `e2e/team-crud.spec.ts`,
+`e2e/insights.spec.ts`, `src/lib/insights.test.ts`, `src/lib/csv.test.ts`,
+`src/lib/page-search.test.ts`.
 
 ---
 
@@ -76,7 +77,7 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 - [x] 4 stat tiles agree with the member table (People == rows, Developers ⊆ People) — Medium → `e2e/team.spec.ts`
 - [ ] Team table rows: built / tested / repetitive per member (attribution) — High → not yet covered
-- [ ] Add member (dialog write) — High → not yet covered
+- [x] Add member (dialog write) + remove (create-then-delete) — High → `e2e/team-crud.spec.ts`
 - [ ] Drill-down to member detail — Medium → not yet covered
 
 ## Team member detail (`/dashboard/team/[memberId]`)
