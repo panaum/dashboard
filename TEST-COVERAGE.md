@@ -13,8 +13,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 **Medium** (visible-ish, contained) · **Low** (cosmetic / convenience).
 
 **Test files today:** `e2e/login.spec.ts`, `e2e/auth.setup.ts`,
-`e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `src/lib/insights.test.ts`,
-`src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
+`e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `e2e/overview.spec.ts`,
+`src/lib/insights.test.ts`, `src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
 
 ---
 
@@ -29,9 +29,9 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 - [x] Loads while authenticated, no redirect to /login — Critical → `e2e/dashboard.spec.ts`
 - [x] Sidebar nav present (Insights link visible and navigates) — Medium → `e2e/dashboard.spec.ts`
-- [ ] 5 stat tiles render numeric values (Clients · Projects · Pages · In QA · Open issues) — High → not yet covered
-- [ ] "Issues by severity" bars + total count — Medium → not yet covered
-- [ ] "Delivery pipeline" status bars — Medium → not yet covered
+- [x] 5 stat tiles render numeric values (Clients · Projects · Pages · In QA · Open issues) — High → `e2e/overview.spec.ts`
+- [x] "Issues by severity" bars sum to the total count — Medium → `e2e/overview.spec.ts`
+- [x] "Delivery pipeline" status bars sum to total Pages — Medium → `e2e/overview.spec.ts`
 - [ ] Recent projects list links to the right drill-down — Low → not yet covered
 
 ## Monthly report (`/dashboard/reports`)
