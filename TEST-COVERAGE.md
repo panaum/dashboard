@@ -14,8 +14,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 **Test files today:** `e2e/login.spec.ts`, `e2e/auth.setup.ts`,
 `e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `e2e/overview.spec.ts`,
-`e2e/search.spec.ts`, `src/lib/insights.test.ts`, `src/lib/csv.test.ts`,
-`src/lib/page-search.test.ts`.
+`e2e/search.spec.ts`, `e2e/team.spec.ts`, `e2e/insights.spec.ts`,
+`src/lib/insights.test.ts`, `src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
 
 ---
 
@@ -24,7 +24,7 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 - [x] Login page loads — heading + password field + Sign in button — Medium → `e2e/login.spec.ts`
 - [x] Empty submission blocked by required validation (stays on /login) — Medium → `e2e/login.spec.ts`
 - [x] Correct password → session created and reused across specs — Critical → `e2e/auth.setup.ts`
-- [ ] Wrong password shows "Incorrect password." error — High → not yet covered
+- [x] Wrong password shows "Incorrect password." error — High → `e2e/login.spec.ts`
 
 ## Overview (`/dashboard`)
 
@@ -74,9 +74,9 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 ## Team (`/dashboard/team`)
 
+- [x] 4 stat tiles agree with the member table (People == rows, Developers ⊆ People) — Medium → `e2e/team.spec.ts`
 - [ ] Team table rows: built / tested / repetitive per member (attribution) — High → not yet covered
 - [ ] Add member (dialog write) — High → not yet covered
-- [ ] 4 stat tiles (People · Developers · Pages built · Avg issues/page) — Medium → not yet covered
 - [ ] Drill-down to member detail — Medium → not yet covered
 
 ## Team member detail (`/dashboard/team/[memberId]`)
@@ -89,8 +89,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 - [x] Page renders with "Insights" heading (authenticated nav) — Medium → `e2e/dashboard.spec.ts`
 - [x] Aggregation logic — totals, avg issues, on-time %, platform & developer ranking, plus zero / negative / division-by-zero / empty inputs — Medium → `src/lib/insights.test.ts`
-- [ ] KPI tiles render on the page (Pages · Avg issues · On-time · Repetitive) — Medium → not yet covered
-- [ ] Platform / quality-trend / developer-leaderboard sections render — Medium → not yet covered
+- [x] KPI tiles render on the page (Pages · Avg issues · On-time · Repetitive) — Medium → `e2e/insights.spec.ts`
+- [x] Platform / quality-trend / developer-leaderboard sections render — Medium → `e2e/insights.spec.ts`
 - [ ] Auto-flagged callouts render — Low → not yet covered
 
 ## QA checklists (`/dashboard/checklists`)

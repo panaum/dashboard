@@ -33,4 +33,14 @@ test.describe("login page", () => {
     await expect(page).toHaveURL(/\/login$/);
     await expect(password).toBeFocused();
   });
+
+  test("rejects a wrong password with an error", async ({ page }) => {
+    await page.goto("/login");
+
+    await page.getByLabel("Team password").fill("definitely-not-the-password");
+    await page.getByRole("button", { name: "Sign in" }).click();
+
+    await expect(page.getByText("Incorrect password.")).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+  });
 });
