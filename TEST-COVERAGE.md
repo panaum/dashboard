@@ -15,8 +15,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 **Test files today:** `e2e/login.spec.ts`, `e2e/auth.setup.ts`,
 `e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `e2e/overview.spec.ts`,
 `e2e/search.spec.ts`, `e2e/team.spec.ts`, `e2e/team-crud.spec.ts`,
-`e2e/insights.spec.ts`, `src/lib/insights.test.ts`, `src/lib/csv.test.ts`,
-`src/lib/page-search.test.ts`.
+`e2e/insights.spec.ts`, `e2e/certificate.spec.ts`, `src/lib/insights.test.ts`,
+`src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
 
 ---
 
@@ -112,8 +112,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 - [ ] Page detail: AI QA analyse → apply proposal — High → not yet covered
 - [ ] Project detail: edit project incl. developer + tester — High → not yet covered
 - [ ] Client detail: projects list / add project — High → not yet covered
-- [ ] Share certificate: create / revoke public link — High → not yet covered
-- [ ] Public certificate (`/c/[shareId]`) renders itemized cert (client-facing) — High → not yet covered
+- [x] Share certificate: create / revoke public link — High → `e2e/certificate.spec.ts`
+- [x] Public certificate (`/c/[shareId]`) renders for the client + dies on revoke — High → `e2e/certificate.spec.ts`
 - [ ] Internal certificate page render / print — Medium → not yet covered
 
 ## Library / pure logic (unit tests)
