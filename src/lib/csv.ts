@@ -4,7 +4,11 @@ export function toCsv(
   rows: (string | number | null | undefined)[][],
 ): string {
   const esc = (v: string | number | null | undefined) => {
-    const s = v == null ? "" : String(v);
+    let s = v == null ? "" : String(v);
+    // Neutralise spreadsheet formula injection: a cell beginning with = + - @
+    // (or tab/CR) can execute when opened in Excel/Sheets. Prefix a quote — but
+    // only on non-numeric cells, so real numbers like a "-3" delay stay numeric.
+    if (/^[=+\-@\t\r]/.test(s) && Number.isNaN(Number(s))) s = `'${s}`;
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return [headers, ...rows]

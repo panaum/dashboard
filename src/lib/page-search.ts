@@ -13,12 +13,14 @@ export type PageSearchParams = {
 export function buildPageWhere(sp: PageSearchParams): Prisma.PageWhereInput {
   const q = sp.q?.trim() ?? "";
   return {
+    // `insensitive` matters on Postgres, where LIKE is case-sensitive by default
+    // (SQLite's was not — so search silently regressed after the Postgres move).
     ...(q
       ? {
           OR: [
-            { name: { contains: q } },
-            { project: { name: { contains: q } } },
-            { project: { client: { name: { contains: q } } } },
+            { name: { contains: q, mode: "insensitive" } },
+            { project: { name: { contains: q, mode: "insensitive" } } },
+            { project: { client: { name: { contains: q, mode: "insensitive" } } } },
           ],
         }
       : {}),
