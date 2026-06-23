@@ -16,8 +16,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 `e2e/dashboard.spec.ts`, `e2e/reports.spec.ts`, `e2e/overview.spec.ts`,
 `e2e/search.spec.ts`, `e2e/team.spec.ts`, `e2e/team-crud.spec.ts`,
 `e2e/insights.spec.ts`, `e2e/certificate.spec.ts`, `e2e/issue-log.spec.ts`,
-`e2e/qa-checklist.spec.ts`, `src/lib/insights.test.ts`, `src/lib/csv.test.ts`,
-`src/lib/page-search.test.ts`.
+`e2e/qa-checklist.spec.ts`, `e2e/search-filters.spec.ts`,
+`src/lib/insights.test.ts`, `src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
 
 ---
 
@@ -55,7 +55,7 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 ## Search (`/dashboard/search`)
 
 - [x] Text query (q) returns matching pages, case-insensitively — High → `e2e/search.spec.ts`
-- [ ] Developer filter — High → not yet covered
+- [x] Developer filter — count equals that developer's built pages — High → `e2e/search-filters.spec.ts`
 - [ ] Tester filter — High → not yet covered
 - [ ] Combined filters (`buildPageWhere`) — High → not yet covered
 - [ ] Export CSV matches active filters — High → not yet covered
@@ -63,7 +63,7 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 - [ ] Status filter — Medium → not yet covered
 - [ ] Month filter — Medium → not yet covered
 - [ ] Result count + "first 100" cap note — Medium → not yet covered
-- [ ] Clear filters — Low → not yet covered
+- [x] Clear filters returns to the empty prompt — Low → `e2e/search-filters.spec.ts`
 - [ ] No-filter prompt + ⌘K tip — Low → not yet covered
 
 ## Clients (`/dashboard/clients`)
