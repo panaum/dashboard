@@ -17,8 +17,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 `e2e/search.spec.ts`, `e2e/team.spec.ts`, `e2e/team-crud.spec.ts`,
 `e2e/insights.spec.ts`, `e2e/certificate.spec.ts`, `e2e/issue-log.spec.ts`,
 `e2e/qa-checklist.spec.ts`, `e2e/search-filters.spec.ts`,
-`e2e/checklists-crud.spec.ts`, `src/lib/insights.test.ts`, `src/lib/csv.test.ts`,
-`src/lib/page-search.test.ts`.
+`e2e/checklists-crud.spec.ts`, `e2e/clients.spec.ts`, `src/lib/insights.test.ts`,
+`src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
 
 ---
 
@@ -69,11 +69,11 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 ## Clients (`/dashboard/clients`)
 
+- [x] Filter box narrows the list (client-side) — Medium → `e2e/clients.spec.ts`
+- [x] Card links to the right client detail — Medium → `e2e/clients.spec.ts`
+- [x] No-match empty state — Low → `e2e/clients.spec.ts`
 - [ ] Add client (dialog write) — High → not yet covered
 - [ ] Client cards show correct project / page counts — Medium → not yet covered
-- [ ] Filter box narrows the list (client-side) — Medium → not yet covered
-- [ ] Card links to the right client detail — Medium → not yet covered
-- [ ] No-match empty state — Low → not yet covered
 
 ## Team (`/dashboard/team`)
 
