@@ -17,8 +17,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 `e2e/search.spec.ts`, `e2e/team.spec.ts`, `e2e/team-crud.spec.ts`,
 `e2e/insights.spec.ts`, `e2e/certificate.spec.ts`, `e2e/issue-log.spec.ts`,
 `e2e/qa-checklist.spec.ts`, `e2e/search-filters.spec.ts`,
-`e2e/checklists-crud.spec.ts`, `e2e/clients.spec.ts`, `src/lib/insights.test.ts`,
-`src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
+`e2e/checklists-crud.spec.ts`, `e2e/clients.spec.ts`, `e2e/clients-crud.spec.ts`,
+`src/lib/insights.test.ts`, `src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
 
 ---
 
@@ -72,7 +72,7 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 - [x] Filter box narrows the list (client-side) — Medium → `e2e/clients.spec.ts`
 - [x] Card links to the right client detail — Medium → `e2e/clients.spec.ts`
 - [x] No-match empty state — Low → `e2e/clients.spec.ts`
-- [ ] Add client (dialog write) — High → not yet covered
+- [x] Add client (dialog write) + delete (create-then-delete) — High → `e2e/clients-crud.spec.ts`
 - [ ] Client cards show correct project / page counts — Medium → not yet covered
 
 ## Team (`/dashboard/team`)
@@ -114,6 +114,7 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 - [x] Page detail: QA checklist editor — grade a check, progress updates, restore — Critical → `e2e/qa-checklist.spec.ts`
 - [ ] Page detail: AI QA analyse → apply proposal — High → not yet covered
 - [ ] Project detail: edit project incl. developer + tester — High → not yet covered
+- [x] Client detail: delete client (create-then-delete) — High → `e2e/clients-crud.spec.ts`
 - [ ] Client detail: projects list / add project — High → not yet covered
 - [x] Share certificate: create / revoke public link — High → `e2e/certificate.spec.ts`
 - [x] Public certificate (`/c/[shareId]`) renders for the client + dies on revoke — High → `e2e/certificate.spec.ts`
