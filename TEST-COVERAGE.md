@@ -17,7 +17,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 `e2e/search.spec.ts`, `e2e/team.spec.ts`, `e2e/team-crud.spec.ts`,
 `e2e/insights.spec.ts`, `e2e/certificate.spec.ts`, `e2e/issue-log.spec.ts`,
 `e2e/qa-checklist.spec.ts`, `e2e/search-filters.spec.ts`,
-`src/lib/insights.test.ts`, `src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
+`e2e/checklists-crud.spec.ts`, `src/lib/insights.test.ts`, `src/lib/csv.test.ts`,
+`src/lib/page-search.test.ts`.
 
 ---
 
@@ -97,15 +98,15 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 ## QA checklists (`/dashboard/checklists`)
 
-- [ ] New template (create write) — High → not yet covered
-- [ ] Delete template (destructive, confirm) — High → not yet covered
+- [x] New template (create write) — High → `e2e/checklists-crud.spec.ts`
+- [x] Delete template (destructive, confirm) — High → `e2e/checklists-crud.spec.ts`
+- [x] Drill-down to template editor (create opens it) — Medium → `e2e/checklists-crud.spec.ts`
 - [ ] Template list with check counts + Default badge — Medium → not yet covered
-- [ ] Drill-down to template editor — Medium → not yet covered
 
 ## Checklist editor (`/dashboard/checklists/[templateId]`)
 
+- [x] Delete template — High → `e2e/checklists-crud.spec.ts`
 - [ ] Edit template items — Medium → not yet covered
-- [ ] Delete template — High → not yet covered
 
 ## Client → Project → Page drill-down
 
