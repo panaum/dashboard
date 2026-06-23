@@ -57,9 +57,9 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 - [x] Text query (q) returns matching pages, case-insensitively — High → `e2e/search.spec.ts`
 - [x] Developer filter — count equals that developer's built pages — High → `e2e/search-filters.spec.ts`
-- [ ] Tester filter — High → not yet covered
+- [x] Tester filter — count equals that tester's QA'd pages — High → `e2e/search-filters.spec.ts`
+- [x] Export CSV matches active filters (rows == result count) — High → `e2e/search-filters.spec.ts`
 - [ ] Combined filters (`buildPageWhere`) — High → not yet covered
-- [ ] Export CSV matches active filters — High → not yet covered
 - [ ] Platform filter — Medium → not yet covered
 - [ ] Status filter — Medium → not yet covered
 - [ ] Month filter — Medium → not yet covered
