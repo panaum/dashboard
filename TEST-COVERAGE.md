@@ -18,7 +18,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 `e2e/insights.spec.ts`, `e2e/certificate.spec.ts`, `e2e/issue-log.spec.ts`,
 `e2e/qa-checklist.spec.ts`, `e2e/search-filters.spec.ts`,
 `e2e/checklists-crud.spec.ts`, `e2e/clients.spec.ts`, `e2e/clients-crud.spec.ts`,
-`src/lib/insights.test.ts`, `src/lib/csv.test.ts`, `src/lib/page-search.test.ts`.
+`e2e/member-detail.spec.ts`, `src/lib/insights.test.ts`, `src/lib/csv.test.ts`,
+`src/lib/page-search.test.ts`.
 
 ---
 
@@ -84,8 +85,8 @@ building or drives decisions) · **High** (wrong, hard to notice, real harm) ·
 
 ## Team member detail (`/dashboard/team/[memberId]`)
 
-- [ ] Stat tiles (built · QA'd · avg issues · repetitive) — Medium → not yet covered
-- [ ] Built / QA'd page lists — Medium → not yet covered
+- [x] Stat tiles agree with the built / QA'd list section counts — Medium → `e2e/member-detail.spec.ts`
+- [x] Built / QA'd page lists (counts cross-checked) — Medium → `e2e/member-detail.spec.ts`
 - [ ] Pages-built-per-month chart — Low → not yet covered
 
 ## Insights (`/dashboard/insights`)
