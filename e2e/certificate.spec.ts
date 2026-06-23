@@ -70,7 +70,11 @@ test.describe("public certificate", () => {
       const revoke = page.getByRole("button", { name: "Revoke" });
       if (await revoke.isVisible().catch(() => false)) {
         await revoke.click();
-        await expect(createBtn, "Create link should reappear after revoking").toBeVisible();
+        // Revoke is a DB write; allow extra time under parallel load.
+        await expect(
+          createBtn,
+          "Create link should reappear after revoking",
+        ).toBeVisible({ timeout: 30_000 });
       }
     }
 

@@ -55,7 +55,7 @@ function parseCsv(text: string): string[][] {
 
 /** Sums the "Issues" column of the visible delivery table and returns the row count. */
 async function readTable(page: Page) {
-  const rows = page.locator("table tbody tr");
+  const rows = page.getByRole("table").locator("tbody tr");
   const rowCount = await rows.count();
   let issues = 0;
   for (let i = 0; i < rowCount; i++) {
@@ -67,7 +67,8 @@ async function readTable(page: Page) {
 
 async function assertInvariants(page: Page) {
   // The table only renders when the selected month has pages.
-  await expect(page.locator("table")).toBeVisible({ timeout: 30_000 });
+  // getByRole ignores the prod build's hidden <table hidden> artifacts.
+  await expect(page.getByRole("table")).toBeVisible({ timeout: 30_000 });
 
   // --- static sources (no animation) ---
   const sevCard =
@@ -109,7 +110,8 @@ test.describe("monthly report", () => {
     page,
   }) => {
     await page.goto("/dashboard/reports");
-    await expect(page.locator("table")).toBeVisible({ timeout: 30_000 });
+    // getByRole ignores the prod build's hidden <table hidden> artifacts.
+  await expect(page.getByRole("table")).toBeVisible({ timeout: 30_000 });
 
     const monthTabs = page.locator('a[href*="/dashboard/reports?month="]');
     const tabCount = await monthTabs.count();
@@ -127,7 +129,8 @@ test.describe("monthly report", () => {
 
   test("Export CSV matches the report's filtered data", async ({ page }) => {
     await page.goto("/dashboard/reports");
-    await expect(page.locator("table")).toBeVisible({ timeout: 30_000 });
+    // getByRole ignores the prod build's hidden <table hidden> artifacts.
+  await expect(page.getByRole("table")).toBeVisible({ timeout: 30_000 });
 
     // What the page currently shows.
     const { rowCount, issues: tableIssues } = await readTable(page);

@@ -39,6 +39,9 @@ test.describe("issue log (write)", () => {
     await row.getByRole("button", { name: "Delete issue" }).click();
     await page.getByRole("button", { name: "Delete", exact: true }).click();
 
-    await expect(page.getByText(title, { exact: true })).toHaveCount(0);
+    // Deletion is a DB write + revalidate; allow extra time under parallel load.
+    await expect(page.getByText(title, { exact: true })).toHaveCount(0, {
+      timeout: 30_000,
+    });
   });
 });

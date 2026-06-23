@@ -37,9 +37,9 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
 
-  // Generous timeouts: the dev server compiles routes on first hit and the
-  // Supabase DB is remote, so cold navigations can be slow.
-  timeout: 60_000,
+  // Generous timeouts: the Supabase DB is remote, so under parallel load the
+  // heaviest multi-navigation tests need headroom.
+  timeout: 90_000,
   expect: { timeout: 15_000 },
 
   use: {
@@ -63,10 +63,14 @@ export default defineConfig({
     // { name: "webkit", use: { ...devices["Desktop Safari"], storageState: STORAGE_STATE }, dependencies: ["setup"] },
   ],
 
+  // Run tests against a PRODUCTION build, not `next dev`. The dev server compiles
+  // each route on first hit, which under parallel load caused cold-compile
+  // timeouts; a prebuilt server serves instantly. Locally it reuses a server
+  // already on :3000 — so for a clean run, don't have `npm run dev` going.
   webServer: {
-    command: "npm run dev",
+    command: "npm run build && npm run start",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 240_000,
   },
 });
