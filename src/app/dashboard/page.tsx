@@ -6,7 +6,9 @@ import { Avatar } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/shared/page-header";
 import { AnimatedNumber } from "@/components/shared/animated-number";
 import { StatRailBar } from "@/components/shared/stat-rail-bar";
+import { AttentionPanel } from "@/components/shared/attention-panel";
 import { Bar } from "@/components/reports/bar";
+import { buildAttention } from "@/lib/attention";
 import {
   SEVERITIES,
   SEVERITY_TONE,
@@ -32,7 +34,7 @@ const STATUS_DOT: Record<Status, string> = {
 export const metadata = { title: "Overview" };
 
 export default async function OverviewPage() {
-  const [clients, projects, pages, openIssues, inQa, recentProjects, issues, pageStatuses] =
+  const [clients, projects, pages, openIssues, inQa, recentProjects, issues, pageStatuses, attentionPages] =
     await Promise.all([
       db.client.count(),
       db.project.count(),
@@ -46,7 +48,37 @@ export default async function OverviewPage() {
       }),
       db.issue.findMany({ select: { severity: true } }),
       db.page.findMany({ select: { status: true } }),
+      db.page.findMany({
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          delayDays: true,
+          developerId: true,
+          testerId: true,
+          project: { select: { id: true, clientId: true, client: { select: { name: true } } } },
+          certificate: { select: { status: true, items: { select: { result: true } } } },
+          issues: { select: { severity: true, status: true } },
+        },
+      }),
     ]);
+
+  const attention = buildAttention(
+    attentionPages.map((p) => ({
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      delayDays: p.delayDays,
+      hasDeveloper: p.developerId !== null,
+      hasTester: p.testerId !== null,
+      certStatus: p.certificate?.status ?? null,
+      items: p.certificate?.items ?? [],
+      issues: p.issues,
+      clientId: p.project.clientId,
+      clientName: p.project.client.name,
+      projectId: p.project.id,
+    })),
+  );
 
   const totalIssues = issues.length;
   const sevCount = (s: Severity) => issues.filter((i) => i.severity === s).length;
@@ -86,6 +118,8 @@ export default async function OverviewPage() {
           </div>
         ))}
       </div>
+
+      <AttentionPanel attention={attention} />
 
       <div className="grid gap-5 lg:grid-cols-3">
         {/* Recent projects */}
