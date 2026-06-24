@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { projectSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { createPageWithCert } from "./[projectId]/actions";
@@ -52,6 +53,40 @@ export async function saveProject(
   revalidatePath(`/dashboard/clients/${clientId}`);
   revalidatePath("/dashboard");
   return { ok: true };
+}
+
+// --- Public client portal link ---------------------------------------------
+
+/**
+ * Create (or return existing) a public portal token for this client. The token
+ * authorises a read-only `/portal/[portalId]` view of every deliverable and its
+ * certificate — no per-page links or login required.
+ */
+export async function createPortalLink(input: { clientId: string }) {
+  const existing = await db.client.findUnique({
+    where: { id: input.clientId },
+    select: { portalId: true },
+  });
+  let portalId = existing?.portalId ?? null;
+  if (!portalId) {
+    portalId = randomBytes(12).toString("base64url");
+    await db.client.update({
+      where: { id: input.clientId },
+      data: { portalId },
+    });
+  }
+  revalidatePath(`/dashboard/clients/${input.clientId}`);
+  return { ok: true as const, portalId };
+}
+
+/** Revoke the portal — the link stops working immediately. */
+export async function revokePortalLink(input: { clientId: string }) {
+  await db.client.update({
+    where: { id: input.clientId },
+    data: { portalId: null },
+  });
+  revalidatePath(`/dashboard/clients/${input.clientId}`);
+  return { ok: true as const };
 }
 
 export async function deleteProject(formData: FormData): Promise<void> {
