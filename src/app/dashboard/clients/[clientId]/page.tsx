@@ -13,6 +13,7 @@ import {
   EditClientButton,
 } from "@/components/forms/dialogs";
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
+import { PortalShare } from "@/components/portal/portal-share";
 import { deleteClient } from "../actions";
 import { deleteProject } from "./actions";
 import { label, type Status } from "@/lib/constants";
@@ -91,6 +92,8 @@ export default async function ClientDetailPage({
           </div>
         }
       />
+
+      <PortalShare clientId={client.id} initialPortalId={client.portalId} />
 
       {client.projects.length === 0 ? (
         <EmptyState
