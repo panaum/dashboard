@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { PrintButton } from "@/components/shared/print-button";
 import { CertificateDocument } from "@/components/qa/certificate-document";
+import { TiltCard } from "@/components/qa/tilt-card";
 
 // Tokenised links shouldn't be indexed by search engines.
 export const metadata: Metadata = {
@@ -49,7 +50,9 @@ export default async function PublicCertificatePage({
         <div className="mb-4 flex justify-end print:hidden">
           <PrintButton />
         </div>
-        <CertificateDocument page={page} />
+        <TiltCard>
+          <CertificateDocument page={page} />
+        </TiltCard>
         <p className="mt-4 text-center text-[12px] text-text-muted print:hidden">
           Quality assurance certificate · Apexure
         </p>

@@ -129,6 +129,29 @@ body {
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
+/* Holographic verified seal: slowly rotating iridescent ring + a diagonal
+   light sweep, like a passport hologram / foil card. */
+@keyframes holo-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+@keyframes holo-sweep {
+  0% {
+    transform: translateX(-160%) skewX(-18deg);
+  }
+  60%,
+  100% {
+    transform: translateX(220%) skewX(-18deg);
+  }
+}
+.holo-ring {
+  animation: holo-spin 9s linear infinite;
+}
+.holo-sweep {
+  animation: holo-sweep 3.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
