@@ -73,17 +73,12 @@ export default async function ClientPortalPage({
   const totalPages = scored.length;
   const livePages = scored.filter((s) => s.page.status === "LIVE").length;
   const onTime = scored.filter((s) => s.page.delayDays === 0).length;
-  const checksRun = scored.reduce(
-    (n, s) => n + (s.page.certificate?.items.length ?? 0),
-    0,
-  );
   const onTimePct = totalPages ? Math.round((onTime / totalPages) * 100) : 0;
   const projectsWithPages = client.projects.filter((p) => p.pages.length > 0);
 
   const stats = [
     { label: "Average score", value: overall.provisional ? null : overall.score, suffix: "/100" },
     { label: "Deliverables", value: totalPages },
-    { label: "QA checks run", value: checksRun },
     { label: "Delivered on time", value: onTimePct, suffix: "%" },
   ];
 
@@ -146,7 +141,7 @@ export default async function ClientPortalPage({
 
       {/* ───────── Floating stats band ───────── */}
       <div className="relative z-10 mx-auto -mt-14 max-w-5xl px-5 sm:px-8">
-        <div className="grid grid-cols-2 gap-3 rounded-2xl border border-border-soft bg-card p-3 shadow-lg sm:grid-cols-4 sm:gap-0 sm:p-0">
+        <div className="grid grid-cols-3 gap-3 rounded-2xl border border-border-soft bg-card p-3 shadow-lg sm:gap-0 sm:p-0">
           {stats.map((s, i) => (
             <div
               key={s.label}
