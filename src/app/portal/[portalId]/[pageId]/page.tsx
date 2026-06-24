@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { PrintButton } from "@/components/shared/print-button";
 import { CertificateDocument } from "@/components/qa/certificate-document";
+import { TiltCard } from "@/components/qa/tilt-card";
 
 export const metadata: Metadata = {
   title: "QA Certificate",
@@ -59,7 +60,9 @@ export default async function PortalCertificatePage({
           </Link>
           <PrintButton />
         </div>
-        <CertificateDocument page={page} />
+        <TiltCard>
+          <CertificateDocument page={page} />
+        </TiltCard>
         <p className="mt-4 text-center text-[12px] text-text-muted print:hidden">
           Quality assurance certificate · Apexure
         </p>

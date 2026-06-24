@@ -2,6 +2,7 @@ import { CheckCircle2, XCircle, Clock, MinusCircle } from "lucide-react";
 import QRCode from "qrcode";
 import { Avatar } from "@/components/ui/avatar";
 import { Logo } from "@/components/shared/logo";
+import { HolographicSeal } from "@/components/qa/holographic-seal";
 import { SitePreview } from "@/components/shared/site-preview";
 import { SEVERITIES, label, monthLabel, type Severity } from "@/lib/constants";
 
@@ -328,15 +329,7 @@ export async function CertificateDocument({ page }: { page: CertPage }) {
             </span>
           </div>
           {verdict === "PASS" ? (
-            <div className="flex size-20 shrink-0 -rotate-6 flex-col items-center justify-center rounded-full border-2 border-success/50 text-success">
-              <CheckCircle2 className="size-5" />
-              <span className="mt-0.5 text-[8px] font-bold uppercase tracking-[0.15em]">
-                Verified
-              </span>
-              <span className="text-[7px] uppercase tracking-[0.1em] text-success/70">
-                Apexure QA
-              </span>
-            </div>
+            <HolographicSeal size={80} />
           ) : (
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${v.cls}`}
