@@ -105,6 +105,7 @@ export async function savePage(
 
   revalidatePath(`/dashboard/clients/${clientId}/${projectId}`);
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reports");
   return { ok: true };
 }
 

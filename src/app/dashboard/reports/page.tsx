@@ -8,6 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Bar } from "@/components/reports/bar";
 import { AddMonth } from "@/components/reports/add-month";
+import { AddProjectForMonth } from "@/components/reports/add-project";
 import { AnimatedNumber } from "@/components/shared/animated-number";
 import { cn } from "@/lib/utils";
 import {
@@ -25,6 +26,12 @@ const MONTH_NAMES = [
 function monthLabel(m: string) {
   const [y, mo] = m.split("-");
   return `${MONTH_NAMES[Number(mo) - 1] ?? mo} ${y}`;
+}
+
+/** Current month as "YYYY-MM" — fallback target when no month tab is selected. */
+function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 const SEVERITY_BAR: Record<Severity, string> = {
@@ -80,6 +87,19 @@ export default async function ReportsPage({
     .map((r) => r.deliveryMonth!)
     .filter(Boolean);
 
+  // Clients + team for the "New deliverable" quick-add (adds into the viewed month).
+  const [clients, team] = await Promise.all([
+    db.client.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    db.teamMember.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, role: true },
+    }),
+  ]);
+
   // Accept any valid YYYY-MM (lets you open/plan a month with no pages yet),
   // otherwise default to the most recent month with data.
   const isValidMonth = !!month && /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
@@ -128,14 +148,21 @@ export default async function ReportsPage({
         title="Monthly report"
         subtitle="Delivery and QA rollup — projects, issues and delays."
         action={
-          totalPages > 0 ? (
-            <a
-              href={`/dashboard/reports/export${selected ? `?month=${selected}` : ""}`}
-              className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
-            >
-              <Download /> Export CSV
-            </a>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            {totalPages > 0 && (
+              <a
+                href={`/dashboard/reports/export${selected ? `?month=${selected}` : ""}`}
+                className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
+              >
+                <Download /> Export CSV
+              </a>
+            )}
+            <AddProjectForMonth
+              clients={clients}
+              members={team}
+              month={selected ?? currentMonth()}
+            />
+          </div>
         }
       />
 

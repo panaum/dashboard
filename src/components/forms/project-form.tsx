@@ -17,7 +17,14 @@ type ProjectInitial = {
   status: string;
   developerId?: string | null;
   testerId?: string | null;
+  deliveryMonth?: string | null;
 };
+
+/** Current month as "YYYY-MM" — the default so a new project lands in this month. */
+function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 export function ProjectForm({
   close,
@@ -97,38 +104,53 @@ export function ProjectForm({
         </Select>
       </Field>
 
-      {/* Landing pages are a single page, so assign its developer/tester here. */}
+      {/* Landing pages are a single page, so set its delivery month and assign
+          its developer/tester here (all three actually live on the page). */}
       {type === "LANDING_PAGE" && (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Developer" htmlFor="developerId">
-            <Select
-              id="developerId"
-              name="developerId"
-              defaultValue={initial?.developerId ?? ""}
-            >
-              <option value="">Unassigned</option>
-              {developers.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </Select>
+        <>
+          <Field
+            label="Delivery month"
+            htmlFor="deliveryMonth"
+            hint="Which month's report this lands in. Defaults to this month."
+          >
+            <Input
+              id="deliveryMonth"
+              name="deliveryMonth"
+              type="month"
+              defaultValue={initial?.deliveryMonth ?? currentMonth()}
+            />
           </Field>
-          <Field label="Tester" htmlFor="testerId">
-            <Select
-              id="testerId"
-              name="testerId"
-              defaultValue={initial?.testerId ?? ""}
-            >
-              <option value="">Unassigned</option>
-              {testers.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Developer" htmlFor="developerId">
+              <Select
+                id="developerId"
+                name="developerId"
+                defaultValue={initial?.developerId ?? ""}
+              >
+                <option value="">Unassigned</option>
+                {developers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Tester" htmlFor="testerId">
+              <Select
+                id="testerId"
+                name="testerId"
+                defaultValue={initial?.testerId ?? ""}
+              >
+                <option value="">Unassigned</option>
+                {testers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        </>
       )}
 
       <Field label="URL" htmlFor="url" hint="Optional live or staging link.">

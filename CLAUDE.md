@@ -17,7 +17,9 @@ certificate links clients can view.
   (port 5432) for migrations / bulk import. Deployed on **Vercel** (`vercel.json`
   pins functions to `syd1` to co-locate with the Sydney Supabase DB).
 - Auth: shared team password + signed HTTP-only cookie (no external auth provider)
-- Icons: `lucide-react`. Utilities: `clsx` + `tailwind-merge` via `cn()`.
+- Icons: `lucide-react`. Animation: `motion` (the `PageTransition` wrapper, etc.).
+  Utilities: `clsx` + `tailwind-merge` via `cn()`.
+- Testing: `node:test` (unit, via `tsx`) + **Playwright** (e2e in `e2e/`).
 
 ## Data model (`prisma/schema.prisma`)
 
@@ -93,11 +95,22 @@ npm run db:push    # apply schema changes to the DB
 npm run db:seed    # seed team + sample Savvio website
 npm run db:reset   # wipe + re-seed
 npm run db:studio  # Prisma Studio (browse data)
+npm run e2e        # Playwright e2e (builds + serves prod, then runs e2e/*.spec.ts)
+npm run e2e:ui     # Playwright in interactive UI mode
+npm run e2e:report # open the last HTML report
 ```
 
-- Tests are plain `node:test` files (`src/**/*.test.ts`) run through `tsx` — no
-  Jest/Vitest. Run a single file: `node --import tsx --test src/lib/insights.test.ts`;
+- **Unit tests** are plain `node:test` files (`src/**/*.test.ts`) run through `tsx` —
+  no Jest/Vitest. Run a single file: `node --import tsx --test src/lib/insights.test.ts`;
   a single case: add `--test-name-pattern "<substring>"`.
+- **E2E tests** (`e2e/*.spec.ts`, Playwright) run against a **production build**, not
+  `next dev` — `playwright.config.ts`'s `webServer` runs `npm run build && npm run start`
+  and reuses a server already on :3000 locally (so for a clean run, don't also have
+  `npm run dev` going). `testDir` is scoped to `./e2e` so unit tests under `src/` aren't
+  picked up. `e2e/auth.setup.ts` logs in once and saves a session cookie to
+  `e2e/.auth/user.json`; the `chromium` project reuses it via `storageState`. The login
+  password comes from `E2E_PASSWORD` (falls back to `APP_PASSWORD`) and must match the
+  running server's `APP_PASSWORD`. Run one spec: `npx playwright test e2e/login.spec.ts`.
 - On Windows, `prisma generate` can hit `EPERM` while the dev server holds a lock —
   stop the dev server (free port 3000) before generating.
 

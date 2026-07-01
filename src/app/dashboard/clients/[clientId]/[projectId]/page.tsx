@@ -92,6 +92,7 @@ export default async function ProjectDetailPage({
                 status: project.status,
                 developerId: project.pages[0]?.developerId ?? null,
                 testerId: project.pages[0]?.testerId ?? null,
+                deliveryMonth: project.pages[0]?.deliveryMonth ?? null,
               }}
             />
             <ConfirmDelete

@@ -120,6 +120,7 @@ export function EditProjectButton({
     status: string;
     developerId?: string | null;
     testerId?: string | null;
+    deliveryMonth?: string | null;
   };
 }) {
   return (

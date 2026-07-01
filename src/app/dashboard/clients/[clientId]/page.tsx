@@ -45,7 +45,13 @@ export default async function ClientDetailPage({
           orderBy: { updatedAt: "desc" },
           include: {
             _count: { select: { pages: true } },
-            pages: { select: { developerId: true, testerId: true } },
+            pages: {
+              select: {
+                developerId: true,
+                testerId: true,
+                deliveryMonth: true,
+              },
+            },
           },
         },
       },
@@ -141,6 +147,7 @@ export default async function ClientDetailPage({
                     status: p.status,
                     developerId: p.pages[0]?.developerId ?? null,
                     testerId: p.pages[0]?.testerId ?? null,
+                    deliveryMonth: p.pages[0]?.deliveryMonth ?? null,
                   }}
                 />
                 <ConfirmDelete
