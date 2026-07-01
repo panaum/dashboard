@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, ExternalLink } from "lucide-react";
+import { Download, ExternalLink, Award } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
@@ -278,11 +278,12 @@ export default async function ReportsPage({
                 </thead>
                 <tbody>
                   {pages.map((p) => {
-                    // Prefer the public QA certificate (opt-in share link); fall
-                    // back to the internal certificate view when none is minted.
-                    const certHref = p.shareId
-                      ? `/c/${p.shareId}`
-                      : `/dashboard/clients/${p.project.client.id}/${p.project.id}/${p.id}/certificate`;
+                    // Name opens the page detail — the QA workspace where you fill
+                    // the checklist, log issues and edit fields (like from a client).
+                    const basePath = `/dashboard/clients/${p.project.client.id}/${p.project.id}/${p.id}`;
+                    // Certificate icon opens the client-facing certificate: the
+                    // public share link if minted, else the internal cert view.
+                    const certHref = p.shareId ? `/c/${p.shareId}` : `${basePath}/certificate`;
                     return (
                     <tr
                       key={p.id}
@@ -290,9 +291,9 @@ export default async function ReportsPage({
                     >
                       <td className="px-5 py-2.5 font-medium text-text-primary">
                         <Link
-                          href={certHref}
+                          href={basePath}
                           className="inline-flex items-center gap-1.5 hover:text-accent hover:underline"
-                          title="View QA certificate"
+                          title="Open deliverable — fill QA, issues and details"
                         >
                           {p.name}
                           <ExternalLink className="size-3.5 text-text-muted opacity-0 transition-opacity group-hover:opacity-100" />
@@ -328,21 +329,31 @@ export default async function ReportsPage({
                         {p.delayDays}d
                       </td>
                       <td className="px-5 py-2.5 text-right">
-                        <EditPageButton
-                          clientId={p.project.client.id}
-                          projectId={p.project.id}
-                          members={team}
-                          page={{
-                            id: p.id,
-                            name: p.name,
-                            url: p.url,
-                            status: p.status,
-                            developerId: p.developerId,
-                            testerId: p.testerId,
-                            delayDays: p.delayDays,
-                            deliveryMonth: p.deliveryMonth,
-                          }}
-                        />
+                        <div className="inline-flex items-center gap-0.5">
+                          <Link
+                            href={certHref}
+                            className="rounded-md p-1.5 text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary"
+                            title="View QA certificate"
+                            aria-label="View QA certificate"
+                          >
+                            <Award className="size-4" />
+                          </Link>
+                          <EditPageButton
+                            clientId={p.project.client.id}
+                            projectId={p.project.id}
+                            members={team}
+                            page={{
+                              id: p.id,
+                              name: p.name,
+                              url: p.url,
+                              status: p.status,
+                              developerId: p.developerId,
+                              testerId: p.testerId,
+                              delayDays: p.delayDays,
+                              deliveryMonth: p.deliveryMonth,
+                            }}
+                          />
+                        </div>
                       </td>
                     </tr>
                     );
