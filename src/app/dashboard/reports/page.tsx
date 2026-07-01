@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Download } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card } from "@/components/ui/card";
@@ -7,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Bar } from "@/components/reports/bar";
-import { AddMonth } from "@/components/reports/add-month";
+import { MonthStrip } from "@/components/reports/month-strip";
 import { AddProjectForMonth } from "@/components/reports/add-project";
 import { AnimatedNumber } from "@/components/shared/animated-number";
 import { cn } from "@/lib/utils";
@@ -101,17 +100,24 @@ export default async function ReportsPage({
   ]);
 
   // Accept any valid YYYY-MM (lets you open/plan a month with no pages yet),
-  // otherwise default to the most recent month with data.
+  // otherwise default to the most recent month with data, else the current month.
   const isValidMonth = !!month && /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
-  const selected = isValidMonth ? month! : months[0] ?? null;
+  const selected = isValidMonth ? month! : months[0] ?? currentMonth();
+  const viewYear = selected.slice(0, 4);
 
-  // Show a tab for the selected month even if it has no pages yet.
-  const displayMonths = [
-    ...new Set([...(selected ? [selected] : []), ...months]),
-  ].sort((a, b) => b.localeCompare(a));
+  // Pages-delivered count per month of the viewed year — powers the month strip.
+  const yearRows = await db.page.groupBy({
+    by: ["deliveryMonth"],
+    where: { deliveryMonth: { startsWith: `${viewYear}-` } },
+    _count: { _all: true },
+  });
+  const monthCounts: Record<string, number> = {};
+  for (const r of yearRows) {
+    if (r.deliveryMonth) monthCounts[r.deliveryMonth.slice(5, 7)] = r._count._all;
+  }
 
   const pages = await db.page.findMany({
-    where: selected ? { deliveryMonth: selected } : {},
+    where: { deliveryMonth: selected },
     include: {
       developer: true,
       tester: true,
@@ -151,7 +157,7 @@ export default async function ReportsPage({
           <div className="flex items-center gap-2">
             {totalPages > 0 && (
               <a
-                href={`/dashboard/reports/export${selected ? `?month=${selected}` : ""}`}
+                href={`/dashboard/reports/export?month=${selected}`}
                 className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
               >
                 <Download /> Export CSV
@@ -160,38 +166,19 @@ export default async function ReportsPage({
             <AddProjectForMonth
               clients={clients}
               members={team}
-              month={selected ?? currentMonth()}
+              month={selected}
             />
           </div>
         }
       />
 
-      {/* Month picker */}
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        {displayMonths.map((m) => {
-          const active = m === selected;
-          return (
-            <Link
-              key={m}
-              href={`/dashboard/reports?month=${m}`}
-              className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-all ${
-                active
-                  ? "bg-accent text-text-on-dark shadow-sm"
-                  : "border border-border-soft bg-card text-text-secondary hover:border-accent/40 hover:text-text-primary"
-              }`}
-            >
-              {monthLabel(m)}
-            </Link>
-          );
-        })}
-        <AddMonth />
-      </div>
+      <MonthStrip year={viewYear} selected={selected} counts={monthCounts} />
 
       {totalPages === 0 ? (
         <Card className="p-8 text-center">
           <p className="text-sm text-text-secondary">
-            No pages delivered{selected ? ` in ${monthLabel(selected)}` : ""} yet.
-            Set a delivery month on pages to populate this report.
+            No pages delivered in {monthLabel(selected)} yet. Set a delivery month
+            on pages, or use New deliverable to add one.
           </p>
         </Card>
       ) : (
