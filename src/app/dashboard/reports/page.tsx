@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Bar } from "@/components/reports/bar";
 import { MonthStrip } from "@/components/reports/month-strip";
 import { AddProjectForMonth } from "@/components/reports/add-project";
+import { EditPageButton } from "@/components/forms/dialogs";
 import { AnimatedNumber } from "@/components/shared/animated-number";
 import { cn } from "@/lib/utils";
 import {
@@ -269,7 +270,10 @@ export default async function ReportsPage({
                     <th className="px-3 py-2.5 font-medium">Developer</th>
                     <th className="px-3 py-2.5 font-medium">Tester</th>
                     <th className="px-3 py-2.5 text-right font-medium">Issues</th>
-                    <th className="px-5 py-2.5 text-right font-medium">Delay</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Delay</th>
+                    <th className="px-5 py-2.5 text-right font-medium">
+                      <span className="sr-only">Edit</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -320,8 +324,25 @@ export default async function ReportsPage({
                       <td className="px-3 py-2.5 text-right text-text-primary">
                         {p.issues.length}
                       </td>
-                      <td className="px-5 py-2.5 text-right text-text-secondary">
+                      <td className="px-3 py-2.5 text-right text-text-secondary">
                         {p.delayDays}d
+                      </td>
+                      <td className="px-5 py-2.5 text-right">
+                        <EditPageButton
+                          clientId={p.project.client.id}
+                          projectId={p.project.id}
+                          members={team}
+                          page={{
+                            id: p.id,
+                            name: p.name,
+                            url: p.url,
+                            status: p.status,
+                            developerId: p.developerId,
+                            testerId: p.testerId,
+                            delayDays: p.delayDays,
+                            deliveryMonth: p.deliveryMonth,
+                          }}
+                        />
                       </td>
                     </tr>
                     );
