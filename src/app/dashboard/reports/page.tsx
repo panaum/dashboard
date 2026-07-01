@@ -1,4 +1,5 @@
-import { Download } from "lucide-react";
+import Link from "next/link";
+import { Download, ExternalLink } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
@@ -272,13 +273,26 @@ export default async function ReportsPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {pages.map((p) => (
+                  {pages.map((p) => {
+                    // Prefer the public QA certificate (opt-in share link); fall
+                    // back to the internal certificate view when none is minted.
+                    const certHref = p.shareId
+                      ? `/c/${p.shareId}`
+                      : `/dashboard/clients/${p.project.client.id}/${p.project.id}/${p.id}/certificate`;
+                    return (
                     <tr
                       key={p.id}
-                      className="border-b border-border-soft last:border-0 hover:bg-card-soft/50"
+                      className="group border-b border-border-soft last:border-0 hover:bg-card-soft/50"
                     >
                       <td className="px-5 py-2.5 font-medium text-text-primary">
-                        {p.name}
+                        <Link
+                          href={certHref}
+                          className="inline-flex items-center gap-1.5 hover:text-accent hover:underline"
+                          title="View QA certificate"
+                        >
+                          {p.name}
+                          <ExternalLink className="size-3.5 text-text-muted opacity-0 transition-opacity group-hover:opacity-100" />
+                        </Link>
                       </td>
                       <td className="px-3 py-2.5 text-text-secondary">
                         {p.project.client.name}
@@ -310,7 +324,8 @@ export default async function ReportsPage({
                         {p.delayDays}d
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
