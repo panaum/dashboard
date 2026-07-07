@@ -16,6 +16,7 @@ type PageInitial = {
   testerId: string | null;
   delayDays: number;
   deliveryMonth: string | null;
+  issueCount?: number;
 };
 
 export function PageForm({
@@ -119,16 +120,26 @@ export function PageForm({
             defaultValue={initial?.delayDays ?? 0}
           />
         </Field>
-        <Field label="URL" htmlFor="url">
+        <Field label="Issues" htmlFor="issueCount">
           <Input
-            id="url"
-            name="url"
-            type="url"
-            defaultValue={initial?.url ?? ""}
-            placeholder="https://…"
+            id="issueCount"
+            name="issueCount"
+            type="number"
+            min={0}
+            defaultValue={initial?.issueCount ?? 0}
           />
         </Field>
       </div>
+
+      <Field label="URL" htmlFor="url">
+        <Input
+          id="url"
+          name="url"
+          type="url"
+          defaultValue={initial?.url ?? ""}
+          placeholder="https://…"
+        />
+      </Field>
 
       <FormFooter pending={pending} error={state.error} close={close} />
     </form>

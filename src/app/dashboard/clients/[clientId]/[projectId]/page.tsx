@@ -210,7 +210,7 @@ export default async function ProjectDetailPage({
                   clientId={clientId}
                   projectId={projectId}
                   members={members}
-                  page={pg}
+                  page={{ ...pg, issueCount: pg._count.issues }}
                 />
                 <ConfirmDelete
                   action={deletePage}

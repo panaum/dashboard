@@ -192,6 +192,7 @@ export function EditPageButton({
     testerId: string | null;
     delayDays: number;
     deliveryMonth: string | null;
+    issueCount?: number;
   };
 }) {
   return (

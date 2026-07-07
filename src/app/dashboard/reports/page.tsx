@@ -351,6 +351,7 @@ export default async function ReportsPage({
                               testerId: p.testerId,
                               delayDays: p.delayDays,
                               deliveryMonth: p.deliveryMonth,
+                              issueCount: p.issues.length,
                             }}
                           />
                         </div>

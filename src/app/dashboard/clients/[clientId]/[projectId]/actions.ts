@@ -81,6 +81,44 @@ export async function createPageWithCert(
   return page;
 }
 
+/**
+ * Reconcile a page's issue records to a target total (edited from the page form).
+ * Severity counts stay derived — we top up with generic LOW issues and, when
+ * trimming, drop the newest first so any real, hand-logged issues are preserved.
+ */
+async function reconcileIssueCount(pageId: string, target: number) {
+  const current = await db.issue.count({ where: { pageId } });
+  if (target > current) {
+    await db.issue.createMany({
+      data: Array.from({ length: target - current }, (_, i) => ({
+        pageId,
+        title: `Issue ${current + i + 1}`,
+        severity: "LOW",
+        status: "OPEN",
+      })),
+    });
+  } else if (target < current) {
+    const extras = await db.issue.findMany({
+      where: { pageId },
+      orderBy: { createdAt: "desc" },
+      take: current - target,
+      select: { id: true },
+    });
+    await db.issue.deleteMany({
+      where: { id: { in: extras.map((e) => e.id) } },
+    });
+  }
+}
+
+/** Read the optional "issueCount" form field; null if absent/blank/invalid. */
+function parseIssueCount(formData: FormData): number | null {
+  const raw = formData.get("issueCount");
+  if (raw === null || String(raw).trim() === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.floor(n);
+}
+
 export async function savePage(
   _prev: ActionResult,
   formData: FormData,
@@ -93,11 +131,16 @@ export async function savePage(
   if ("error" in parsed) return { error: parsed.error };
 
   const id = String(formData.get("id") ?? "");
+  const issueCount = parseIssueCount(formData);
   try {
     if (id) {
       await db.page.update({ where: { id }, data: parsed.data });
+      if (issueCount !== null) await reconcileIssueCount(id, issueCount);
     } else {
-      await createPageWithCert(projectId, parsed.data);
+      const page = await createPageWithCert(projectId, parsed.data);
+      if (issueCount !== null && issueCount > 0) {
+        await reconcileIssueCount(page.id, issueCount);
+      }
     }
   } catch {
     return { error: "Could not save page." };
