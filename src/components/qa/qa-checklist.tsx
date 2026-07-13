@@ -6,6 +6,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
 import { CHECK_RESULTS, label, type CheckResult } from "@/lib/constants";
 import { updateCheckItem } from "@/app/dashboard/clients/[clientId]/[projectId]/[pageId]/actions";
+import { LiveLine } from "@/components/qa/still-true";
+import type { LiveStatus } from "@/lib/linkspy/catalog-map";
 
 type Item = {
   id: string;
@@ -65,9 +67,20 @@ function Segmented({
   );
 }
 
-export function QAChecklist({ items, path }: { items: Item[]; path: Path }) {
+export function QAChecklist({
+  items,
+  path,
+  liveByName,
+  incidentHref,
+}: {
+  items: Item[];
+  path: Path;
+  liveByName?: Record<string, LiveStatus>;
+  incidentHref?: string | null;
+}) {
   const [state, setState] = React.useState(items);
   const [, startTransition] = React.useTransition();
+  const live = liveByName ?? {};
 
   const setResult = (id: string, result: CheckResult) => {
     setState((prev) =>
@@ -124,12 +137,27 @@ export function QAChecklist({ items, path }: { items: Item[]; path: Path }) {
           <div className="flex flex-col divide-y divide-border-soft">
             {state
               .filter((i) => i.category === cat)
+              // A live-failing item is promoted to the top of its section.
+              .sort((a, b) => {
+                const fa = live[a.name]?.verdict === "failing" ? 0 : 1;
+                const fb = live[b.name]?.verdict === "failing" ? 0 : 1;
+                return fa - fb;
+              })
               .map((item) => (
                 <div
                   key={item.id}
-                  className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between"
                 >
-                  <span className="text-sm text-text-primary">{item.name}</span>
+                  <div className="min-w-0 flex-1 sm:pr-4">
+                    <span className="text-sm text-text-primary">{item.name}</span>
+                    {live[item.name] && (
+                      <LiveLine
+                        status={live[item.name]}
+                        delivered={item.result === "PASSED"}
+                        incidentHref={incidentHref}
+                      />
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
                     {item.hasDualValue && (
                       <>

@@ -56,11 +56,25 @@ model Page {
   deliveryMonth String? //                              "2026-01" — powers monthly report
   issues        Issue[]
   certificate   QACertificate?
+  linkspyStatus LinkSpyStatus?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
   @@index([projectId])
   @@index([deliveryMonth])
+}
+
+// "Still True Today" — cache + durable last-known-good for a page's live
+// verification status pulled from LinkSpy. Read-only mirror; internal-only
+// (never selected by the public certificate / client-portal views).
+model LinkSpyStatus {
+  id        String   @id @default(cuid())
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  pageId    String   @unique
+  payload   Json //     the raw /api/qa-bridge/status response
+  fetchedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Issue {
