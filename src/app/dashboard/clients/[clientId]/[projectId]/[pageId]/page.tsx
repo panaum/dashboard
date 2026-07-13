@@ -12,6 +12,9 @@ import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { EditPageButton } from "@/components/forms/dialogs";
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { QAChecklist } from "@/components/qa/qa-checklist";
+import { StillTrueHeader, LinkToMonitoring } from "@/components/qa/still-true";
+import { getPageStatus, linkspyConfigured, linkspyAppUrl } from "@/lib/linkspy/client";
+import { buildAnnotations } from "@/lib/linkspy/catalog-map";
 import { QARing } from "@/components/qa/qa-ring";
 import { CertStatusControl } from "@/components/qa/cert-status-control";
 import { IssueLog } from "@/components/qa/issue-log";
@@ -73,6 +76,18 @@ export default async function PageDetailPage({
 
   const path = { clientId, projectId, pageId };
   const basePath = `/dashboard/clients/${clientId}/${projectId}`;
+
+  // "Still True Today" — live verification status from LinkSpy (server-side only;
+  // the API key never reaches the client). Best-effort: unreachable → cached/stale
+  // → null, never an error, never blocks the page.
+  const liveEnabled = linkspyConfigured();
+  const liveStatus = liveEnabled && page.certificate ? await getPageStatus(page.id) : null;
+  const annotations = buildAnnotations(liveStatus?.payload);
+  const linkspyBase = linkspyAppUrl();
+  const incidentHref =
+    linkspyBase && liveStatus?.payload.site?.id
+      ? `${linkspyBase}/dashboard/${liveStatus.payload.site.id}`
+      : null;
 
   return (
     <>
@@ -258,7 +273,31 @@ export default async function PageDetailPage({
               path={path}
             />
           </div>
-          <QAChecklist items={page.certificate.items} path={path} />
+
+          {/* Still True Today — continuous-verification summary; unmapped pages
+              show a single quiet link, and the feature is silent when off. */}
+          {annotations && liveStatus ? (
+            <div className="mb-4">
+              <StillTrueHeader
+                annotations={annotations}
+                asOf={liveStatus.asOf}
+                stale={liveStatus.stale}
+                totalItems={page.certificate.items.length}
+                linkspyHref={incidentHref}
+              />
+            </div>
+          ) : liveEnabled ? (
+            <div className="mb-4">
+              <LinkToMonitoring pageRef={page.id} linkspyHref={linkspyBase} />
+            </div>
+          ) : null}
+
+          <QAChecklist
+            items={page.certificate.items}
+            path={path}
+            liveByName={annotations?.byItemName}
+            incidentHref={incidentHref}
+          />
         </div>
       )}
 
