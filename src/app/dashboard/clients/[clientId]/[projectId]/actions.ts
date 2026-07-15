@@ -141,6 +141,31 @@ export async function savePage(
       if (issueCount !== null && issueCount > 0) {
         await reconcileIssueCount(page.id, issueCount);
       }
+      // Mapping-at-creation (Seam 1): if a LinkSpy site was chosen, register a
+      // deliverable and annotate the local columns. Best-effort — a registry
+      // failure NEVER blocks page creation (the page already exists).
+      const regSite = String(formData.get("registrySiteId") ?? "");
+      if (regSite) {
+        try {
+          const { createDeliverable } = await import("@/lib/registry");
+          const res = await createDeliverable({
+            siteId: regSite, kind: "page", name: parsed.data.name,
+            externalRef: page.id, url: parsed.data.url ?? undefined,
+          });
+          if ("deliverable" in res) {
+            await db.page.update({
+              where: { id: page.id },
+              data: { registryDeliverableId: res.deliverable.id, registrySiteId: regSite },
+            });
+            const regClient = String(formData.get("registryClientId") ?? "");
+            if (regClient) {
+              await db.client.update({ where: { id: clientId }, data: { registryClientId: regClient } });
+            }
+          }
+        } catch {
+          // never block creation on the registry
+        }
+      }
     }
   } catch {
     return { error: "Could not save page." };

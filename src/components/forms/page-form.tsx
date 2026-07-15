@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { Field, Input, Select } from "@/components/ui/field";
 import { FormFooter, useOnOk } from "@/components/forms/form-parts";
 import { savePage } from "@/app/dashboard/clients/[clientId]/[projectId]/actions";
+import { RegistryCreateField } from "@/components/qa/registry-create-field";
 import { STATUSES, label } from "@/lib/constants";
 
 type Member = { id: string; name: string; role: string };
@@ -140,6 +141,10 @@ export function PageForm({
           placeholder="https://…"
         />
       </Field>
+
+      {/* Mapping-at-creation (new pages only). Untouched = no hidden inputs =
+          byte-identical create path. */}
+      {!initial && <RegistryCreateField />}
 
       <FormFooter pending={pending} error={state.error} close={close} />
     </form>

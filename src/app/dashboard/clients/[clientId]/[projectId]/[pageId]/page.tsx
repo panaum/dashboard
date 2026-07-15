@@ -13,6 +13,8 @@ import { EditPageButton } from "@/components/forms/dialogs";
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { QAChecklist } from "@/components/qa/qa-checklist";
 import { StillTrueHeader, LinkToMonitoring } from "@/components/qa/still-true";
+import { RegistryLink } from "@/components/qa/registry-link";
+import { registryConfigured } from "@/lib/registry";
 import { getPageStatus, linkspyConfigured, linkspyAppUrl } from "@/lib/linkspy/client";
 import { buildAnnotations } from "@/lib/linkspy/catalog-map";
 import { QARing } from "@/components/qa/qa-ring";
@@ -182,6 +184,16 @@ export default async function PageDetailPage({
               v={`${page.delayDays} day${page.delayDays === 1 ? "" : "s"}`}
             />
             <Meta k="Platform" v={label(page.project.platform)} />
+            <Meta
+              k="Registry"
+              v={
+                <RegistryLink
+                  path={path}
+                  linkedSiteId={page.registrySiteId}
+                  configured={registryConfigured()}
+                />
+              }
+            />
           </div>
         </Card>
 
