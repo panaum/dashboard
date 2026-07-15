@@ -51,3 +51,8 @@ next-env.d.ts
 # local SQLite databases
 *.db
 prisma/*.db
+
+# database backups — never commit (contain all data)
+*.dump
+*.sql.gz
+/backups/

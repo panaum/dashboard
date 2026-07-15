@@ -19,6 +19,9 @@ model Client {
   name      String    @unique
   notes     String?
   portalId  String?   @unique //                 opt-in public client portal token
+  // Seam 1 (Phase 1): annotation onto the LinkSpy registry. Nullable; unset =
+  // exactly today's behaviour. Never mutates any existing QA field.
+  registryClientId String?
   projects  Project[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -54,6 +57,9 @@ model Page {
   testerId      String?
   delayDays     Int            @default(0)
   deliveryMonth String? //                              "2026-01" — powers monthly report
+  // Seam 1 (Phase 1): registry annotation. Nullable; unset = today's behaviour.
+  registryDeliverableId String? //                      the LinkSpy deliverable id
+  registrySiteId        String? //                      the LinkSpy site id
   issues        Issue[]
   certificate   QACertificate?
   linkspyStatus LinkSpyStatus?
