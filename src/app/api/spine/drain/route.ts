@@ -2,7 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sign, SPINE_SIG_HEADER, SPINE_SENT_AT_HEADER, SPINE_SCHEMA_VERSION, EVENT_TYPES, type SpineEnvelope } from "@/lib/spine-contract";
 
-// Cron-driven drain: POST undelivered outbox rows to LinkSpy's inbox with HMAC.
+// Drain: POST undelivered outbox rows to LinkSpy's inbox with HMAC.
+//
+// Cadence: a DAILY Vercel cron (03:00 UTC) — Vercel Hobby only allows daily
+// crons. For immediate delivery DURING TESTING, invoke this route manually:
+//   curl -X POST -H "Authorization: Bearer <CRON_SECRET>" \
+//        https://<app>/api/spine/drain
+// Manual drains are the intended path for ad-hoc/immediate delivery; the route
+// is idempotent and has NO rate limit, so it is safe to call repeatedly.
+//
 // Protected by CRON_SECRET (Vercel sends `Authorization: Bearer <CRON_SECRET>`).
 // Staleness over errors: a non-2xx just increments attempts + records lastError;
 // the row retries on the next drain (no dead state in v1).
@@ -29,14 +37,17 @@ async function run(req: NextRequest) {
   const secret = process.env.SPINE_SECRET || "";
   if (!base || !secret) return NextResponse.json({ skipped: "spine not configured" });
 
-  // Heartbeat: ensure ~1/hour even when idle.
+  // Heartbeat: enqueue one if the newest is older than the gap, so at least one
+  // event flows per drain window even when idle.
   const lastHeartbeat = await db.spineOutbox.findFirst({
     where: { type: EVENT_TYPES.HEARTBEAT },
     orderBy: { occurredAt: "desc" },
     select: { occurredAt: true },
   });
+  let heartbeatEmitted = false;
   if (!lastHeartbeat || Date.now() - lastHeartbeat.occurredAt.getTime() > HEARTBEAT_GAP_MS) {
     await db.spineOutbox.create({ data: { type: EVENT_TYPES.HEARTBEAT, payload: {} } });
+    heartbeatEmitted = true;
   }
 
   const rows = await db.spineOutbox.findMany({
@@ -85,5 +96,5 @@ async function run(req: NextRequest) {
   }
 
   const remaining = await db.spineOutbox.count({ where: { deliveredAt: null } });
-  return NextResponse.json({ delivered, failed, remaining });
+  return NextResponse.json({ delivered, failed, remaining, heartbeat_emitted: heartbeatEmitted });
 }
