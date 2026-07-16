@@ -12,5 +12,9 @@ export async function login(
     return { error: "Incorrect password." };
   }
   await createSession();
-  redirect("/dashboard");
+  // Honor a safe relative callbackUrl (used by /handoff for signed-out links);
+  // reject anything that isn't an app-relative path (no open redirects).
+  const cb = String(formData.get("callbackUrl") ?? "");
+  const safe = cb.startsWith("/") && !cb.startsWith("//") ? cb : "/dashboard";
+  redirect(safe);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { login } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,6 +8,13 @@ import { Logo } from "@/components/shared/logo";
 
 export default function LoginPage() {
   const [state, formAction, pending] = useActionState(login, {});
+  // Carry a safe relative callbackUrl (set by /handoff for signed-out links)
+  // through login so the user lands on the intended page.
+  const [callbackUrl, setCallbackUrl] = useState("");
+  useEffect(() => {
+    const cb = new URLSearchParams(window.location.search).get("callbackUrl") ?? "";
+    if (cb.startsWith("/") && !cb.startsWith("//")) setCallbackUrl(cb);
+  }, []);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(160deg,#FAF9FF_0%,#EDE8F8_50%,#E0DBF5_100%)] p-4">
@@ -25,6 +32,7 @@ export default function LoginPage() {
         </div>
 
         <form action={formAction} className="flex flex-col gap-4">
+          <input type="hidden" name="callbackUrl" value={callbackUrl} />
           <div className="flex flex-col gap-1.5">
             <label
               htmlFor="password"
