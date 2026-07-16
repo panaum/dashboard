@@ -14,7 +14,9 @@ import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { QAChecklist } from "@/components/qa/qa-checklist";
 import { StillTrueHeader, LinkToMonitoring } from "@/components/qa/still-true";
 import { RegistryLink } from "@/components/qa/registry-link";
-import { registryConfigured } from "@/lib/registry";
+import { registryConfigured, fetchPrefills } from "@/lib/registry";
+import { ITEM_MAP } from "@/lib/linkspy/catalog-map";
+import type { MachinePrefill } from "@/components/qa/qa-checklist";
 import { getPageStatus, linkspyConfigured, linkspyAppUrl } from "@/lib/linkspy/client";
 import { buildAnnotations } from "@/lib/linkspy/catalog-map";
 import { QARing } from "@/components/qa/qa-ring";
@@ -78,6 +80,24 @@ export default async function PageDetailPage({
 
   const path = { clientId, projectId, pageId };
   const basePath = `/dashboard/clients/${clientId}/${projectId}`;
+  const registryOn = registryConfigured();
+
+  // Phase 3: machine pre-fills for the closing checklist (server-side fetch,
+  // 15-min cached, staleness over errors). Mapped to checklist items by name via
+  // the shared catalog map. Never blocks the page.
+  let machineByName: Record<string, MachinePrefill> | undefined;
+  let prefillRunAt: string | null = null;
+  if (registryOn && page.registryDeliverableId) {
+    const pf = await fetchPrefills(page.registryDeliverableId);
+    if (pf && !("unavailable" in pf)) {
+      prefillRunAt = pf.battery_run_at;
+      machineByName = {};
+      for (const c of pf.checks) {
+        const itemName = ITEM_MAP[c.check_key];
+        if (itemName) machineByName[itemName] = { verdict: c.verdict, detail: c.detail_plain, checkedAt: pf.battery_run_at };
+      }
+    }
+  }
 
   // "Still True Today" — live verification status from LinkSpy (server-side only;
   // the API key never reaches the client). Best-effort: unreachable → cached/stale
@@ -309,6 +329,9 @@ export default async function PageDetailPage({
             path={path}
             liveByName={annotations?.byItemName}
             incidentHref={incidentHref}
+            machineByName={machineByName}
+            prefillRunAt={prefillRunAt}
+            deliverableId={page.registryDeliverableId}
           />
         </div>
       )}

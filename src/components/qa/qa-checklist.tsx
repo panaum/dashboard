@@ -5,8 +5,8 @@ import { motion } from "motion/react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
 import { CHECK_RESULTS, label, type CheckResult } from "@/lib/constants";
-import { updateCheckItem } from "@/app/dashboard/clients/[clientId]/[projectId]/[pageId]/actions";
-import { LiveLine } from "@/components/qa/still-true";
+import { updateCheckItem, confirmMachineItem, confirmAllMachinePassed } from "@/app/dashboard/clients/[clientId]/[projectId]/[pageId]/actions";
+import { LiveLine, fmtUtc } from "@/components/qa/still-true";
 import type { LiveStatus } from "@/lib/linkspy/catalog-map";
 
 type Item = {
@@ -18,7 +18,15 @@ type Item = {
   valueMobile: string | null;
   hasDualValue: boolean;
   isMeasurement: boolean;
+  confirmedSource?: string | null;
 };
+
+export type MachinePrefill = { verdict: string; detail: string | null; checkedAt: string | null };
+const MV_LABEL: Record<string, string> = { holding: "PASS", failing: "FAIL", couldnt_verify: "couldn't verify" };
+const MV_STYLE: Record<string, string> = { holding: "text-success", failing: "text-error", couldnt_verify: "text-text-muted" };
+function verdictToResult(v: string): CheckResult {
+  return v === "holding" ? "PASSED" : v === "failing" ? "FAILED" : "NA";
+}
 
 type Path = { clientId: string; projectId: string; pageId: string };
 
@@ -72,15 +80,46 @@ export function QAChecklist({
   path,
   liveByName,
   incidentHref,
+  machineByName,
+  prefillRunAt,
+  deliverableId,
 }: {
   items: Item[];
   path: Path;
   liveByName?: Record<string, LiveStatus>;
   incidentHref?: string | null;
+  machineByName?: Record<string, MachinePrefill>;
+  prefillRunAt?: string | null;
+  deliverableId?: string | null;
 }) {
   const [state, setState] = React.useState(items);
   const [, startTransition] = React.useTransition();
   const live = liveByName ?? {};
+  const machine = machineByName ?? {};
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  // Confirm is the ONLY bridge from a machine result into the human row.
+  const confirmItem = (item: Item, m: MachinePrefill) => {
+    setState((prev) => prev.map((it) => (it.id === item.id ? { ...it, result: verdictToResult(m.verdict), confirmedSource: "machine" } : it)));
+    startTransition(() => {
+      confirmMachineItem({ itemId: item.id, verdict: m.verdict, detail: m.detail, checkedAt: m.checkedAt, path });
+    });
+  };
+
+  const machinePassedUnconfirmed = state.filter((i) => machine[i.name]?.verdict === "holding" && !i.confirmedSource);
+  const confirmAllPassed = () => {
+    const batch = machinePassedUnconfirmed.map((i) => ({ itemId: i.id, verdict: machine[i.name].verdict, detail: machine[i.name].detail, checkedAt: machine[i.name].checkedAt }));
+    setState((prev) => prev.map((it) => (machine[it.name]?.verdict === "holding" && !it.confirmedSource ? { ...it, result: "PASSED", confirmedSource: "machine" } : it)));
+    startTransition(() => { confirmAllMachinePassed({ path, items: batch }); });
+  };
+
+  const stale = Boolean(prefillRunAt) && Date.now() - new Date(prefillRunAt as string).getTime() > 3600_000;
+  const refresh = async () => {
+    if (!deliverableId) return;
+    setRefreshing(true);
+    await fetch(`/api/registry/prefills/refresh?deliverable_id=${encodeURIComponent(deliverableId)}`, { method: "POST" }).catch(() => {});
+    setRefreshing(false);
+  };
 
   const setResult = (id: string, result: CheckResult) => {
     setState((prev) =>
@@ -129,6 +168,27 @@ export function QAChecklist({
             transition={{ type: "spring", stiffness: 200, damping: 30 }}
           />
         </div>
+        {(machinePassedUnconfirmed.length > 0 || prefillRunAt) && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+            {machinePassedUnconfirmed.length > 0 && (
+              <button
+                type="button"
+                onClick={confirmAllPassed}
+                className="rounded-full bg-success/10 px-3 py-1 font-semibold text-success hover:bg-success/20"
+              >
+                Confirm all machine-passed ({machinePassedUnconfirmed.length})
+              </button>
+            )}
+            {prefillRunAt && (
+              <span className="text-text-muted">machine checks as of {fmtUtc(prefillRunAt)}</span>
+            )}
+            {stale && deliverableId && (
+              <button type="button" onClick={refresh} disabled={refreshing} className="text-text-secondary underline underline-offset-2 hover:text-text-primary">
+                {refreshing ? "refreshing…" : "refresh checks"}
+              </button>
+            )}
+          </div>
+        )}
       </Card>
 
       {categories.map((cat) => (
@@ -156,6 +216,26 @@ export function QAChecklist({
                         delivered={item.result === "PASSED"}
                         incidentHref={incidentHref}
                       />
+                    )}
+                    {machine[item.name] && (
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                        <span className={MV_STYLE[machine[item.name].verdict]}>
+                          machine-verified: {MV_LABEL[machine[item.name].verdict]}
+                          {machine[item.name].detail ? ` — ${machine[item.name].detail}` : ""}
+                          {machine[item.name].checkedAt ? ` · ${fmtUtc(machine[item.name].checkedAt)}` : ""}
+                        </span>
+                        {item.confirmedSource ? (
+                          <span className="text-text-muted">confirmed ✓</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => confirmItem(item, machine[item.name])}
+                            className="text-text-secondary underline underline-offset-2 hover:text-text-primary"
+                          >
+                            Confirm
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
