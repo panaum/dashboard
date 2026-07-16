@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { pageSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { buildChecklistItems } from "@/lib/qa-template";
 import { STATUSES } from "@/lib/constants";
+import { spineEmitEnabled, emitReadyForQa } from "@/lib/spine-emit";
+import { shouldEmitReady } from "@/lib/spine-contract";
 
 /** Inline status change from a page list (no full edit dialog). */
 export async function setPageStatus(input: {
@@ -17,10 +19,26 @@ export async function setPageStatus(input: {
   if (!(STATUSES as readonly string[]).includes(input.status)) {
     return { error: "Invalid status." };
   }
-  await db.page.update({
+  // Spine (Phase 2B): emit deliverable.ready_for_qa when a REGISTRY-LINKED page
+  // transitions INTO IN_QA — in the same transaction as the status write.
+  // SPINE_EMIT off => plain update, byte-identical to before.
+  const before = await db.page.findUnique({
     where: { id: input.pageId },
-    data: { status: input.status },
+    select: { status: true, url: true, name: true, registryDeliverableId: true, registrySiteId: true },
   });
+  const emit = shouldEmitReady(spineEmitEnabled(), input.status, before?.status, Boolean(before?.registryDeliverableId));
+
+  if (emit && before) {
+    await db.$transaction(async (tx) => {
+      await tx.page.update({ where: { id: input.pageId }, data: { status: input.status } });
+      await emitReadyForQa(tx, {
+        pageId: input.pageId, url: before.url, name: before.name,
+        registryDeliverableId: before.registryDeliverableId, registrySiteId: before.registrySiteId,
+      });
+    });
+  } else {
+    await db.page.update({ where: { id: input.pageId }, data: { status: input.status } });
+  }
   revalidatePath(`/dashboard/clients/${input.clientId}/${input.projectId}`);
   revalidatePath("/dashboard");
   return { ok: true };
@@ -134,7 +152,22 @@ export async function savePage(
   const issueCount = parseIssueCount(formData);
   try {
     if (id) {
-      await db.page.update({ where: { id }, data: parsed.data });
+      const before = await db.page.findUnique({
+        where: { id },
+        select: { status: true, url: true, name: true, registryDeliverableId: true, registrySiteId: true },
+      });
+      const emit = shouldEmitReady(spineEmitEnabled(), parsed.data.status, before?.status, Boolean(before?.registryDeliverableId));
+      if (emit && before) {
+        await db.$transaction(async (tx) => {
+          await tx.page.update({ where: { id }, data: parsed.data });
+          await emitReadyForQa(tx, {
+            pageId: id, url: parsed.data.url ?? before.url, name: parsed.data.name ?? before.name,
+            registryDeliverableId: before.registryDeliverableId, registrySiteId: before.registrySiteId,
+          });
+        });
+      } else {
+        await db.page.update({ where: { id }, data: parsed.data });
+      }
       if (issueCount !== null) await reconcileIssueCount(id, issueCount);
     } else {
       const page = await createPageWithCert(projectId, parsed.data);
