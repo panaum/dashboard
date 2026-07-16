@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
+import { spineEmitEnabled, emitQaCompleted } from "@/lib/spine-emit";
+import { shouldEmitCompleted } from "@/lib/spine-contract";
 import {
   issueSchema,
   parseForm,
@@ -51,13 +53,42 @@ export async function setCertStatus(input: {
 }) {
   const r = certStatusSchema.safeParse(input.status);
   if (!r.success) return { error: "Invalid status." };
-  await db.qACertificate.update({
+  const completedAt = r.data === "IN_PROGRESS" ? null : new Date();
+
+  // Spine (Phase 2B): emit qa.completed when a REGISTRY-LINKED cert transitions
+  // IN_PROGRESS -> PASS/FAIL, in the same transaction. SPINE_EMIT off => plain
+  // update, byte-identical to before.
+  const cert = await db.qACertificate.findUnique({
     where: { id: input.certId },
-    data: {
-      status: r.data,
-      completedAt: r.data === "IN_PROGRESS" ? null : new Date(),
+    select: {
+      status: true, pageId: true,
+      page: { select: { registryDeliverableId: true, registrySiteId: true } },
+      items: { select: { result: true } },
     },
   });
+  const emit = shouldEmitCompleted(spineEmitEnabled(), r.data, cert?.status, Boolean(cert?.page?.registryDeliverableId));
+
+  if (emit && cert) {
+    const summary = {
+      passed: cert.items.filter((i) => i.result === "PASSED").length,
+      failed: cert.items.filter((i) => i.result === "FAILED").length,
+      na: cert.items.filter((i) => i.result === "NA").length,
+    };
+    await db.$transaction(async (tx) => {
+      await tx.qACertificate.update({ where: { id: input.certId }, data: { status: r.data, completedAt } });
+      await emitQaCompleted(tx, {
+        pageId: cert.pageId,
+        registryDeliverableId: cert.page!.registryDeliverableId,
+        registrySiteId: cert.page!.registrySiteId,
+        summary,
+      });
+    });
+  } else {
+    await db.qACertificate.update({
+      where: { id: input.certId },
+      data: { status: r.data, completedAt },
+    });
+  }
   revalidatePath(pagePath(input.path));
   return { ok: true };
 }

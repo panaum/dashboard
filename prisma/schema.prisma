@@ -161,3 +161,21 @@ model ChecklistTemplateItem {
 
   @@index([templateId])
 }
+
+// Spine outbox (Phase 2 Seam 2): events written in the SAME transaction as the
+// status change that produced them, drained to LinkSpy. Additive; emission is
+// gated by SPINE_EMIT (unset = today's behaviour, no rows).
+model SpineOutbox {
+  id                    String    @id @default(cuid())
+  type                  String
+  payload               Json
+  registryDeliverableId String?
+  registrySiteId        String?
+  occurredAt            DateTime  @default(now())
+  deliveredAt           DateTime?
+  attempts              Int       @default(0)
+  lastError             String?
+  createdAt             DateTime  @default(now())
+
+  @@index([deliveredAt])
+}

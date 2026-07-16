@@ -38,6 +38,21 @@ export function sign(rawBody: string, secret: string): string {
   return createHmac("sha256", secret).update(rawBody, "utf8").digest("hex");
 }
 
+// Pure trigger predicates (unit-tested; the status actions call these so the
+// tested logic IS the used logic). Emit only on the exact mapped transition for
+// a registry-linked deliverable.
+export function shouldEmitReady(
+  enabled: boolean, newStatus: string, beforeStatus: string | null | undefined, hasDeliverable: boolean,
+): boolean {
+  return enabled && newStatus === "IN_QA" && beforeStatus !== "IN_QA" && hasDeliverable;
+}
+export function shouldEmitCompleted(
+  enabled: boolean, newCertStatus: string, beforeCertStatus: string | null | undefined, hasDeliverable: boolean,
+): boolean {
+  return enabled && (newCertStatus === "PASS" || newCertStatus === "FAIL") &&
+    beforeCertStatus === "IN_PROGRESS" && hasDeliverable;
+}
+
 export function verify(
   rawBody: string,
   secret: string,
