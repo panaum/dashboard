@@ -74,6 +74,8 @@ export default async function TemplateEditorPage({
           name: i.name,
           hasDualValue: i.hasDualValue,
           isMeasurement: i.isMeasurement,
+          origin: i.origin,
+          originAt: i.originAt ? i.originAt.toISOString().slice(0, 10) : null,
         }))}
       />
     </>

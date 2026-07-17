@@ -167,8 +167,32 @@ model ChecklistTemplateItem {
   hasDualValue  Boolean           @default(false)
   isMeasurement Boolean           @default(false)
   order         Int               @default(0)
+  // Flywheel (Phase 5): provenance for items born from a production incident.
+  // Nullable; unset = a normal template item. Set only by the promote action.
+  origin        String? //   'flywheel' when added from a production incident
+  originAt      DateTime?
 
   @@index([templateId])
+}
+
+// Flywheel (Phase 5): production incidents that had no delivery check arrive here
+// as candidates for human review. Own table; the human PROMOTE action is the ONLY
+// writer of ChecklistTemplateItem (T4). Additive.
+model ChecklistCandidate {
+  id                  String    @id @default(cuid())
+  linkspyCandidateRef String    @unique //   idempotency key for the inbox
+  incidentClass       String
+  proposedWording     String
+  evidence            Json
+  machineVerifiable   Boolean   @default(false)
+  status              String    @default("draft") // draft | promoted | dismissed
+  rationale           String? //   mandatory at promote-time (server-enforced)
+  reason              String? //   optional dismiss reason
+  decidedBy           String?
+  decidedAt           DateTime?
+  createdAt           DateTime  @default(now())
+
+  @@index([status])
 }
 
 // Spine outbox (Phase 2 Seam 2): events written in the SAME transaction as the
