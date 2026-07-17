@@ -9,7 +9,7 @@ const SECRET = "fixture-secret";
 const BODY = '{"id":"e1","type":"heartbeat","payload":{}}';
 
 test("checksum is the agreed contract version", () => {
-  assert.equal(CONTRACT_CHECKSUM, "175499b1741e8eca5f744350b87327e4d116d77a45fc137a5facb0dab7c57c9d");
+  assert.equal(CONTRACT_CHECKSUM, "36924adb1f215608a293759e8bbb78f88b37d17a4ac408ec5ef8b11d5fbab66b");
 });
 
 // ── HMAC ──

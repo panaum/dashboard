@@ -20,6 +20,8 @@ type Item = {
   name: string;
   hasDualValue: boolean;
   isMeasurement: boolean;
+  origin?: string | null;
+  originAt?: string | null;
 };
 
 export function TemplateEditor({
@@ -131,7 +133,14 @@ export function TemplateEditor({
                   key={it.id}
                   className="flex items-center gap-3 border-t border-border-soft px-4 py-2.5 first:border-t-0"
                 >
-                  <span className="flex-1 text-sm text-text-primary">{it.name}</span>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm text-text-primary">{it.name}</span>
+                    {it.origin === "flywheel" && (
+                      <div className="text-xs text-text-muted">
+                        added from production incident{it.originAt ? ` · ${it.originAt}` : ""}
+                      </div>
+                    )}
+                  </div>
                   {it.isMeasurement && (
                     <Badge tone="info" className="gap-1">
                       <Ruler className="size-3" /> Measurement

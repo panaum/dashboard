@@ -6,8 +6,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+// v2: added checklist.candidate_created + checklist.item_promoted (Phase 5 flywheel).
 export const CONTRACT_CHECKSUM =
-  "175499b1741e8eca5f744350b87327e4d116d77a45fc137a5facb0dab7c57c9d";
+  "36924adb1f215608a293759e8bbb78f88b37d17a4ac408ec5ef8b11d5fbab66b";
 
 export const SPINE_SCHEMA_VERSION = 1 as const;
 export const SPINE_SIG_HEADER = "x-spine-signature";
@@ -18,6 +19,8 @@ export const EVENT_TYPES = {
   READY_FOR_QA: "deliverable.ready_for_qa",
   QA_COMPLETED: "qa.completed",
   HEARTBEAT: "heartbeat",
+  CANDIDATE_CREATED: "checklist.candidate_created", // LinkSpy → Dashboard (flywheel)
+  ITEM_PROMOTED: "checklist.item_promoted", //        Dashboard → LinkSpy (flywheel)
 } as const;
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];
 

@@ -41,3 +41,20 @@ export async function emitQaCompleted(
     },
   });
 }
+
+// Flywheel (Phase 5): a human PROMOTE emits checklist.item_promoted so LinkSpy
+// absorbs the check into its catalog. Gated by SPINE_EMIT like the others.
+export async function emitItemPromoted(
+  tx: Tx,
+  p: { candidateRef: string; checkKey: string | null; wording: string; machineVerifiable: boolean; category: string },
+): Promise<void> {
+  await tx.spineOutbox.create({
+    data: {
+      type: EVENT_TYPES.ITEM_PROMOTED,
+      payload: {
+        candidate_ref: p.candidateRef, check_key: p.checkKey, wording: p.wording,
+        machine_verifiable: p.machineVerifiable, category: p.category,
+      },
+    },
+  });
+}
