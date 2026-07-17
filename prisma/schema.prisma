@@ -132,6 +132,15 @@ model QACheckItem {
   isMeasurement Boolean       @default(false) // free-text value (load time, page size)
   notes         String?
   order         Int           @default(0)
+  // Phase 3 (machine pre-fill + provenance). machine* are set only by the
+  // human-confirm action (NEVER by background code — T4). confirmedSource records
+  // whether a value was a human call or a confirmed machine result.
+  machineVerdict  String? //   holding | failing | couldnt_verify (from qa_prefills)
+  machineDetail   String?
+  machineCheckedAt DateTime?
+  confirmedSource String? //   'machine' | 'human'
+  confirmedBy     String?
+  confirmedAt     DateTime?
 
   @@index([certificateId])
 }

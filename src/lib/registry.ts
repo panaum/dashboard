@@ -47,6 +47,27 @@ export async function clientSites(clientId: string): Promise<{ sites: RegistrySi
   return { sites: r.sites ?? [] };
 }
 
+export type Prefill = { check_key: string; verdict: string; detail_plain: string | null; evidence_ref: string | null };
+
+// Latest machine pre-fills for a deliverable (Phase 3). 15-min cached; staleness
+// over errors (unreachable/unset → unavailable, never a throw).
+export async function fetchPrefills(
+  deliverableId: string,
+): Promise<{ battery_run_at: string | null; checks: Prefill[] } | Unavailable> {
+  if (!registryConfigured()) return { unavailable: true };
+  try {
+    const res = await fetch(
+      `${base()}/api/qa-bridge/prefills?deliverable_id=${encodeURIComponent(deliverableId)}`,
+      { headers: authHeaders(), signal: AbortSignal.timeout(TIMEOUT_MS), next: { revalidate: 900 } },
+    );
+    if (!res.ok) return { unavailable: true };
+    const b = await res.json();
+    return { battery_run_at: b.battery_run_at ?? null, checks: b.checks ?? [] };
+  } catch {
+    return { unavailable: true };
+  }
+}
+
 export type CreateResult =
   | { deliverable: { id: string } }
   | { unavailable: true }

@@ -225,3 +225,41 @@ export async function deleteIssue(formData: FormData): Promise<void> {
   if (id) await db.issue.delete({ where: { id } });
   revalidatePath(pagePath({ clientId, projectId, pageId }));
 }
+
+// --- Phase 3: machine pre-fill confirmation ---------------------------------
+// The human Confirm click is the ONLY bridge from a machine result into the
+// human checklist row (T4). It writes the result AND stamps provenance. No
+// background code path ever writes these fields.
+type MachinePrefill = { itemId: string; verdict: string; detail?: string | null; checkedAt?: string | null };
+
+function verdictToResult(v: string): "PASSED" | "FAILED" | "NA" {
+  return v === "holding" ? "PASSED" : v === "failing" ? "FAILED" : "NA";
+}
+
+async function confirmOne(p: MachinePrefill) {
+  await db.qACheckItem.update({
+    where: { id: p.itemId },
+    data: {
+      result: verdictToResult(p.verdict),
+      machineVerdict: p.verdict,
+      machineDetail: p.detail ?? null,
+      machineCheckedAt: p.checkedAt ? new Date(p.checkedAt) : null,
+      confirmedSource: "machine",
+      confirmedBy: "team", // shared-login app: no per-user identity
+      confirmedAt: new Date(),
+    },
+  });
+}
+
+export async function confirmMachineItem(input: MachinePrefill & { path: PathParts }) {
+  await confirmOne(input);
+  revalidatePath(pagePath(input.path));
+  return { ok: true };
+}
+
+export async function confirmAllMachinePassed(input: { path: PathParts; items: MachinePrefill[] }) {
+  const passed = input.items.filter((i) => i.verdict === "holding");
+  for (const it of passed) await confirmOne(it);
+  revalidatePath(pagePath(input.path));
+  return { ok: true, confirmed: passed.length };
+}
