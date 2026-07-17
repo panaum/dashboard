@@ -1,15 +1,14 @@
 import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { UserMenu } from "@/components/UserMenu";
 import { DoorCard } from "@/components/DoorCard";
 import { Clipboard, Radar, Kanban } from "@/components/icons";
 
 export default async function Home() {
+  // Auth wall temporarily disabled — the doors render with or without a session.
+  // If someone IS signed in, their menu still shows; otherwise it's simply hidden.
   const session = await getServerSession(authOptions);
-  if (!session?.user) redirect("/auth/signin"); // middleware also guards this
-
-  const user = session.user;
+  const user = session?.user;
 
   return (
     <main className="door-grain min-h-screen">
@@ -23,7 +22,7 @@ export default async function Home() {
             Apexure <span className="text-signal">Platform</span>
           </span>
         </div>
-        <UserMenu name={user.name ?? ""} email={user.email ?? ""} image={user.image ?? null} />
+        {user && <UserMenu name={user.name ?? ""} email={user.email ?? ""} image={user.image ?? null} />}
       </header>
 
       <section className="mx-auto max-w-5xl px-6 pb-24 pt-8 sm:pt-16">
