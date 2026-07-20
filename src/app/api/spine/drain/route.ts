@@ -4,14 +4,16 @@ import { sign, SPINE_SIG_HEADER, SPINE_SENT_AT_HEADER, SPINE_SCHEMA_VERSION, EVE
 
 // Drain: POST undelivered outbox rows to LinkSpy's inbox with HMAC.
 //
-// Cadence: a DAILY Vercel cron (03:00 UTC) — Vercel Hobby only allows daily
-// crons. For immediate delivery DURING TESTING, invoke this route manually:
+// Cadence: an EXTERNAL cron (cron-job.org) calls this every 5 minutes. The
+// former daily Vercel cron (03:00 UTC) was removed from vercel.json — Vercel
+// Hobby only allows daily crons, which was too slow to be useful.
+// For ad-hoc/immediate delivery, invoke this route manually:
 //   curl -X POST -H "Authorization: Bearer <CRON_SECRET>" \
 //        https://<app>/api/spine/drain
-// Manual drains are the intended path for ad-hoc/immediate delivery; the route
-// is idempotent and has NO rate limit, so it is safe to call repeatedly.
+// The route is idempotent and has NO rate limit, so it is safe to call
+// repeatedly.
 //
-// Protected by CRON_SECRET (Vercel sends `Authorization: Bearer <CRON_SECRET>`).
+// Protected by CRON_SECRET (the caller sends `Authorization: Bearer <CRON_SECRET>`).
 // Staleness over errors: a non-2xx just increments attempts + records lastError;
 // the row retries on the next drain (no dead state in v1).
 const BATCH = 20;
