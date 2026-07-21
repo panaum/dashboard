@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PageHeader } from "@/components/shared/page-header";
 import { OpenSite } from "@/components/shared/open-site";
-import { Input, Select } from "@/components/ui/field";
+import { Select } from "@/components/ui/field";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { buildPageWhere, hasAnyFilter } from "@/lib/page-search";
 import { cn } from "@/lib/utils";
@@ -25,7 +25,6 @@ export default async function SearchPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    q?: string;
     platform?: string;
     status?: string;
     developerId?: string;
@@ -34,7 +33,6 @@ export default async function SearchPage({
   }>;
 }) {
   const sp = await searchParams;
-  const q = sp.q?.trim() ?? "";
 
   const [members, monthRows] = await Promise.all([
     db.teamMember.findMany({
@@ -80,14 +78,6 @@ export default async function SearchPage({
       <PageHeader title="Search" subtitle="Find any client, project or page." />
 
       <form method="get" className="mb-6 flex flex-wrap items-end gap-2">
-        <div className="min-w-56 flex-1">
-          <Input
-            name="q"
-            defaultValue={q}
-            placeholder="Search by client, project or page name…"
-            autoFocus
-          />
-        </div>
         <Select name="platform" defaultValue={sp.platform ?? ""} className={`${fieldCls} w-auto`}>
           <option value="">Any platform</option>
           {PLATFORMS.map((p) => (
@@ -196,7 +186,7 @@ export default async function SearchPage({
       ) : (
         <Card className="p-10 text-center">
           <p className="text-sm text-text-secondary">
-            Enter a search term or pick a filter to begin.
+            Pick a filter to begin.
           </p>
           <p className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-text-muted">
             Tip: press

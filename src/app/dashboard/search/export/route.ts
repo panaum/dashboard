@@ -12,7 +12,6 @@ export async function GET(req: NextRequest) {
 
   const p = req.nextUrl.searchParams;
   const sp: PageSearchParams = {
-    q: p.get("q") ?? undefined,
     platform: p.get("platform") ?? undefined,
     status: p.get("status") ?? undefined,
     developerId: p.get("developerId") ?? undefined,
