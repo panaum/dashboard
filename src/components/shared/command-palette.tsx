@@ -78,16 +78,11 @@ export function CommandPalette({ items }: { items: CommandItem[] }) {
   );
 
   const results = useMemo<Entry[]>(() => {
-    const raw = query.trim();
-    const q = raw.toLowerCase();
+    const q = query.trim().toLowerCase();
     if (!q) return ACTIONS;
-    const searchEverywhere: Entry = {
-      key: "search-all",
-      label: `Search everywhere for “${raw}”`,
-      href: `/dashboard/search?q=${encodeURIComponent(raw)}`,
-      tag: "Search",
-      icon: Search,
-    };
+    // Free-text search was removed from the Advanced search page, so there is no
+    // "search everywhere" escape hatch — the matching clients/projects/pages
+    // below ARE the search.
     const actionHits = ACTIONS.filter((a) => a.label.toLowerCase().includes(q));
     const itemHits = entries
       .map((e) => ({
@@ -98,7 +93,7 @@ export function CommandPalette({ items }: { items: CommandItem[] }) {
       .sort((a, b) => b.s - a.s || a.e.label.length - b.e.label.length)
       .slice(0, 40)
       .map((x) => x.e);
-    return [searchEverywhere, ...actionHits, ...itemHits];
+    return [...actionHits, ...itemHits];
   }, [query, entries]);
 
   useEffect(() => setActive(0), [query]);
