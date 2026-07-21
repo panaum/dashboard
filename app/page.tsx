@@ -131,17 +131,17 @@ export default function Home() {
         .sun {
           position: absolute;
           left: 50%;
-          bottom: -8%;
-          width: 900px;
-          height: 900px;
+          bottom: -14%;
+          width: 160%;
+          height: 620px;
           transform: translateX(-50%);
           background: radial-gradient(
-            circle at center,
-            rgba(255, 236, 205, 0.85) 0%,
-            rgba(255, 224, 196, 0.4) 32%,
-            rgba(255, 224, 196, 0) 62%
+            ellipse 60% 100% at center,
+            rgba(255, 236, 205, 0.7) 0%,
+            rgba(255, 226, 199, 0.34) 40%,
+            rgba(255, 224, 196, 0) 72%
           );
-          filter: blur(30px);
+          filter: blur(38px);
         }
 
         .cloud {
@@ -201,31 +201,32 @@ export default function Home() {
           left: 0;
           right: 0;
           bottom: 0;
-          height: 24%;
+          height: 22%;
           background: repeating-linear-gradient(
             90deg,
-            rgba(122, 110, 148, 0.55) 0px,
-            rgba(122, 110, 148, 0.55) 26px,
-            rgba(138, 126, 162, 0.42) 26px,
-            rgba(138, 126, 162, 0.42) 34px,
-            rgba(110, 100, 138, 0.6) 34px,
-            rgba(110, 100, 138, 0.6) 58px,
-            rgba(130, 120, 156, 0.38) 58px,
-            rgba(130, 120, 156, 0.38) 72px
+            rgba(168, 150, 168, 0.5) 0px,
+            rgba(168, 150, 168, 0.5) 26px,
+            rgba(182, 164, 178, 0.4) 26px,
+            rgba(182, 164, 178, 0.4) 34px,
+            rgba(158, 142, 162, 0.54) 34px,
+            rgba(158, 142, 162, 0.54) 58px,
+            rgba(176, 158, 174, 0.36) 58px,
+            rgba(176, 158, 174, 0.36) 72px
           );
+          filter: blur(1.5px);
           -webkit-mask-image: linear-gradient(
             to top,
-            rgba(0, 0, 0, 0.9) 0%,
-            rgba(0, 0, 0, 0.55) 45%,
+            rgba(0, 0, 0, 0.85) 0%,
+            rgba(0, 0, 0, 0.4) 55%,
             rgba(0, 0, 0, 0) 100%
           );
           mask-image: linear-gradient(
             to top,
-            rgba(0, 0, 0, 0.9) 0%,
-            rgba(0, 0, 0, 0.55) 45%,
+            rgba(0, 0, 0, 0.85) 0%,
+            rgba(0, 0, 0, 0.4) 55%,
             rgba(0, 0, 0, 0) 100%
           );
-          opacity: 0.5;
+          opacity: 0.32;
         }
 
         /* Warm lantern glows drifting upward and fading. */
@@ -292,8 +293,8 @@ export default function Home() {
           position: relative;
           z-index: 1;
           width: 100%;
-          max-width: 860px;
-          padding: 32px 34px 34px;
+          max-width: 1200px;
+          padding: 88px 72px 90px;
           border-radius: 32px;
           border: 1px solid rgba(255, 255, 255, 0.72);
           background: linear-gradient(
@@ -307,6 +308,16 @@ export default function Home() {
             inset 0 1.5px 0 rgba(255, 255, 255, 0.9),
             inset 0 -1px 0 rgba(255, 255, 255, 0.4);
           overflow: hidden;
+          animation: panel-float 9s ease-in-out infinite alternate;
+        }
+        /* The panel breathes on the air — a few pixels, very slow. */
+        @keyframes panel-float {
+          from {
+            transform: translateY(0);
+          }
+          to {
+            transform: translateY(-7px);
+          }
         }
         /* Diagonal light-sheen streak, top-left. */
         .panel::before {
@@ -321,8 +332,20 @@ export default function Home() {
             rgba(255, 255, 255, 0.42) 0%,
             rgba(255, 255, 255, 0) 55%
           );
-          transform: rotate(8deg);
+          transform: translateX(0) rotate(8deg);
           pointer-events: none;
+          animation: sheen-drift 12s ease-in-out infinite alternate;
+        }
+        /* The light on the glass shifts almost imperceptibly, like a slow sun. */
+        @keyframes sheen-drift {
+          from {
+            transform: translateX(-8px) rotate(8deg);
+            opacity: 0.75;
+          }
+          to {
+            transform: translateX(30px) rotate(8deg);
+            opacity: 1;
+          }
         }
 
         .panel-head {
@@ -358,11 +381,35 @@ export default function Home() {
           white-space: nowrap;
         }
         .status-dot {
+          position: relative;
           width: 8px;
           height: 8px;
           border-radius: 50%;
           background: #1fbe88;
           box-shadow: 0 0 0 3px rgba(31, 190, 136, 0.22);
+        }
+        /* A calm "live" pulse — a single ring breathing outward, slow. */
+        .status-dot::after {
+          content: "";
+          position: absolute;
+          inset: -2px;
+          border-radius: 50%;
+          border: 1px solid rgba(31, 190, 136, 0.5);
+          animation: live-pulse 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+          pointer-events: none;
+        }
+        @keyframes live-pulse {
+          0% {
+            transform: scale(0.85);
+            opacity: 0.65;
+          }
+          70% {
+            transform: scale(2.1);
+            opacity: 0;
+          }
+          100% {
+            opacity: 0;
+          }
         }
 
         /* ── Hero ──────────────────────────────────────────────── */
@@ -515,6 +562,16 @@ export default function Home() {
           .tile,
           .row :global(.row-arrow) {
             transition: none;
+          }
+          .panel {
+            animation: none;
+          }
+          .panel::before {
+            animation: none;
+          }
+          .status-dot::after {
+            animation: none;
+            opacity: 0;
           }
         }
       `}</style>
