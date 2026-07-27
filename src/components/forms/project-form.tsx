@@ -3,8 +3,9 @@
 import { useActionState, useState } from "react";
 import { Field, Input, Select } from "@/components/ui/field";
 import { FormFooter, useOnOk } from "@/components/forms/form-parts";
+import { PlatformField } from "@/components/forms/platform-field";
 import { saveProject } from "@/app/dashboard/clients/[clientId]/actions";
-import { PROJECT_TYPES, PLATFORMS, STATUSES, label } from "@/lib/constants";
+import { PROJECT_TYPES, STATUSES, label } from "@/lib/constants";
 
 type Member = { id: string; name: string; role: string };
 
@@ -30,11 +31,13 @@ export function ProjectForm({
   close,
   clientId,
   members = [],
+  platforms,
   initial,
 }: {
   close: () => void;
   clientId: string;
   members?: Member[];
+  platforms: string[];
   initial?: ProjectInitial;
 }) {
   const [state, action, pending] = useActionState(saveProject, {});
@@ -75,19 +78,10 @@ export function ProjectForm({
             ))}
           </Select>
         </Field>
-        <Field label="Platform" htmlFor="platform">
-          <Select
-            id="platform"
-            name="platform"
-            defaultValue={initial?.platform ?? "WORDPRESS"}
-          >
-            {PLATFORMS.map((p) => (
-              <option key={p} value={p}>
-                {label(p)}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <PlatformField
+          platforms={platforms}
+          defaultValue={initial?.platform ?? "WORDPRESS"}
+        />
       </div>
 
       <Field label="Status" htmlFor="status">

@@ -16,6 +16,7 @@ import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { PortalShare } from "@/components/portal/portal-share";
 import { deleteClient } from "../actions";
 import { deleteProject } from "./actions";
+import { listPlatforms } from "@/lib/platforms";
 import { label, type Status } from "@/lib/constants";
 
 export async function generateMetadata({
@@ -37,7 +38,7 @@ export default async function ClientDetailPage({
   params: Promise<{ clientId: string }>;
 }) {
   const { clientId } = await params;
-  const [client, members] = await Promise.all([
+  const [client, members, platforms] = await Promise.all([
     db.client.findUnique({
       where: { id: clientId },
       include: {
@@ -61,6 +62,7 @@ export default async function ClientDetailPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true, role: true },
     }),
+    listPlatforms(),
   ]);
   if (!client) notFound();
 
@@ -93,7 +95,7 @@ export default async function ClientDetailPage({
               }
             />
             <span className="ml-2">
-              <AddProjectButton clientId={client.id} members={members} />
+              <AddProjectButton clientId={client.id} members={members} platforms={platforms} />
             </span>
           </div>
         }
@@ -106,7 +108,7 @@ export default async function ClientDetailPage({
           icon={FolderKanban}
           title="No projects yet"
           description={`Add the first website or landing page for ${client.name}.`}
-          action={<AddProjectButton clientId={client.id} members={members} />}
+          action={<AddProjectButton clientId={client.id} members={members} platforms={platforms} />}
         />
       ) : (
         <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
@@ -138,6 +140,7 @@ export default async function ClientDetailPage({
                 <EditProjectButton
                   clientId={client.id}
                   members={members}
+                  platforms={platforms}
                   project={{
                     id: p.id,
                     name: p.name,

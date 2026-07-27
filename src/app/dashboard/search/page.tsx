@@ -10,9 +10,9 @@ import { OpenSite } from "@/components/shared/open-site";
 import { Select } from "@/components/ui/field";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { buildPageWhere, hasAnyFilter } from "@/lib/page-search";
+import { listPlatforms } from "@/lib/platforms";
 import { cn } from "@/lib/utils";
 import {
-  PLATFORMS,
   STATUSES,
   label,
   monthLabel,
@@ -34,7 +34,7 @@ export default async function SearchPage({
 }) {
   const sp = await searchParams;
 
-  const [members, monthRows] = await Promise.all([
+  const [members, monthRows, platforms] = await Promise.all([
     db.teamMember.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true, role: true },
@@ -45,6 +45,7 @@ export default async function SearchPage({
       select: { deliveryMonth: true },
       orderBy: { deliveryMonth: "desc" },
     }),
+    listPlatforms(),
   ]);
   const months = monthRows.map((m) => m.deliveryMonth!).filter(Boolean);
 
@@ -80,7 +81,7 @@ export default async function SearchPage({
       <form method="get" className="mb-6 flex flex-wrap items-end gap-2">
         <Select name="platform" defaultValue={sp.platform ?? ""} className={`${fieldCls} w-auto`}>
           <option value="">Any platform</option>
-          {PLATFORMS.map((p) => (
+          {platforms.map((p) => (
             <option key={p} value={p}>{label(p)}</option>
           ))}
         </Select>

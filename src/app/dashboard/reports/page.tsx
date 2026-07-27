@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Bar } from "@/components/reports/bar";
 import { MonthStrip } from "@/components/reports/month-strip";
 import { AddProjectForMonth } from "@/components/reports/add-project";
+import { listPlatforms } from "@/lib/platforms";
 import { EditPageButton } from "@/components/forms/dialogs";
 import { AnimatedNumber } from "@/components/shared/animated-number";
 import { cn } from "@/lib/utils";
@@ -88,8 +89,8 @@ export default async function ReportsPage({
     .map((r) => r.deliveryMonth!)
     .filter(Boolean);
 
-  // Clients + team for the "New deliverable" quick-add (adds into the viewed month).
-  const [clients, team] = await Promise.all([
+  // Clients + team + platforms for the "New deliverable" quick-add (adds into the viewed month).
+  const [clients, team, platformOptions] = await Promise.all([
     db.client.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
@@ -99,6 +100,7 @@ export default async function ReportsPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true, role: true },
     }),
+    listPlatforms(),
   ]);
 
   // Accept any valid YYYY-MM (lets you open/plan a month with no pages yet),
@@ -168,6 +170,7 @@ export default async function ReportsPage({
             <AddProjectForMonth
               clients={clients}
               members={team}
+              platforms={platformOptions}
               month={selected}
             />
           </div>

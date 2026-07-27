@@ -6,8 +6,9 @@ import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { FormFooter, useOnOk } from "@/components/forms/form-parts";
+import { PlatformField } from "@/components/forms/platform-field";
 import { saveProject } from "@/app/dashboard/clients/[clientId]/actions";
-import { PLATFORMS, STATUSES, label } from "@/lib/constants";
+import { STATUSES, label } from "@/lib/constants";
 
 type Client = { id: string; name: string };
 type Member = { id: string; name: string; role: string };
@@ -33,11 +34,13 @@ function MonthProjectForm({
   close,
   clients,
   members,
+  platforms,
   month,
 }: {
   close: () => void;
   clients: Client[];
   members: Member[];
+  platforms: string[];
   month: string;
 }) {
   const [state, action, pending] = useActionState(saveProject, {});
@@ -80,15 +83,7 @@ function MonthProjectForm({
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Platform" htmlFor="platform">
-          <Select id="platform" name="platform" defaultValue="WORDPRESS">
-            {PLATFORMS.map((p) => (
-              <option key={p} value={p}>
-                {label(p)}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <PlatformField platforms={platforms} />
         <Field label="Status" htmlFor="status">
           <Select id="status" name="status" defaultValue="IN_PROGRESS">
             {STATUSES.map((s) => (
@@ -136,10 +131,12 @@ function MonthProjectForm({
 export function AddProjectForMonth({
   clients,
   members,
+  platforms,
   month,
 }: {
   clients: Client[];
   members: Member[];
+  platforms: string[];
   month: string;
 }) {
   return (
@@ -156,6 +153,7 @@ export function AddProjectForMonth({
           close={close}
           clients={clients}
           members={members}
+          platforms={platforms}
           month={month}
         />
       )}

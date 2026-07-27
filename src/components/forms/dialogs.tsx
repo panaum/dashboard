@@ -84,9 +84,11 @@ export function EditClientButton({
 export function AddProjectButton({
   clientId,
   members = [],
+  platforms,
 }: {
   clientId: string;
   members?: Member[];
+  platforms: string[];
 }) {
   return (
     <Dialog
@@ -98,7 +100,12 @@ export function AddProjectButton({
       }
     >
       {(close) => (
-        <ProjectForm close={close} clientId={clientId} members={members} />
+        <ProjectForm
+          close={close}
+          clientId={clientId}
+          members={members}
+          platforms={platforms}
+        />
       )}
     </Dialog>
   );
@@ -108,9 +115,11 @@ export function EditProjectButton({
   clientId,
   project,
   members = [],
+  platforms,
 }: {
   clientId: string;
   members?: Member[];
+  platforms: string[];
   project: {
     id: string;
     name: string;
@@ -137,6 +146,7 @@ export function EditProjectButton({
           close={close}
           clientId={clientId}
           members={members}
+          platforms={platforms}
           initial={project}
         />
       )}

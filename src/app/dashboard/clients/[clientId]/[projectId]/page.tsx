@@ -19,6 +19,7 @@ import {
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { deleteProject } from "../actions";
 import { deletePage } from "./actions";
+import { listPlatforms } from "@/lib/platforms";
 import { label, type Status } from "@/lib/constants";
 
 export async function generateMetadata({
@@ -40,7 +41,7 @@ export default async function ProjectDetailPage({
   params: Promise<{ clientId: string; projectId: string }>;
 }) {
   const { clientId, projectId } = await params;
-  const [project, members] = await Promise.all([
+  const [project, members, platforms] = await Promise.all([
     db.project.findUnique({
       where: { id: projectId },
       include: {
@@ -63,6 +64,7 @@ export default async function ProjectDetailPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true, role: true },
     }),
+    listPlatforms(),
   ]);
   if (!project || project.clientId !== clientId) notFound();
 
@@ -83,6 +85,7 @@ export default async function ProjectDetailPage({
             <EditProjectButton
               clientId={clientId}
               members={members}
+              platforms={platforms}
               project={{
                 id: project.id,
                 name: project.name,

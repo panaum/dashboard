@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   PROJECT_TYPES,
-  PLATFORMS,
   STATUSES,
   SEVERITIES,
   ISSUE_STATUSES,
@@ -26,7 +25,9 @@ export const clientSchema = z.object({
 export const projectSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(160),
   type: z.enum(PROJECT_TYPES),
-  platform: z.enum(PLATFORMS),
+  // Platform is an open list: the built-in ones plus any custom platform typed
+  // in a form (stored as a plain string, no enum). Kept trimmed + capped.
+  platform: z.string().trim().min(1, "Platform is required").max(60),
   url: optionalText(500),
   status: z.enum(STATUSES),
 });
