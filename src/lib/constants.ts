@@ -20,6 +20,9 @@ export const PLATFORMS = [
   "LEARNWORLDS",
   "ASTRO",
   "FRAMER",
+  "VERCEL",
+  "RAILWAY",
+  "RENDER",
   "OTHER",
 ] as const;
 export type Platform = (typeof PLATFORMS)[number];
@@ -82,6 +85,9 @@ export const LABELS: Record<string, string> = {
   LEARNWORLDS: "LearnWorlds",
   ASTRO: "Astro",
   FRAMER: "Framer",
+  VERCEL: "Vercel",
+  RAILWAY: "Railway",
+  RENDER: "Render",
   OTHER: "Other",
 };
 
