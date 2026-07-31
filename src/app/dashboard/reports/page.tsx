@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, ExternalLink, Award } from "lucide-react";
+import { Download, ExternalLink, Award, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
@@ -11,6 +11,8 @@ import { MonthStrip } from "@/components/reports/month-strip";
 import { AddProjectForMonth } from "@/components/reports/add-project";
 import { listPlatforms } from "@/lib/platforms";
 import { EditPageButton } from "@/components/forms/dialogs";
+import { ConfirmDelete } from "@/components/forms/confirm-delete";
+import { deletePage } from "@/app/dashboard/clients/[clientId]/[projectId]/actions";
 import { AnimatedNumber } from "@/components/shared/animated-number";
 import { cn } from "@/lib/utils";
 import {
@@ -356,6 +358,25 @@ export default async function ReportsPage({
                               deliveryMonth: p.deliveryMonth,
                               issueCount: p.issues.length,
                             }}
+                          />
+                          <ConfirmDelete
+                            action={deletePage}
+                            fields={{
+                              id: p.id,
+                              projectId: p.project.id,
+                              clientId: p.project.client.id,
+                            }}
+                            title="Delete deliverable"
+                            description={`Delete ${p.name} and its QA records? This cannot be undone.`}
+                            trigger={
+                              <button
+                                className="rounded-md p-1.5 text-text-secondary transition-colors hover:bg-error/10 hover:text-error"
+                                aria-label="Delete deliverable"
+                                title="Delete deliverable"
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            }
                           />
                         </div>
                       </td>

@@ -217,5 +217,7 @@ export async function deletePage(formData: FormData): Promise<void> {
   const redirectTo = String(formData.get("redirectTo") ?? "");
   if (id) await db.page.delete({ where: { id } });
   revalidatePath(`/dashboard/clients/${clientId}/${projectId}`);
+  revalidatePath("/dashboard/reports");
+  revalidatePath("/dashboard");
   if (redirectTo) redirect(redirectTo);
 }
