@@ -50,7 +50,7 @@ export default function Home() {
 
         <div className="hero">
           <h1 className="hero-title rise" style={{ animationDelay: "110ms" }}>
-            The proof lives here.
+            The proof lives here
           </h1>
           <p className="hero-sub rise" style={{ animationDelay: "170ms" }}>
             Every check logged, every fix verified.
