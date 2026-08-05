@@ -162,6 +162,70 @@ test("the strip renders null for the hidden view (no empty wrapper in the DOM)",
   assert.match(component, /if \(!view\.render\) return null;/);
 });
 
+// ── flag-off is byte-identical, proven by actually rendering ────────────────
+test("flag off emits ZERO bytes of markup", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { ProductionPresence } = await import("@/components/qa/production-presence");
+
+  const off = decidePresence({ ...ON, enabled: false, payload: payload([signal()]) });
+  const html = renderToStaticMarkup(
+    ProductionPresence({ view: off, hrefByKey: {} }) as React.ReactElement,
+  );
+  assert.equal(html, "", "flag off must contribute nothing to the DOM");
+});
+
+test("flag on with signals emits markup — so the empty case is a real result", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { ProductionPresence } = await import("@/components/qa/production-presence");
+
+  const on = decidePresence({ ...ON, payload: payload([signal()]) });
+  const html = renderToStaticMarkup(
+    ProductionPresence({ view: on, hrefByKey: { ssl: "https://linkspy.example/handoff?token=t" } }) as React.ReactElement,
+  );
+  assert.match(html, /Production presence/);
+  assert.match(html, /SSL certificate expires in 3 days/);
+  assert.match(html, /monitoring holding/);
+  assert.match(html, /https:\/\/linkspy\.example\/handoff\?token=t/);
+  assert.ok(html.length > 0);
+});
+
+test("every rendered state: hidden, 1 signal, 3 signals, stale, unavailable", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { ProductionPresence } = await import("@/components/qa/production-presence");
+  const render = (view: ReturnType<typeof decidePresence>, hrefs: Record<string, string> = {}) =>
+    renderToStaticMarkup(ProductionPresence({ view, hrefByKey: hrefs }) as React.ReactElement);
+
+  // hidden — healthy site
+  assert.equal(render(decidePresence({ ...ON, payload: payload([]) })), "");
+
+  // three signals — three lines, purple band, no "all good" wording
+  const three = render(
+    decidePresence({
+      ...ON,
+      payload: payload([
+        signal({ key: "incident", text: "1 open incident", qualifier: "disaster sentinel" }),
+        signal({ key: "index", text: "Search visibility at risk" }),
+        signal({ key: "domain", severity: "warn", text: "Domain registration expires in 9 days" }),
+      ]),
+    }),
+  );
+  assert.equal((three.match(/lucide-triangle-alert/g) ?? []).length, 3, "one icon per signal");
+  assert.match(three, /brand-purple/, "the strip reads as the federation's purple");
+  assert.doesNotMatch(three, /all good|all clear|healthy/i);
+
+  // stale — labelled "last seen", data still shown
+  const stale = render(
+    decidePresence({ ...ON, payload: payload([signal()]), unreachable: true, stale: true }),
+  );
+  assert.match(stale, /last seen/);
+  assert.match(stale, /SSL certificate expires in 3 days/, "stale data is shown, not withheld");
+
+  // unavailable — one muted line, no alarm
+  const unavailable = render(decidePresence({ ...ON, payload: null, unreachable: true }));
+  assert.match(unavailable, /Production status unavailable/);
+  assert.doesNotMatch(unavailable, /text-error/, "not knowing is not an error state");
+});
+
 // ── the presence fetch must never block or throw ────────────────────────────
 test("the fetch is timeout-bounded, cached 60s, and swallows every error", () => {
   const lib = readFileSync("src/lib/linkspy/presence.ts", "utf8");
