@@ -18,6 +18,8 @@ import { registryConfigured, fetchPrefills } from "@/lib/registry";
 import { ITEM_MAP } from "@/lib/linkspy/catalog-map";
 import type { MachinePrefill } from "@/components/qa/qa-checklist";
 import { getPageStatus, linkspyConfigured, linkspyAppUrl } from "@/lib/linkspy/client";
+import { getProductionPresence } from "@/lib/linkspy/presence";
+import { ProductionPresence } from "@/components/qa/production-presence";
 import { buildAnnotations } from "@/lib/linkspy/catalog-map";
 import { QARing } from "@/components/qa/qa-ring";
 import { CertStatusControl } from "@/components/qa/cert-status-control";
@@ -105,6 +107,11 @@ export default async function PageDetailPage({
   const liveEnabled = linkspyConfigured();
   const liveStatus = liveEnabled && page.certificate ? await getPageStatus(page.id) : null;
   const annotations = buildAnnotations(liveStatus?.payload);
+  // PRESENCE (flag PRESENCE=1): what LinkSpy is seeing in production for this
+  // page's linked site. 60s cache, staleness over errors, never throws — with
+  // the flag off this resolves to the hidden view and the DOM is unchanged.
+  const presence = await getProductionPresence(page.registrySiteId);
+
   const linkspyBase = linkspyAppUrl();
   const incidentHref =
     linkspyBase && liveStatus?.payload.site?.id
@@ -290,6 +297,10 @@ export default async function PageDetailPage({
           )}
         </Card>
       </div>
+
+      {/* Production presence — the other half of this page's life, seen from
+          LinkSpy. Renders nothing at all when there is nothing to say. */}
+      <ProductionPresence view={presence.view} hrefByKey={presence.hrefByKey} />
 
       {/* QA checklist */}
       {page.certificate && (

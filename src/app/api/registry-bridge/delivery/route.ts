@@ -17,6 +17,14 @@ import { scorePage } from "@/lib/quality-score";
 // "Seam 1"): nullable, unset = a page with no LinkSpy annotation.
 const CACHE_CONTROL = "private, max-age=900";
 
+// PII floor for the bridge: a first name is enough to know who to walk over to,
+// and is the most that may ever cross. Emails, ids and surnames stay in this
+// app. Anything unparseable degrades to null rather than leaking the raw field.
+export function firstName(full: string | null | undefined): string | null {
+  const first = (full ?? "").trim().split(/\s+/)[0] ?? "";
+  return first || null;
+}
+
 function authorized(req: NextRequest, key: string): boolean {
   const header = req.headers.get("authorization") ?? "";
   const prefix = "Bearer ";
@@ -54,6 +62,9 @@ export async function GET(req: NextRequest) {
         delayDays: true,
         projectId: true,
         project: { select: { clientId: true } },
+        // PRESENCE (additive, §8.2): the assigned tester, so LinkSpy can say
+        // WHO is in QA and not just how many. First name only — see firstName().
+        tester: { select: { name: true } },
         issues: { select: { severity: true, status: true } },
         certificate: {
           select: {
@@ -93,6 +104,8 @@ export async function GET(req: NextRequest) {
       checklist: { passed, failed, na, total: items.length },
       qa_score: score.provisional ? null : score.score,
       signed_off_at: page.certificate?.completedAt?.toISOString() ?? null,
+      // Additive field — existing consumers ignore it (§8.2: no /v2/ needed).
+      tester_first_name: firstName(page.tester?.name),
       // Relative path to this page's checklist — LinkSpy appends it to a host
       // and signs it into a handoff token. Must stay app-relative (leading "/").
       deep_link_path: `/dashboard/clients/${page.project.clientId}/${page.projectId}/${page.id}`,

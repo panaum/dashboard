@@ -17,6 +17,8 @@ import { PortalShare } from "@/components/portal/portal-share";
 import { deleteClient } from "../actions";
 import { deleteProject } from "./actions";
 import { listPlatforms } from "@/lib/platforms";
+import { getClientPresence } from "@/lib/linkspy/client-presence";
+import { ClientPresenceLine } from "@/components/qa/client-presence-line";
 import { label, type Status } from "@/lib/constants";
 
 export async function generateMetadata({
@@ -66,6 +68,10 @@ export default async function ClientDetailPage({
   ]);
   if (!client) notFound();
 
+  // PRESENCE (flag PRESENCE=1): four production chips for this client's linked
+  // sites. Never throws, never blocks; unmapped client → renders nothing.
+  const presence = await getClientPresence(client.id, client.name);
+
   return (
     <>
       <Breadcrumbs
@@ -100,6 +106,9 @@ export default async function ClientDetailPage({
           </div>
         }
       />
+
+      {/* Production presence — four chips across this client's linked sites. */}
+      <ClientPresenceLine presence={presence.presence} hrefByChip={presence.hrefByChip} />
 
       <PortalShare clientId={client.id} initialPortalId={client.portalId} />
 
