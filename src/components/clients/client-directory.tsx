@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Search } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
@@ -13,8 +13,43 @@ export type ClientRow = {
   pages: number;
 };
 
+// PRESENCE: one dot per client, coloured by its worst chip. Loaded after paint
+// — the directory must never wait on LinkSpy. A client with no linked site gets
+// no entry here and therefore no dot, byte-identical to today.
+type Dot = { worst: string; summary: string };
+
+const DOT_COLOR: Record<string, string> = {
+  critical: "bg-error",
+  warn: "bg-warning",
+  notice: "bg-brand-yellow",
+  settling: "bg-text-muted/40",
+  unknown: "bg-text-muted/40",
+  ok: "bg-success",
+};
+
+function PresenceDot({ dot }: { dot: Dot | undefined }) {
+  if (!dot) return null;
+  return (
+    <span
+      className={`size-2 shrink-0 rounded-full ${DOT_COLOR[dot.worst] ?? "bg-text-muted/40"}`}
+      title={`Production: ${dot.summary}`}
+      aria-label={`Production status: ${dot.summary}`}
+    />
+  );
+}
+
 export function ClientDirectory({ clients }: { clients: ClientRow[] }) {
   const [q, setQ] = useState("");
+  const [dots, setDots] = useState<Record<string, Dot>>({});
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/presence/clients", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => { if (live && d?.enabled) setDots(d.clients ?? {}); })
+      .catch(() => {}); // quiet: no dots is a valid answer
+    return () => { live = false; };
+  }, []);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -49,8 +84,9 @@ export function ClientDirectory({ clients }: { clients: ClientRow[] }) {
               >
                 <Avatar name={c.name} />
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium text-text-primary">
+                  <span className="flex items-center gap-1.5 truncate text-sm font-medium text-text-primary">
                     {c.name}
+                    <PresenceDot dot={dots[c.id]} />
                   </span>
                   <span className="truncate text-[13px] text-text-secondary">
                     {c.projects} project{c.projects === 1 ? "" : "s"} · {c.pages}{" "}
