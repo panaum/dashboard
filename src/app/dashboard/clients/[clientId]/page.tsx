@@ -18,10 +18,10 @@ import { deleteClient } from "../actions";
 import { deleteProject } from "./actions";
 import { listPlatforms } from "@/lib/platforms";
 import { getClientPresence } from "@/lib/linkspy/client-presence";
-import { getClientIntelligence } from "@/lib/linkspy/client-intelligence";
+import { getClientPresenceChips } from "@/lib/linkspy/client-presence-chips";
 import { ClientPresenceLine, NotLinkedStrip } from "@/components/qa/client-presence-line";
 import { LinkClientButton } from "@/components/qa/link-client-button";
-import { clientIntelligenceEnabled } from "@/lib/linkspy/client-intelligence-shape";
+import { presenceChipsEnabled } from "@/lib/linkspy/client-presence-chips-shape";
 import { label, type Status } from "@/lib/constants";
 
 export async function generateMetadata({
@@ -73,17 +73,17 @@ export default async function ClientDetailPage({
 
   // Four production chips for this client. Two independent sources, one
   // renderer:
-  //   CLIENT_INTELLIGENCE=1 → LinkSpy aggregates over sites.client_id — every
+  //   PRESENCE_CHIPS=1 → LinkSpy aggregates over sites.client_id — every
   //     site in production for this client. The superset, so it wins.
-  //   PRESENCE=1            → sites resolved from Page.registrySiteId — the
+  //   PRESENCE=1       → sites resolved from Page.registrySiteId — the
   //     things we actually built for them. The fallback.
   // Both flags off, or neither returns chips → nothing renders. Never throws,
   // never blocks the page.
-  const [intelligence, presence] = await Promise.all([
-    getClientIntelligence(client.id),
+  const [chipsView, presence] = await Promise.all([
+    getClientPresenceChips(client.id),
     getClientPresence(client.id, client.name),
   ]);
-  const chipView = intelligence.presence ? intelligence : presence;
+  const chipView = chipsView.presence ? chipsView : presence;
 
   return (
     <>
@@ -120,13 +120,13 @@ export default async function ClientDetailPage({
         }
       />
 
-      {/* Four production chips — client intelligence when available, else
+      {/* Four production chips — client presence chips when available, else
           presence. An UNLINKED client says so rather than going silent
           (decision 1): "no chips" and "no data" look identical otherwise, and
           silence would read as "fine" on a client nobody is watching. */}
       {chipView.presence ? (
         <ClientPresenceLine presence={chipView.presence} hrefByChip={chipView.hrefByChip} />
-      ) : clientIntelligenceEnabled() && !client.registryClientId ? (
+      ) : presenceChipsEnabled() && !client.registryClientId ? (
         <NotLinkedStrip
           action={<LinkClientButton clientId={client.id} clientName={client.name} />}
         />

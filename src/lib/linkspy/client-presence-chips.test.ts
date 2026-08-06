@@ -5,14 +5,14 @@ import { readFileSync } from "node:fs";
 // `server-only`, neither of which resolves outside Next's bundler. The I/O
 // behaviour of that sibling is asserted by reading its source, below.
 import {
-  clientIntelligenceEnabled,
+  presenceChipsEnabled,
   toClientPresence,
-  type ClientIntelligencePayload,
+  type ClientPresencePayload,
   type WireChip,
-} from "./client-intelligence-shape";
+} from "./client-presence-chips-shape";
 import type { ChipState } from "./chips-shape";
 
-// ═══ CLIENT INTELLIGENCE — Dashboard consumption ═════════════════════════════
+// ═══ CLIENT PRESENCE CHIPS — Dashboard consumption ═════════════════════════════
 // Proves the chips LinkSpy returns actually reach the renderer, and that the
 // aggregation is NOT redone here (one authority for one rule).
 
@@ -30,7 +30,7 @@ function wireChip(over: Partial<WireChip> = {}): WireChip {
   };
 }
 
-function payload(chips = [wireChip()]): ClientIntelligencePayload {
+function payload(chips = [wireChip()]): ClientPresencePayload {
   return {
     registry_client_id: "rc-1",
     as_of: "2026-08-06T09:00:00.000Z",
@@ -44,17 +44,17 @@ function payload(chips = [wireChip()]): ClientIntelligencePayload {
 }
 
 // ── the flag ────────────────────────────────────────────────────────────────
-test("CLIENT_INTELLIGENCE: only the exact string '1' turns it on", () => {
-  assert.equal(clientIntelligenceEnabled({ CLIENT_INTELLIGENCE: "1" }), true);
-  assert.equal(clientIntelligenceEnabled({ CLIENT_INTELLIGENCE: "true" }), false);
-  assert.equal(clientIntelligenceEnabled({}), false);
+test("PRESENCE_CHIPS: only the exact string '1' turns it on", () => {
+  assert.equal(presenceChipsEnabled({ PRESENCE_CHIPS: "1" }), true);
+  assert.equal(presenceChipsEnabled({ PRESENCE_CHIPS: "true" }), false);
+  assert.equal(presenceChipsEnabled({}), false);
 });
 
 test("the fetch is skipped entirely when the flag is off", () => {
-  const src = readFileSync("src/lib/linkspy/client-intelligence.ts", "utf8");
-  const gate = src.indexOf("if (!clientIntelligenceEnabled()");
-  assert.ok(gate > -1, "the flag guards getClientIntelligence");
-  assert.ok(gate < src.indexOf("fetchIntelligence(client.registryClientId)"),
+  const src = readFileSync("src/lib/linkspy/client-presence-chips.ts", "utf8");
+  const gate = src.indexOf("if (!presenceChipsEnabled()");
+  assert.ok(gate > -1, "the flag guards getClientPresenceChips");
+  assert.ok(gate < src.indexOf("fetchPresenceChips(client.registryClientId)"),
     "flag off ⇒ LinkSpy is never contacted");
 });
 
@@ -69,7 +69,7 @@ test("no payload, empty chips, or malformed chips all render nothing", () => {
 });
 
 test("a client with no registry annotation never reaches the network", () => {
-  const src = readFileSync("src/lib/linkspy/client-intelligence.ts", "utf8");
+  const src = readFileSync("src/lib/linkspy/client-presence-chips.ts", "utf8");
   assert.match(src, /if \(!client\?\.registryClientId\) return HIDDEN;/);
 });
 
@@ -101,7 +101,7 @@ test("all four chips survive the adapter with their own states", () => {
 
 // ── aggregation happens ONCE, on the server ─────────────────────────────────
 test("the adapter does not re-aggregate", () => {
-  const src = readFileSync("src/lib/linkspy/client-intelligence.ts", "utf8");
+  const src = readFileSync("src/lib/linkspy/client-presence-chips.ts", "utf8");
   assert.doesNotMatch(src, /aggregateChip|clientPresence\(/,
     "aggregation is LinkSpy's job here — doing it twice is two authorities for one rule");
 });
@@ -130,7 +130,7 @@ test("a missing detail degrades to null rather than undefined", () => {
 
 // ── staleness over errors, no blocking, no writes ───────────────────────────
 test("unreachable LinkSpy serves last-known-good, then nothing", () => {
-  const src = readFileSync("src/lib/linkspy/client-intelligence.ts", "utf8");
+  const src = readFileSync("src/lib/linkspy/client-presence-chips.ts", "utf8");
   assert.match(src, /payload = hit\?\.payload \?\? null;/);
   assert.match(src, /stale = Boolean\(hit\);/);
   assert.match(src, /AbortSignal\.timeout\(/, "a hung LinkSpy must not hang the client page");
@@ -138,17 +138,17 @@ test("unreachable LinkSpy serves last-known-good, then nothing", () => {
   assert.match(src, /if \(!res\.ok\) return null;/, "404 (flag off upstream) is 'nothing here', not an error");
 });
 
-test("client intelligence never writes and never leaks the key", () => {
-  const src = readFileSync("src/lib/linkspy/client-intelligence.ts", "utf8");
+test("client presence chips never writes and never leaks the key", () => {
+  const src = readFileSync("src/lib/linkspy/client-presence-chips.ts", "utf8");
   assert.ok(src.startsWith('import "server-only";'));
   assert.doesNotMatch(src, /\.update\(|\.create\(|\.upsert\(|\.delete\(/);
   assert.match(src, /db\.client\s*\n?\s*\.findUnique/, "the only DB touch is a read of the annotation");
 });
 
 // ── precedence on the page ──────────────────────────────────────────────────
-test("client intelligence wins over presence, and either can be absent", () => {
+test("client presence chips wins over presence, and either can be absent", () => {
   const page = readFileSync("src/app/dashboard/clients/[clientId]/page.tsx", "utf8");
-  assert.match(page, /const chipView = intelligence\.presence \? intelligence : presence;/,
+  assert.match(page, /const chipView = chipsView\.presence \? chipsView : presence;/,
     "the superset (sites.client_id) wins when it has chips");
   assert.match(page, /<ClientPresenceLine presence=\{chipView\.presence\}/,
     "one renderer for both sources — no second chip component");
@@ -202,7 +202,7 @@ test("an unlinked client renders a 'not linked' strip, not nothing", async () =>
 
 test("the page shows the strip only when the flag is on and the client is unlinked", () => {
   const page = readFileSync("src/app/dashboard/clients/[clientId]/page.tsx", "utf8");
-  assert.match(page, /clientIntelligenceEnabled\(\) && !client\.registryClientId/,
+  assert.match(page, /presenceChipsEnabled\(\) && !client\.registryClientId/,
     "flag off ⇒ still byte-identical; linked ⇒ chips, not the strip");
   assert.match(page, /<NotLinkedStrip[\s\S]*?LinkClientButton/,
     "the strip carries the action that resolves it");
@@ -253,7 +253,7 @@ test("the link action writes exactly one annotation column and no QA row", () =>
 
 test("the link action is flag-gated and annotates only after LinkSpy confirms", () => {
   const src = readFileSync("src/app/dashboard/clients/[clientId]/link-actions.ts", "utf8");
-  assert.ok(src.indexOf("clientIntelligenceEnabled()") < src.indexOf("fetch("),
+  assert.ok(src.indexOf("presenceChipsEnabled()") < src.indexOf("fetch("),
     "flag off ⇒ LinkSpy is never contacted");
   assert.ok(src.indexOf("body.linkspy_client_id") < src.indexOf("db.client.update"),
     "the registry id must exist before we record it");
@@ -275,4 +275,35 @@ test("no bulk-link path exists anywhere on the Dashboard", () => {
       assert.ok(!src.includes(bulk), `${f} must link one client at a time — found ${bulk}`);
     }
   }
+});
+
+// ═══ The renamed contract ════════════════════════════════════════════════════
+// This side now speaks client-presence. LinkSpy has NOT been renamed yet (that
+// was explicitly out of scope), so until it is, the fetch 404s and the surface
+// renders the not-linked strip. These tests pin what LinkSpy must serve.
+test("the Dashboard calls the client-presence endpoint under registry-bridge", () => {
+  const src = readFileSync("src/lib/linkspy/client-presence-chips.ts", "utf8");
+  assert.match(src, /\/api\/registry-bridge\/client-presence\?registry_client_id=/,
+    "PENDING on LinkSpy: it still serves /api/qa-bridge/client-intelligence");
+  assert.doesNotMatch(src, /client-intelligence/, "no stale endpoint name survives");
+});
+
+test("the flag is PRESENCE_CHIPS everywhere on this side", () => {
+  for (const f of [
+    "src/lib/linkspy/client-presence-chips-shape.ts",
+    "src/lib/linkspy/client-presence-chips.ts",
+    "src/app/dashboard/clients/[clientId]/link-actions.ts",
+    "src/app/dashboard/clients/[clientId]/page.tsx",
+  ]) {
+    const src = readFileSync(f, "utf8");
+    assert.ok(!src.includes("CLIENT_INTELLIGENCE"), `${f} must not read the old flag`);
+  }
+  const shape = readFileSync("src/lib/linkspy/client-presence-chips-shape.ts", "utf8");
+  assert.match(shape, /env\.PRESENCE_CHIPS === "1"/, "only the literal 1 enables it");
+});
+
+test("the link endpoint keeps its name — only the read endpoint was renamed", () => {
+  const src = readFileSync("src/app/dashboard/clients/[clientId]/link-actions.ts", "utf8");
+  assert.match(src, /\/api\/registry-bridge\/link-client/,
+    "link-client was already correctly namespaced and is unchanged");
 });

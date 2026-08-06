@@ -195,7 +195,70 @@ Once those five have lived on the surface for a week, decide whether to keep
 linking by hand or to build a reviewed mapping UI (the §2 Seam 1 hygiene pass,
 which is exactly this problem at 89× scale and was deliberately deferred).
 
-## 7. Tripwires
+## 7. Names and activation runbook
+
+The feature is **client presence chips**. The flag is **`PRESENCE_CHIPS`**. The
+read endpoint is **`/api/registry-bridge/client-presence`**. That naming is the
+honest one: this surface renders presence signals as chips — it does not perform
+analysis, and calling it "intelligence" oversold it.
+
+> **⚠ The two sides do not agree yet.** The Dashboard branch
+> (`feat/client-intelligence-dashboard`) has been renamed. The LinkSpy branch
+> (`feat/client-intelligence-linkspy`) has **not** — it still serves
+> `GET /api/qa-bridge/client-intelligence` gated on `CLIENT_INTELLIGENCE`.
+> Until LinkSpy is renamed to match, the Dashboard's fetch 404s and every linked
+> client renders the not-linked strip. It fails quietly and safely — no crash,
+> no error banner — but the chips will not appear.
+>
+> What LinkSpy needs, and nothing more:
+> | LinkSpy today | must become |
+> |---|---|
+> | `@app.get("/api/qa-bridge/client-intelligence")` | `@app.get("/api/registry-bridge/client-presence")` |
+> | `os.getenv("CLIENT_INTELLIGENCE")` ×3 | `os.getenv("PRESENCE_CHIPS")` |
+>
+> `POST /api/registry-bridge/link-client` is already correctly namespaced and
+> does not change.
+
+### Env vars, exact placement
+
+| Surface | Var | Value |
+|---|---|---|
+| Vercel `dashboard` | `PRESENCE_CHIPS` | `1` |
+| Railway (LinkSpy backend) | `PRESENCE_CHIPS` | `1` *(after the rename above; today it is still `CLIENT_INTELLIGENCE`)* |
+
+No new secrets. Both sides reuse `LINKSPY_API_URL` / `LINKSPY_API_KEY`.
+`PRESENCE` (the page-level presence flag) is independent and may stay off.
+
+### Order of operations
+
+1. **Deploy both branches.** Nothing changes — both flags unset.
+2. **Rename the LinkSpy side** per the table above, then set `PRESENCE_CHIPS=1`
+   on Railway. Verify:
+   ```bash
+   curl -s -H "Authorization: Bearer $LINKSPY_API_KEY" \
+     "$LINKSPY_API_URL/api/registry-bridge/client-presence?registry_client_id=00000000-0000-0000-0000-000000000000"
+   # expect 200, chips: [], site_count: 0 — an unknown client is a valid empty answer, not a 404
+   ```
+   A 404 here means the rename has not shipped, or the flag is unset.
+3. **Set `PRESENCE_CHIPS=1` on Vercel `dashboard`** and redeploy. Every client
+   page now shows either four chips or the not-linked strip.
+4. **Link the pilot client.** Open `/dashboard/clients/<id>` → **Link to
+   LinkSpy**. Leave the id box **blank**: LinkSpy matches by name first and only
+   creates a registry client if no name matches.
+   - Success → the strip is replaced by four chips on refresh.
+   - `Client.registryClientId` now holds the LinkSpy `clients.id` — the same
+     UUID on both sides.
+   - Sites under 60 days monitored show `Fragility settling`. That is Fresh Mode
+     working, not a failure.
+   - **If it creates rather than matches**, LinkSpy had no client of that name.
+     Clear `registryClientId` on that row and delete the orphaned registry
+     client before retrying.
+5. **Then 2–4 more**, chosen by §6's criteria.
+6. **Rollback:** unset `PRESENCE_CHIPS` on either surface. Written
+   `registryClientId` values persist deliberately — they are registry
+   annotations, not feature state.
+
+## 8. Tripwires
 
 | Tripwire | Status |
 |---|---|
