@@ -18,14 +18,23 @@ export type WireChip = {
   site_path: string | null;
 };
 
+// Counts only — no site names, no site ids. Per-site detail is reached by
+// clicking through to LinkSpy on a signed handoff (decision 3).
+export type SitesSummary = {
+  total: number;
+  by_state: Record<string, number>;
+  by_label: Record<string, number>;
+};
+
 export type ClientIntelligencePayload = {
   registry_client_id: string;
   as_of: string;
   chip_keys: string[];
   site_count: number;
   worst: ChipState;
+  worst_label?: string;
   chips: WireChip[];
-  sites: Record<string, { name: string | null; site_path: string; chips: unknown[] }>;
+  sites_summary?: SitesSummary;
 };
 
 /** The flag. Only the exact string "1" counts — half-on is not a state. */
@@ -70,5 +79,6 @@ export function toClientPresence(
     chips,
     siteCount: payload.site_count ?? 0,
     stale,
+    sitesByLabel: payload.sites_summary?.by_label,
   };
 }

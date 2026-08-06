@@ -19,7 +19,9 @@ import { deleteProject } from "./actions";
 import { listPlatforms } from "@/lib/platforms";
 import { getClientPresence } from "@/lib/linkspy/client-presence";
 import { getClientIntelligence } from "@/lib/linkspy/client-intelligence";
-import { ClientPresenceLine } from "@/components/qa/client-presence-line";
+import { ClientPresenceLine, NotLinkedStrip } from "@/components/qa/client-presence-line";
+import { LinkClientButton } from "@/components/qa/link-client-button";
+import { clientIntelligenceEnabled } from "@/lib/linkspy/client-intelligence-shape";
 import { label, type Status } from "@/lib/constants";
 
 export async function generateMetadata({
@@ -118,8 +120,17 @@ export default async function ClientDetailPage({
         }
       />
 
-      {/* Four production chips — client intelligence when available, else presence. */}
-      <ClientPresenceLine presence={chipView.presence} hrefByChip={chipView.hrefByChip} />
+      {/* Four production chips — client intelligence when available, else
+          presence. An UNLINKED client says so rather than going silent
+          (decision 1): "no chips" and "no data" look identical otherwise, and
+          silence would read as "fine" on a client nobody is watching. */}
+      {chipView.presence ? (
+        <ClientPresenceLine presence={chipView.presence} hrefByChip={chipView.hrefByChip} />
+      ) : clientIntelligenceEnabled() && !client.registryClientId ? (
+        <NotLinkedStrip
+          action={<LinkClientButton clientId={client.id} clientName={client.name} />}
+        />
+      ) : null}
 
       <PortalShare clientId={client.id} initialPortalId={client.portalId} />
 

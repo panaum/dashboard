@@ -38,6 +38,23 @@ function Chip({ chip, href }: { chip: AggregatedChip; href?: string }) {
   );
 }
 
+// Decision 1: an unlinked client is never silent. A faint grey strip says so in
+// plain words, because "no chips" and "no data" look identical otherwise — and
+// silence would read as "everything is fine" on a client nobody is watching.
+export function NotLinkedStrip({ action }: { action?: React.ReactNode }) {
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-2 rounded-xl border border-border-soft bg-card-soft px-4 py-2.5">
+      <span className="size-2 shrink-0 rounded-full bg-text-muted/40" aria-hidden />
+      <span className="text-sm text-text-muted">Not linked to LinkSpy</span>
+      <span className="text-text-muted">·</span>
+      <span className="text-xs text-text-muted">
+        no production signals for this client
+      </span>
+      {action && <span className="ml-auto">{action}</span>}
+    </div>
+  );
+}
+
 export function ClientPresenceLine({
   presence,
   hrefByChip,
@@ -45,7 +62,8 @@ export function ClientPresenceLine({
   presence: ClientPresence | null;
   hrefByChip: Record<string, string>;
 }) {
-  // Unmapped client, flag off, or LinkSpy unreachable with no cache: nothing.
+  // Flag off, or LinkSpy unreachable with no cache: nothing. (An UNLINKED
+  // client is a different case and renders <NotLinkedStrip/> instead.)
   if (!presence) return null;
 
   return (
