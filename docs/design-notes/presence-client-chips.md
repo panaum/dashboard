@@ -202,22 +202,22 @@ read endpoint is **`/api/registry-bridge/client-presence`**. That naming is the
 honest one: this surface renders presence signals as chips — it does not perform
 analysis, and calling it "intelligence" oversold it.
 
-> **⚠ The two sides do not agree yet.** The Dashboard branch
-> (`feat/client-intelligence-dashboard`) has been renamed. The LinkSpy branch
-> (`feat/client-intelligence-linkspy`) has **not** — it still serves
-> `GET /api/qa-bridge/client-intelligence` gated on `CLIENT_INTELLIGENCE`.
-> Until LinkSpy is renamed to match, the Dashboard's fetch 404s and every linked
-> client renders the not-linked strip. It fails quietly and safely — no crash,
-> no error banner — but the chips will not appear.
->
-> What LinkSpy needs, and nothing more:
-> | LinkSpy today | must become |
-> |---|---|
-> | `@app.get("/api/qa-bridge/client-intelligence")` | `@app.get("/api/registry-bridge/client-presence")` |
-> | `os.getenv("CLIENT_INTELLIGENCE")` ×3 | `os.getenv("PRESENCE_CHIPS")` |
->
-> `POST /api/registry-bridge/link-client` is already correctly namespaced and
-> does not change.
+Both sides now speak this contract:
+
+| | LinkSpy (serves) | Dashboard (calls) |
+|---|---|---|
+| read | `GET /api/registry-bridge/client-presence?registry_client_id=` | `client-presence-chips.ts` |
+| link | `POST /api/registry-bridge/link-client` | `link-actions.ts` |
+| flag | `PRESENCE_CHIPS=1` | `PRESENCE_CHIPS=1` |
+
+Responses, so the runbook's checks are unambiguous:
+
+| Situation | Response |
+|---|---|
+| flag off | `404 {"error":"presence_chips_disabled"}` — indistinguishable from the route not existing |
+| flag on, client unknown or has no sites | `200 {"chips":[], "site_count":0, ...}` — a valid empty answer |
+| flag on, client has sites | `200` with four aggregated chips + `sites_summary` |
+| storage fault | `503 {"error":"presence_chips_unavailable"}` — **a real fault, not the off state** |
 
 ### Env vars, exact placement
 
