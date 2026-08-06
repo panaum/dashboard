@@ -76,7 +76,27 @@ export type ClientPresence = {
   chips: AggregatedChip[];
   siteCount: number;
   stale: boolean;
+  /** Counts per state across the client's sites — no names, no ids. */
+  sitesByLabel?: Record<string, number>;
 };
+
+// Operator-facing names for the severity ladder, best-first. Mirrors LinkSpy's
+// RANKING_BEST_FIRST; both sides pin this order by test so it cannot drift.
+export const RANKING_BEST_FIRST = ["stable", "fresh", "drifting", "fragile", "brittle"] as const;
+
+const DISPLAY: Record<ChipState, string> = {
+  ok: "stable",
+  settling: "fresh",
+  notice: "drifting",
+  warn: "fragile",
+  critical: "brittle",
+  unknown: "unknown",
+};
+
+/** "could not tell" is not a point on a durability scale, so it stays 'unknown'. */
+export function stateLabel(state: ChipState): string {
+  return DISPLAY[state] ?? "unknown";
+}
 
 /**
  * Aggregate ONE chip across a client's sites.
