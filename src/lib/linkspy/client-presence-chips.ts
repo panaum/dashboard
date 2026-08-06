@@ -4,21 +4,21 @@ import { signHandoff } from "@/lib/handoff-contract";
 import { linkspyAppUrl } from "./client";
 import type { ClientPresence } from "./chips-shape";
 import {
-  clientIntelligenceEnabled,
+  presenceChipsEnabled,
   toClientPresence,
-  type ClientIntelligencePayload,
-} from "./client-intelligence-shape";
+  type ClientPresencePayload,
+} from "./client-presence-chips-shape";
 
 // Re-exported so callers have one import site for this feature.
-export { clientIntelligenceEnabled, toClientPresence };
-export type { ClientIntelligencePayload };
+export { presenceChipsEnabled, toClientPresence };
+export type { ClientPresencePayload };
 
-// CLIENT INTELLIGENCE — the four chips for a client, aggregated by LinkSpy over
+// CLIENT PRESENCE CHIPS — the four chips for a client, aggregated by LinkSpy over
 // every site it holds under `sites.client_id`.
 //
 // How this differs from the presence path (client-presence.ts), and why both
 // exist: presence resolves sites from the DASHBOARD side (Page.registrySiteId —
-// sites with a QA deliverable attached). Client intelligence resolves from the
+// sites with a QA deliverable attached). Client presence chips resolves from the
 // LINKSPY side (sites.client_id — everything in production for that client,
 // including sites that never had a Dashboard deliverable). The second is a
 // superset and is the better answer to "how is this client doing"; the first
@@ -30,19 +30,19 @@ export type { ClientIntelligencePayload };
 const CACHE_MS = 60 * 1000;
 const TIMEOUT_MS = 4000;
 
-type Cached = { payload: ClientIntelligencePayload; at: number };
+type Cached = { payload: ClientPresencePayload; at: number };
 const cache = new Map<string, Cached>();
 
 function configured(): boolean {
   return Boolean(process.env.LINKSPY_API_URL && process.env.LINKSPY_API_KEY);
 }
 
-async function fetchIntelligence(
+async function fetchPresenceChips(
   registryClientId: string,
-): Promise<ClientIntelligencePayload | null> {
+): Promise<ClientPresencePayload | null> {
   const base = (process.env.LINKSPY_API_URL || "").replace(/\/$/, "");
   const key = process.env.LINKSPY_API_KEY || "";
-  const url = `${base}/api/qa-bridge/client-intelligence?registry_client_id=${encodeURIComponent(registryClientId)}`;
+  const url = `${base}/api/registry-bridge/client-presence?registry_client_id=${encodeURIComponent(registryClientId)}`;
   try {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${key}` },
@@ -51,24 +51,24 @@ async function fetchIntelligence(
     });
     // 404 = the flag is off on LinkSpy. Not an error, just "nothing here".
     if (!res.ok) return null;
-    return (await res.json()) as ClientIntelligencePayload;
+    return (await res.json()) as ClientPresencePayload;
   } catch {
     return null;
   }
 }
 
-export type ClientIntelligenceResult = {
+export type PresenceChipsResult = {
   presence: ClientPresence | null;
   hrefByChip: Record<string, string>;
 };
 
-const HIDDEN: ClientIntelligenceResult = { presence: null, hrefByChip: {} };
+const HIDDEN: PresenceChipsResult = { presence: null, hrefByChip: {} };
 
-/** Client intelligence for one client, or the hidden result on every failure. */
-export async function getClientIntelligence(
+/** Client presence chips for one client, or the hidden result on every failure. */
+export async function getClientPresenceChips(
   clientId: string,
-): Promise<ClientIntelligenceResult> {
-  if (!clientIntelligenceEnabled() || !configured()) return HIDDEN;
+): Promise<PresenceChipsResult> {
+  if (!presenceChipsEnabled() || !configured()) return HIDDEN;
 
   const client = await db.client
     .findUnique({ where: { id: clientId }, select: { name: true, registryClientId: true } })
@@ -79,11 +79,11 @@ export async function getClientIntelligence(
   const hit = cache.get(client.registryClientId);
   const fresh = hit && Date.now() - hit.at < CACHE_MS;
 
-  let payload: ClientIntelligencePayload | null = fresh ? hit.payload : null;
+  let payload: ClientPresencePayload | null = fresh ? hit.payload : null;
   let stale = false;
 
   if (!fresh) {
-    const got = await fetchIntelligence(client.registryClientId);
+    const got = await fetchPresenceChips(client.registryClientId);
     if (got) {
       cache.set(client.registryClientId, { payload: got, at: Date.now() });
       payload = got;
@@ -112,6 +112,6 @@ function signChipLinks(presence: ClientPresence): Record<string, string> {
   return out;
 }
 
-export function __resetClientIntelligenceCache() {
+export function __resetPresenceChipsCache() {
   cache.clear();
 }

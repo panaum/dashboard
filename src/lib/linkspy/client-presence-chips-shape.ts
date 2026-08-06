@@ -1,4 +1,4 @@
-// CLIENT INTELLIGENCE — pure shaping. No I/O, no secrets, no server-only
+// CLIENT PRESENCE CHIPS — pure shaping. No I/O, no secrets, no server-only
 // imports, so every state is testable without Next's bundler.
 //
 // The aggregation itself is NOT here: LinkSpy already aggregated across the
@@ -26,7 +26,7 @@ export type SitesSummary = {
   by_label: Record<string, number>;
 };
 
-export type ClientIntelligencePayload = {
+export type ClientPresencePayload = {
   registry_client_id: string;
   as_of: string;
   chip_keys: string[];
@@ -38,10 +38,10 @@ export type ClientIntelligencePayload = {
 };
 
 /** The flag. Only the exact string "1" counts — half-on is not a state. */
-export function clientIntelligenceEnabled(
+export function presenceChipsEnabled(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
-  return env.CLIENT_INTELLIGENCE === "1";
+  return env.PRESENCE_CHIPS === "1";
 }
 
 /**
@@ -52,7 +52,7 @@ export function clientIntelligenceEnabled(
 export function toClientPresence(
   clientId: string,
   clientName: string,
-  payload: ClientIntelligencePayload | null,
+  payload: ClientPresencePayload | null,
   stale = false,
 ): ClientPresence | null {
   if (!payload || !Array.isArray(payload.chips) || payload.chips.length === 0) return null;

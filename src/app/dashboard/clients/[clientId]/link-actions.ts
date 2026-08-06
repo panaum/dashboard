@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { clientIntelligenceEnabled } from "@/lib/linkspy/client-intelligence-shape";
+import { presenceChipsEnabled } from "@/lib/linkspy/client-presence-chips-shape";
 
 // Link a Dashboard client to a LinkSpy registry client. The ONE write path this
 // feature has, and it only ever runs from a human pressing "Link to LinkSpy" on
@@ -19,8 +19,8 @@ export async function linkClientToLinkSpy(
   clientId: string,
   linkspyClientId?: string,
 ): Promise<LinkResult> {
-  if (!clientIntelligenceEnabled()) {
-    return { ok: false, error: "Client intelligence is off." };
+  if (!presenceChipsEnabled()) {
+    return { ok: false, error: "Client presence chips are off." };
   }
   const base = (process.env.LINKSPY_API_URL || "").replace(/\/$/, "");
   const key = process.env.LINKSPY_API_KEY || "";
@@ -55,7 +55,7 @@ export async function linkClientToLinkSpy(
   if (res.status === 404) {
     // Either the flag is off upstream, or the pasted id doesn't exist. Both are
     // "we did not link anything", said plainly.
-    return { ok: false, error: linkspyClientId ? "No LinkSpy client with that id." : "Client intelligence is off in LinkSpy." };
+    return { ok: false, error: linkspyClientId ? "No LinkSpy client with that id." : "Client presence chips are off in LinkSpy." };
   }
   if (!res.ok) return { ok: false, error: `LinkSpy refused the link (${res.status}).` };
 
