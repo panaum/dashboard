@@ -1,245 +1,224 @@
 # Living Certificate — Session 2 diagnosis (Step 0)
 
 **Date:** 2026-08-11 · **Repo:** Dashboard · **Branch:** `feat/living-certificate-timeline-shape`
-**Status:** ⛔ **Stopped for review. No UI code written. Two items need an operator decision before Step 1.**
+**Status:** ⛔ **Stopped. Design settled; blocked on the shell repo not being on this machine.**
 
 Session 1 shipped `Page.livingCertificateEnabled` (boolean, default false, applied
 to production, 265 rows backfilled, drift-free — commit `bd30dd0`). This note is
-the read-only diagnosis for Session 2's rendering work.
+the read-only diagnosis for the rendering work.
+
+> **Revision, 2026-08-11.** The first draft of this note planned against a brief
+> that put the Living Certificate inside `/c/{shareId}` on the Dashboard. The
+> operator has since ruled that **the approved architecture stands**: the feature
+> goes to **`/live/{shareId}` on the shell**, and **`/c/{shareId}` is untouched
+> forever**. This note has been rewritten accordingly. §3 records what that
+> reversal changed.
 
 ---
 
-## 0. Summary — six findings
+## 0. Operator decisions, 2026-08-11
 
-| # | Finding | Severity |
+| Q | Decision |
+|---|---|
+| **F1** route | **`/live/{shareId}` on the shell** (`qa-ecosystem`). `/c/{shareId}` untouched forever. `living-certificate.md` §9.1 stands; the earlier prompt was wrong |
+| **F2** timeline | Acknowledged as a prerequisite. Sections 1/3/4 proceed without it. Recorded in the runbook |
+| **F3** status reads | **Read-only sibling** to `getPageStatus()`, in-memory pattern. **No writes on the `/live/` path, ever** |
+| **F4** snapshots | **Two-render equality** in the same run, not a golden file |
+| **Scope** | **Option A** — Section 2 renders only whitelisted lifecycle events. Incidents deferred |
+
+---
+
+## 1. Summary — findings after the reversal
+
+| # | Finding | Status |
 |---|---|---|
-| **F1** | **The brief contradicts the approved architecture.** §9.1 of `living-certificate.md` says `/c/{shareId}` is *"BYTE-IDENTICAL, untouched forever"* and puts the Living Certificate on a **separate `/live/{shareId}` route on the shell repo**. This brief puts it **inside `/c/{shareId}` on the Dashboard** — which §3 records as *"which the brief explicitly forbids"* | ⛔ **Decision required** |
-| **F2** | **The timeline endpoint is not merged to LinkSpy `main`.** Section 2 has no data source in production | ⛔ **Blocker** |
-| **F3** | **Reusing `getPageStatus()` writes to an existing table** (`LinkSpyStatus` upsert), violating Invariant 3 — and would let anonymous public traffic trigger DB writes | ⚠️ **T4 tripwire** |
-| **F4** | **"Byte-identical snapshot" is not achievable as literally specified** — the current renderer reads the wall clock, so its output changes daily regardless of this feature | ⚠️ Test design |
-| **F5** | `getClientPresenceChips()` returns **signed handoff deep-links into internal LinkSpy**. These must never reach a client's browser | ⚠️ Leak risk |
-| **F6** | Three of four sections need new fetches; only Section 3 is substantially reusable from data the current view already has | ℹ️ Scope |
+| **F1** | Resolved — approved architecture reinstated. See §3 | ✅ settled |
+| **F2** | LinkSpy timeline endpoint not merged to `main` | ⛔ **blocker for Section 2 only** |
+| **F3** | `getPageStatus()` upserts `LinkSpyStatus` | ✅ mitigation agreed |
+| **F4** | `/c/` renderer reads the wall clock | ✅ superseded — see §7 |
+| **F5** | `getClientPresenceChips()` returns signed internal handoff links | ⚠️ must not enter the payload |
+| **F7** | **The shell is Next 14 / React 18 / Tailwind v3.** The Dashboard is Next 16 / React 19 / Tailwind v4. **No component or design token is portable** | ⛔ **new — scope impact** |
+| **F8** | **The shell's auth middleware is disabled today but designed to be re-enabled**, and its matcher would gate `/live/` | ⚠️ **new — landmine** |
+| **F9** | **All three repos are public.** The shell must hold no service keys — architectural hygiene becomes a hard requirement | ℹ️ new |
 
 ---
 
-## 1. The current `/c/{shareId}` renderer
+## 2. The shell repo (`panaum/QA-Ecosystem`)
 
-**Route:** [src/app/c/[shareId]/page.tsx](../../src/app/c/[shareId]/page.tsx) — 62 lines.
-The only unauthenticated route in the app (outside `/dashboard/*`, so `src/proxy.ts`
-does not gate it). `robots: { index: false, follow: false }`.
+Read via the public GitHub API — **not cloned**, nothing fetched to disk.
 
-### Structure
-
-```
-PublicCertificatePage (server component, async)
-  └── db.page.findUnique({ where: { shareId } })   ← ONE query, the whole data layer
-        └── notFound() when the token does not resolve
-  └── <main class="min-h-screen bg-page px-4 py-8">
-        └── <div class="mx-auto max-w-3xl">
-              ├── <PrintButton/>                    (print:hidden)
-              ├── <TiltCard>                        (motion wrapper)
-              │     └── <CertificateDocument page={page}/>
-              └── <p>Quality assurance certificate · Apexure</p>
-```
-
-### What the single query fetches
-
-| Included | Fields |
+| | |
 |---|---|
-| `page` | `id`, `name`, `url`, `deliveryMonth`, `delayDays` |
-| `project` | `name`, `type`, `platform` |
-| `project.client` | `name` |
-| `developer`, `tester` | `name` |
-| `certificate` | `status`, `completedAt` |
-| `certificate.items[]` | `category`, `name`, `result`, `valueDesktop`, `valueMobile`, `isMeasurement`, `hasDualValue` — ordered by `order asc` |
-| `issues[]` | `severity`, `status` |
-
-**Not fetched today:** `registryDeliverableId`, `registrySiteId` (on `Page`),
-`client.registryClientId`. All three are needed to address LinkSpy. They are
-columns on rows already being read — adding them to the existing `include` costs
-no extra round trip.
-
-### What `CertificateDocument` renders
-
-[src/components/qa/certificate-document.tsx](../../src/components/qa/certificate-document.tsx) — 383 lines,
-an `async` server component shared byte-for-byte with the internal page detail
-view. Composition, in order:
-
-1. **Header** — `Logo`, "Quality Assurance Certificate", reference `page.id.slice(-8)`
-2. **Title block** — page name, `client · project`, live URL link, verdict pill (`PASS`/`FAIL`/`IN_PROGRESS`)
-3. **Plain-language summary** sentence
-4. **`SitePreview`** — screenshot of the live page (when `page.url`)
-5. **Field grid** — Platform, Type, Delivery, Developer (`Avatar`), Tester (`Avatar`), Delay
-6. **QA checklist** — grouped by category, `ResultCell` per item, with `N checks · N passed · N failed · N N/A`
-7. **Issues** — resolved/total + severity dots
-8. **Footer** — "Verified by …", signed-off/issued date, `HolographicSeal` (PASS only), inline QR to the live page
-9. **Contact strip** — success@apexure.com · apexure.com
-
-Derived in-component (relevant to Section 3): `passed`, `failed`, `na`,
-`items.length`, `categories`, `totalIssues`, `resolved`, `bySeverity`.
-
----
-
-## 2. F2 — the timeline endpoint is not merged (BLOCKER)
+| Name | `apexure-shell` · `panaum/QA-Ecosystem` |
+| Visibility | **public** |
+| Size | 41 KB — very small |
+| Default branch | `main` @ `8b65306` (single branch) |
+| Last push | 2026-08-03 |
+| Stack | **Next 14.2** · **React 18.3** · next-auth 4.24 · **Tailwind v3** (`tailwind.config.ts`) |
 
 ```
-origin/main .. origin/feat/living-certificate-timeline-read
-  f280398  feat(living-certificate): read endpoint for client_timeline
+app/api/auth/[...nextauth]/route.ts    lib/auth.ts
+app/auth/signin/page.tsx               lib/handoff-contract.ts
+app/go/[app]/route.ts                  components/DoorCard.tsx
+app/page.tsx  app/layout.tsx           components/UserMenu.tsx
+middleware.ts                          components/icons.tsx
 ```
 
-- `git branch -r --merged origin/main` → **does not list the branch**
-- `origin/main:backend/main.py` → `/api/registry-bridge/timeline` **absent**
-- `origin/main:backend/database.py` → `timeline_add` present, **`timeline_for_deliverable` absent**
+It is a **launcher** — a three-doors page that signs handoff tokens and redirects
+into the Dashboard and LinkSpy. It has **no database, no Prisma, no Supabase
+client, and no service keys**, which is exactly what §9.3 of the approved note
+depends on.
 
-The endpoint itself (read on the feature branch) is well-formed for our purposes:
-service-key auth, `LIVING_CERTIFICATE=1` gated (404 when off), rate-limited,
-`limit` clamped to 200 rather than rejected, `SELECT`-only, and it returns
-`{registry_deliverable_id, as_of, limit, truncated, count, events[]}`. An empty
-history returns `count: 0`, not a 404 — correct for a freshly signed-off page.
+### F7 — nothing is portable (scope impact)
 
-Its docstring is explicit that it is **not** a client surface: `payload` is
-returned **raw** and may carry internal ids. Whitelisting is the Dashboard's job —
-which Session 1 already built (§5 below).
+The Dashboard's certificate UI cannot be lifted across:
 
-**Section 2 cannot reach production until:** (a) `f280398` is merged to LinkSpy
-`main` and deployed to Railway, and (b) `LIVING_CERTIFICATE=1` is set on Railway.
-That is a separate PR in the other repo. Sections 1, 3 and 4 do not depend on it.
+| | Dashboard | Shell |
+|---|---|---|
+| Next | 16 (App Router, Turbopack) | **14.2** |
+| React | 19 | **18.3** |
+| Tailwind | **v4**, CSS-first `@theme` in `globals.css` | **v3**, `tailwind.config.ts` |
+| UI primitives | `Button`, `Card`, `Badge`, `StatusBadge`, `Avatar` | **none** |
+| Design tokens | `bg-brand-primary`, `text-secondary`, … | **not defined** |
 
----
+The four sections must be **written fresh against the shell's Tailwind v3 config**,
+or the shell must first be upgraded and given the token set. Session 2's UI is
+therefore new-build, not a port — the estimate should carry that. Reusable across
+the boundary: **only pure TypeScript** with no React and no Tailwind, e.g.
+[`timeline-shape.ts`](../../src/lib/living-certificate/timeline-shape.ts).
 
-## 3. F1 — the architecture conflict (DECISION REQUIRED)
+### F8 — the auth middleware landmine
 
-The approved note says:
+`middleware.ts` today is a deliberate pass-through:
 
-> ```
-> Page.shareId (existing, unique, nullable)   ← THE capability.
->    ├── /c/{shareId}      existing static certificate — BYTE-IDENTICAL, untouched forever
->    └── /live/{shareId}   living certificate (Session 2, on the shell)
-> ```
-> — §9.1
+```ts
+// Auth wall TEMPORARILY DISABLED — the shell is open …
+//   export { default } from "next-auth/middleware";
+//   export const config = { matcher: ["/((?!auth|api/auth|_next/static|…).*)"] };
+export function middleware() { return NextResponse.next(); }
+```
 
-and §3 lists "place the route on the Dashboard instead" as the option *"the brief
-explicitly forbids"*.
-
-This session's brief reverses both: same URL, Dashboard repo, conditional render.
-
-**This is the operator's call to make, and the brief is the newer instruction, so
-I have planned against the brief.** It needs recording because three parts of the
-approved note become obsolete:
-
-| §9 element | Under the brief |
-|---|---|
-| `/live/{shareId}` on the shell | **Dropped.** No shell involvement; the shell repo is still not on this machine |
-| Endpoint 1, `GET /api/living-certificate/{shareId}` | **Unnecessary.** The `/c/` server component composes in-process; no new public API surface exists to secure |
-| §9.5 flag on Vercel `qa-ecosystem` | **Not needed.** Flag goes on Vercel `dashboard` + Railway only |
-
-Worth noting the brief's shape is **simpler** than the approved one — it deletes a
-public route, a repo, and a service-key hop. The cost is that `/c/{shareId}` is no
-longer "untouched forever"; it gains a branch. Invariant 1 is what holds the line
-instead, and §6 below is how that gets proven.
+`/live/{shareId}` is client-facing and **must never require sign-in**. Today it
+would be public by default — but the commented matcher excludes only
+`auth|api/auth|_next/*|favicon.ico`, so **whoever re-enables the auth wall will
+silently put a login page in front of every client's certificate**. The exclusion
+must be added to that matcher in the same commit that adds the route, while the
+reason is obvious.
 
 ---
 
-## 4. F6 — data inventory: reuse vs new fetches
+## 3. What the F1 reversal changed
 
-| Section | Field | Source | New fetch? |
+| Element | Under the (withdrawn) prompt | **Under the approved architecture** |
+|---|---|---|
+| Route | `/c/{shareId}` branches internally | **`/live/{shareId}`, new, on the shell** |
+| `/c/{shareId}` | conditionally re-rendered | **untouched forever — zero diff** |
+| Dashboard endpoint 1 | unnecessary (in-process compose) | **required** — the shell holds no keys |
+| Repos touched | Dashboard only | **Dashboard + shell** (+ LinkSpy for F2) |
+| Invariant 1 proof | two-render equality of `/c/` | **`git diff --exit-code`** on the `/c/` tree (§7) |
+| Flag surfaces | Vercel `dashboard`, Railway | **+ Vercel `qa-ecosystem`** |
+
+The reversal makes Invariant 1 **structurally** true rather than test-true: if no
+file under `src/app/c/` or `certificate-document.tsx` changes, the existing view
+cannot change. That also retires F4 — there is no longer a wall-clock snapshot to
+stabilise, because there is no snapshot to take.
+
+It costs one public HTTP hop (shell → Dashboard) that the withdrawn plan avoided.
+That hop is what keeps service keys out of a public repo, so it is worth paying.
+
+---
+
+## 4. Architecture
+
+```
+                   Page.shareId  ← THE capability. Mint/revoke unchanged.
+                        │
+        ┌───────────────┴────────────────┐
+        │                                │
+  /c/{shareId}                    /live/{shareId}
+  Dashboard · EXISTING            SHELL · NEW (Session 2)
+  UNTOUCHED FOREVER               renders only when
+                                  livingCertificateEnabled = true
+                                        │
+                                        │ server-side fetch, no keys
+                                        ▼
+                        GET /api/living-certificate/{shareId}
+                        Dashboard · NEW · auth = the token itself
+                                        │
+                    ┌───────────────────┼────────────────────┐
+                    ▼                   ▼                    ▼
+              Dashboard DB        qa-bridge/status    registry-bridge/
+              (Prisma, read)      client-presence     timeline  ⛔F2
+                                  LinkSpy · qab_ service key
+```
+
+**Composition happens on the Dashboard**, because the Dashboard owns the token
+and the service keys. The shell makes exactly one call and renders. `LINKSPY_API_KEY`
+never leaves the Dashboard's server — mandatory now that F9 confirms every repo
+is public.
+
+---
+
+## 5. Data inventory
+
+| Section | Field | Source | New? |
 |---|---|---|---|
-| **1. Live health** | SSL, uptime, forms, tracking, links | `/api/qa-bridge/status` | 🆕 yes |
-| | incidents, fragility | `/api/registry-bridge/client-presence` | 🆕 yes |
-| **2. Timeline** | narrative events | `/api/registry-bridge/timeline` | 🆕 yes (**blocked, F2**) |
-| **3. Counters** | "38 checks holding" | `certificate.items[]` — **already fetched**, already counted at `certificate-document.tsx:100-102` | ♻️ **reuse** |
-| | "verified 4 hours ago" | `as_of` from `/api/qa-bridge/status` | 🆕 yes |
-| **4. Story mode** | days since delivery | `certificate.completedAt` — **already fetched** | ♻️ **reuse** |
-| | page name, client name | **already fetched** | ♻️ **reuse** |
-| | uptime %, incidents handled | `/api/registry-bridge/client-presence` | 🆕 yes |
-| | "currently healthy" | `/api/qa-bridge/status` | 🆕 yes |
+| **1. Live health** | SSL, uptime, forms, tracking, links | `qa-bridge/status` | 🆕 |
+| | incidents, fragility | `registry-bridge/client-presence` | 🆕 |
+| **2. Timeline** | lifecycle events (Option A) | `registry-bridge/timeline` | 🆕 ⛔ **F2** |
+| **3. Counters** | "38 checks holding" | `certificate.items[]` — Dashboard DB | ♻️ read |
+| | "verified 4 hours ago" | `as_of` from `qa-bridge/status` | 🆕 |
+| **4. Story mode** | days since delivery | `certificate.completedAt` — Dashboard DB | ♻️ read |
+| | page + client name | Dashboard DB | ♻️ read |
+| | uptime %, incidents handled | `registry-bridge/client-presence` | 🆕 |
+| | "currently healthy" | `qa-bridge/status` | 🆕 |
 
-**Net: three distinct LinkSpy endpoints, all already-existing helpers except the
-timeline.** The brief's claim that Section 3 "data already exists in the current
-/c view" is right for the counts and wrong for the freshness — `as_of` has never
-been on this page.
+⚠️ **"Reuse" changes meaning under the reversal.** On `/c/` those fields were
+already in the render. On `/live/` the shell has no database, so **endpoint 1
+must serialise them into its payload**. The Dashboard still reads them from its
+own DB in one query; they are no longer free to the renderer.
 
-### Existing helpers on the Dashboard
+**Addressing keys** — all already columns on rows endpoint 1 reads:
+`Page.registryDeliverableId` (timeline), `Page.registrySiteId` (presence),
+`Client.registryClientId` (presence).
+
+### Existing helpers
 
 | Helper | Endpoint | Cache | Writes? |
 |---|---|---|---|
-| [`getPageStatus()`](../../src/lib/linkspy/client.ts) | `qa-bridge/status` | 15 min, **in `LinkSpyStatus` DB row** | ⚠️ **YES — upserts** |
-| [`getClientPresenceChips()`](../../src/lib/linkspy/client-presence-chips.ts) | `registry-bridge/client-presence` | 60 s, in-memory `Map` | ✅ no |
-| [`toClientTimeline()`](../../src/lib/living-certificate/timeline-shape.ts) | *(pure — no I/O)* | — | ✅ no |
+| [`getPageStatus()`](../../src/lib/linkspy/client.ts) | `qa-bridge/status` | 15 min, **`LinkSpyStatus` row** | ⚠️ **upserts — do not reuse (F3)** |
+| [`getClientPresenceChips()`](../../src/lib/linkspy/client-presence-chips.ts) | `client-presence` | 60 s, in-memory `Map` | ✅ none — **the pattern to copy** |
+| [`toClientTimeline()`](../../src/lib/living-certificate/timeline-shape.ts) | *(pure)* | — | ✅ none |
 
----
-
-## 5. Session 1 already built the timeline whitelist
-
-[src/lib/living-certificate/timeline-shape.ts](../../src/lib/living-certificate/timeline-shape.ts)
-is present on this branch with tests. It is the deny-by-default boundary that
-turns LinkSpy's raw ledger rows into client-safe events: unknown `type` dropped
-entirely, `payload` never spread, no ids ever emitted, malformed/undated rows
-dropped. Currently allows two kinds — `handed_to_qa`, `signed_off`.
-
-Section 2 must render **only** `ClientTimelineEvent`, never `LedgerEvent`.
-
-⚠️ **Gap to note:** the brief's example card is *"Feb 12: SSL expired. Detected in
-4 min. Resolved in 11 min."* — an **incident**. The whitelist has no incident
-rule, and incidents live in `sentinel_incidents` (via client-presence), not in
-`client_timeline`. Section 2 as briefed therefore needs either a new whitelist
-rule or a merge of two sources. **This is scope growth beyond "renders the
-timeline endpoint" — flagging rather than assuming.** See §9.
-
----
-
-## 6. F3 + F4 — the two things that make the invariants harder than they look
-
-### F3 — `getPageStatus()` writes (Invariant 3 violation)
+### F3 — the read-only sibling
 
 ```ts
-// src/lib/linkspy/client.ts:62
+// src/lib/linkspy/client.ts:62  — the line that must not run on this path
 await db.linkSpyStatus.upsert({ where: { pageId: qaPageRef }, … })
 ```
 
-`LinkSpyStatus` is an **existing table**. Invariant 3 says no writes to any
-existing table. Reusing this helper on `/c/{shareId}` would also mean an
-**anonymous, unauthenticated visitor triggers a DB write plus an outbound
-LinkSpy fetch** on every cache miss — a mild abuse vector on a public URL.
-
-**Proposed:** a read-only sibling that reads the `LinkSpyStatus` cache row and
-fetches on miss **without persisting** — in-memory 60 s cache only, following the
-`client-presence-chips.ts` precedent exactly. The internal page keeps writing;
-the public path never does. Needs your nod since it means a second code path
-against the same endpoint.
-
-### F4 — "byte-identical" is not literally testable
-
-```ts
-// certificate-document.tsx:113
-const issued = new Date().toLocaleDateString("en-GB", {…});
-```
-
-The footer renders `Issued 11 August 2026` when `completedAt` is null. **The
-current view's bytes already change every day, with or without this feature.** A
-stored golden-file snapshot would go red at midnight for reasons unrelated to us.
-
-**Proposed test shape — stronger than a golden file:** render the route twice in
-the same test run, once with the flag off and once with the feature branch
-disabled, and assert the two outputs are **identical to each other**. That proves
-the claim that actually matters — *the flag-off path executes the same code and
-produces the same bytes* — instead of proving the page never changes, which is
-false. Recommend one frozen-clock unit snapshot alongside it for regression
-sensitivity.
+`LinkSpyStatus` is an existing table; Invariant 3 forbids writing it. Worse, on a
+public route an anonymous visitor would trigger a DB write per cache miss. The
+sibling reads the cache row and fetches on miss **without persisting** —
+in-memory 60 s only, mirroring `client-presence-chips.ts`. The internal page
+keeps its writing helper untouched.
 
 ### F5 — do not leak handoff links
 
-`getClientPresenceChips()` returns `{presence, hrefByChip}` where `hrefByChip`
-holds HMAC-signed deep links into internal LinkSpy (`/handoff?token=…`).
-**Public rendering must destructure `presence` only.** A grep test should enforce
-that `hrefByChip` never appears under `src/app/c/`.
+`getClientPresenceChips()` returns `{presence, hrefByChip}`; `hrefByChip` holds
+HMAC-signed deep links into internal LinkSpy. **Endpoint 1 must serialise
+`presence` only.** A grep test should assert `hrefByChip` never appears in the
+living-certificate payload path.
 
 ---
 
-## 7. Layout wireframe
+## 6. Layout wireframe — `/live/{shareId}` on the shell
 
-Flag on **and** `livingCertificateEnabled = true`. Everything below the rule is
-today's document, unchanged and in the same order.
+The four sections **are** the page. The shell has no `CertificateDocument` and
+must not grow one (F7 makes a port impossible anyway, and a second renderer of
+the same certificate is exactly the split-brain the approved note rejects).
+**Recommendation: link to `/c/{shareId}` for the formal document — one renderer
+each, no duplication.**
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -257,117 +236,141 @@ today's document, unchanged and in the same order.
 ├────────────────────────────────────────────────────────────────┤
 │  ▸ SECTION 3 — CONTINUOUS VERIFICATION                         │
 │    38 checks holding · verified 4 hours ago                    │
-│    (counts ♻️ from certificate.items; freshness 🆕 from as_of)  │
 ├────────────────────────────────────────────────────────────────┤
-│  ▸ SECTION 2 — HISTORY TIMELINE        (blocked on F2)         │
+│  ▸ SECTION 2 — HISTORY TIMELINE          ⛔ blocked on F2      │
 │    ┌──────────────────────────────────────────────┐            │
-│    │ 12 Feb 2026                                  │            │
-│    │ Quality assurance signed off                 │            │
-│    │ 38 checks passed                             │            │
+│    │ 12 Feb 2026 · Quality assurance signed off   │            │
+│    │              38 checks passed                │            │
 │    ├──────────────────────────────────────────────┤            │
-│    │ 08 Feb 2026                                  │            │
-│    │ Handed to quality assurance                  │            │
+│    │ 08 Feb 2026 · Handed to quality assurance    │            │
 │    └──────────────────────────────────────────────┘            │
-│    narrative-first cards, newest first, whitelisted only       │
-╞════════════════════════════════════════════════════════════════╡
-│                                                                │
-│         ↓↓  EXISTING CERTIFICATE — UNCHANGED  ↓↓               │
-│                                                                │
-│  <TiltCard><CertificateDocument/></TiltCard>                   │
-│    header · title+verdict · summary · SitePreview · fields     │
-│    · QA checklist · issues · footer+seal+QR · contact strip    │
+│    Option A: whitelisted lifecycle events only, newest first   │
+├────────────────────────────────────────────────────────────────┤
+│  → View the formal QA certificate  (links to /c/{shareId})     │
 └────────────────────────────────────────────────────────────────┘
 ```
 
-Rationale for order: the four new sections sit **above** the existing document so
-the current component tree is never re-parented. Nothing is inserted into,
-removed from, or reordered within `CertificateDocument` — which is what keeps
-Invariant 1 and T7 cheap to prove.
-
 ---
 
-## 8. Fetch plan
+## 7. Fetch plan
 
 ```
-1. DB   db.page.findUnique({ where: { shareId } })        ← EXISTING query,
-        + registryDeliverableId, registrySiteId,            3 columns added,
-        + project.client.registryClientId                   same round trip
-        └── notFound() if unresolved                       (unchanged)
-
-2. GATE livingCertificateEnabled && LIVING_CERTIFICATE=1
-        └── false → return today's JSX, untouched. No fetch is issued.
-
-3. NET  Promise.allSettled([                              ← parallel; no
-          statusReadOnly(page.id),          // §6 F3        interdependencies
-          presence(client.registryClientId),
-          timeline(page.registryDeliverableId),
-        ])
-        60 s in-memory cache · 4 s timeout · staleness over errors
-        each rejection hides ONLY its own section
+SHELL  /live/{shareId}                     Next 14 server component
+  │
+  └─1 fetch → DASHBOARD /api/living-certificate/{shareId}
+               60 s revalidate · no keys held by the shell
+                 │
+                 ├─ GATE  LIVING_CERTIFICATE=1 ?           → 404 if unset
+                 ├─ DB    page.findUnique({ shareId })     → 404 if unresolved
+                 ├─ GATE  livingCertificateEnabled ?       → 404 if false
+                 │
+                 └─ Promise.allSettled([                    ← parallel
+                      statusReadOnly(page.id),        // §5 F3
+                      presence(client.registryClientId),
+                      timeline(page.registryDeliverableId), // ⛔ F2
+                    ])
+                    60 s in-memory · 4 s timeout · staleness over errors
+                    each rejection hides ONLY its own section
 ```
 
-**Parallel, not sequential** — all three are keyed off values already present on
-the page row after step 1, so none waits on another. Cache 60 s per the brief,
-matching the `client-presence-chips.ts` precedent. Every failure degrades to
-last-known-good, then to a hidden section; no failure may 500 the page or affect
-the existing document below.
+**Parallel, not sequential** — the three LinkSpy reads are all keyed off values
+present after the single DB query, so none waits on another. A `404` is the
+uniform answer for *flag off*, *bad token*, and *not enabled*, so the endpoint
+never reveals which of the three was the case.
 
 ---
 
-## 9. What I am NOT assuming (scope questions for you)
+## 8. Invariant proofs
 
-1. **F1 — confirm the reversal.** The brief overrides §9.1/§3 of the approved
-   note. Confirm and I will treat the approved note as superseded on this point.
-2. **F3 — approve the read-only status path**, or accept the `LinkSpyStatus`
-   write on the public route (which contradicts Invariant 3).
-3. **§5 — incident cards.** The brief's example timeline card is an incident, but
-   incidents are not in `client_timeline` and not in the whitelist. Options: (a)
-   Section 2 renders only the two whitelisted lifecycle events for now, (b) add an
-   incident rule and merge the client-presence incident feed. **(a) is Session 2;
-   (b) is scope growth** — per the brief's "if scope needs to grow, stop and
-   design-note", I am stopping here rather than choosing.
-4. **F4 — approve the two-render equality test** in place of a golden-file
-   snapshot.
+| Invariant | How it is proven |
+|---|---|
+| **1** — zero change to `/c/{shareId}` | **`git diff --exit-code` over `src/app/c/` and `certificate-document.tsx`** at PR time. Nothing to snapshot: the files do not change |
+| **2** — `LIVING_CERTIFICATE=1` gates everything | Flag-off tests on all three surfaces: endpoint 1 → 404, `/live/` → 404, existing views unchanged |
+| **3** — read-only | Grep test: no `db.*.create/update/upsert/delete` reachable from the living-certificate path. Extends the pattern already passing in `prefill-provenance.test.ts` and `isolation.test.ts` |
+| **4** — one token, one revoke | `revokeShareLink()` nulls `shareId` → `/c/` **and** `/live/` both 404. No second token exists |
+
+### State tests
+
+| # | `LIVING_CERTIFICATE` | `livingCertificateEnabled` | `/c/{shareId}` | `/live/{shareId}` |
+|---|---|---|---|---|
+| 1 | unset | `false` | unchanged | 404 |
+| 2 | unset | `true` | unchanged | 404 — **column ignored entirely** |
+| 3 | `1` | `false` | unchanged | 404 |
+| 4 | `1` | `true` | **unchanged** | four sections |
+| 5 | `1` | `true`, LinkSpy down | unchanged | sections degrade individually, no 500 |
+| 6 | `1` | `true`, timeline 404 (F2) | unchanged | 1/3/4 render, 2 hidden |
+| 7 | any | `shareId` revoked | 404 | 404 |
+
+In all seven: **zero writes** to `Page`, `QACheckItem`, `QACertificate`, `Issue`,
+`LinkSpyStatus`, or any tester-owned record.
 
 ---
 
-## 10. Tripwire status
+## 9. Prerequisites before Session 2 code
+
+1. ⛔ **Clone the shell repo** — see §10. Nothing renders until it is on disk.
+2. ⛔ **F2** — merge `f280398` to LinkSpy `main`, deploy to Railway, set
+   `LIVING_CERTIFICATE=1` there. **Section 2 only.** Recorded in
+   [docs/runbooks/living-certificate.md](../runbooks/living-certificate.md).
+3. `LIVING_CERTIFICATE=1` on Vercel `dashboard` (endpoint 1) and Vercel
+   `qa-ecosystem` (the `/live/` route). **Not set by me** — the brief forbids
+   enabling the flag.
+4. `DASHBOARD_URL` already exists in the shell's `.env.example`; endpoint 1 is
+   reachable at that origin, so no new shell secret is needed.
+
+---
+
+## 10. Cloning the shell — access report
+
+Verified read-only, **no clone performed**:
+
+| Check | Result |
+|---|---|
+| `gh` CLI | ✅ installed (2.97.0) — **not logged in**, and **not needed** for git over SSH |
+| SSH key | ✅ `~/.ssh/id_ed25519.pub` |
+| `ssh -T git@github.com` | ✅ *"Hi panaum! You've successfully authenticated"* |
+| `git ls-remote` over SSH | ✅ `main` @ `8b65306` |
+| `git ls-remote` over HTTPS, anonymous | ✅ succeeds — the repo is public |
+| Credential helper | ✅ `osxkeychain` (system gitconfig) |
+
+**No access blocker exists.** Both transports work today. Recommended:
+
+```zsh
+git clone git@github.com:panaum/QA-Ecosystem.git /Users/apexure/qa-ecosystem
+cd /Users/apexure/qa-ecosystem && npm install
+cp .env.example .env.local     # then fill in — see below
+```
+
+To run it locally, `.env.local` needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `SPINE_SECRET` (must equal the Dashboard's and
+LinkSpy's), `DASHBOARD_URL`, `LINKSPY_URL`. For `/live/` work only `DASHBOARD_URL`
+is load-bearing — the auth wall is off (F8), so the other values can stay at their
+example defaults until sign-in is re-enabled.
+
+⚠️ Both apps default to **port 3000**. Running the shell against a local Dashboard
+means moving one of them (`next dev -p 3001`).
+
+---
+
+## 11. Tripwire status
 
 | Tripwire | Status |
 |---|---|
-| **T1** non-additive DDL | ✅ none — no DDL at all this session |
-| **T4** unattended writes to existing rows | ⚠️ **would fire** if `getPageStatus()` is reused as-is (F3). Mitigation proposed |
+| **T1** non-additive DDL | ✅ none — no DDL this session |
+| **T4** unattended writes | ✅ prevented by the F3 sibling; grep-enforced (§8) |
 | **T5** exit test fails after one fix | — not reached |
-| **T7** changes existing UI beyond additive rendering | ✅ prevented by design — new sections sit above, `CertificateDocument` untouched |
-| **T8** changes existing endpoint response shapes | ✅ none — all three LinkSpy endpoints consumed as-is |
-
----
-
-## 11. State tests — when off / when on
-
-| # | `LIVING_CERTIFICATE` | `livingCertificateEnabled` | Expected |
-|---|---|---|---|
-| 1 | unset | `false` | Today's view, byte-identical. Column never read |
-| 2 | unset | `true` | Today's view, byte-identical. **Flag off ⇒ column ignored entirely** (Invariant 2) |
-| 3 | `1` | `false` | Today's view, byte-identical. No LinkSpy fetch issued |
-| 4 | `1` | `true` | Four sections above the unchanged document |
-| 5 | `1` | `true`, LinkSpy unreachable | Sections degrade individually; existing document unaffected; no 500 |
-| 6 | `1` | `true`, timeline 404 (Railway flag off) | Sections 1/3/4 render; Section 2 hidden; no error |
-| 7 | any | `shareId` revoked | `notFound()` — unchanged, inherited revocation |
-
-Plus, in all seven: **zero writes** to `Page`, `QACheckItem`, `QACertificate`,
-`Issue`, `LinkSpyStatus`, or any tester-owned record — grep-enforced on the
-pattern already passing in `prefill-provenance.test.ts` and `isolation.test.ts`.
+| **T7** changes existing UI | ✅ **structurally impossible** — `/c/` is not edited at all |
+| **T8** changes existing endpoint shapes | ✅ none — all three LinkSpy endpoints consumed as-is |
 
 ---
 
 ## 12. Deferred to Session 3+
 
-Not built here, per the brief: the operator-facing **enable toggle** (a server
-action beside `createShareLink`/`revokeShareLink`), **custom domain**, and
-**analytics**. Also deferred: the shell repo's `/live/` route, now obsolete under
-F1 unless the operator reinstates it.
+The operator-facing **enable toggle** (a server action beside `createShareLink` /
+`revokeShareLink`), **custom domain**, **analytics**, and **incident cards** in
+Section 2 (Option B — revisit if the narrative reads as incomplete in real use).
 
 ---
 
-**STOP.** Awaiting review of the four questions in §9 before any UI code.
+**STOP.** No Session 2 UI code written. Blocked on §9.1 — the shell repo is not
+on this machine.
