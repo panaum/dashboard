@@ -1,26 +1,39 @@
-# Living Certificate — Step 0 diagnosis
+# Living Certificate — diagnosis + approved architecture
 
 **Date:** 2026-08-10 · **Branch:** `docs/living-certificate-diagnosis` ·
-**Status:** ⛔ **STOPPED before code. Two hard blockers and one architectural
-conflict. Operator approval required.**
+**Status:** ✅ **Architecture approved (Option 1). Blocked on DB credentials for
+the T3 dump before Step 1 may begin.**
 
-Step 0 was read-only. No code was written, no schema touched, no branch cut for
-implementation. This note records what is actually there, which is not quite
-what the brief assumes.
+Step 0 was read-only. §§0–7 record what is actually there, which is not quite
+what the brief assumed. **§9 is the approved architecture and is the part to
+build from.**
+
+### Operator decisions, 2026-08-10
+
+| Decision | Chosen |
+|---|---|
+| Share model | **Option 1** — a richer *rendering* of the existing `/c/{shareId}` capability. No new token, **no new table** |
+| Auth | **Stored-token**, inherited from `Page.shareId`. Instant revocation, no HMAC |
+| Shell rendering (Step 3) | **Deferred to Session 2** — shell repo not on this machine |
+| `client_timeline` read endpoint | **Approved as necessary work**, accepted as unestimated |
+
+Session scope: one column, four read endpoints (three existing, one new), the
+test suite. No rendering.
 
 ---
 
-## 0. Summary — why this stopped
+## 0. Summary — the four findings and how each was resolved
 
-| # | Finding | Severity |
+| # | Finding | Resolution |
 |---|---|---|
-| **A** | **A public, no-login, token-URL certificate already exists** (`/c/{shareId}` on the Dashboard, opt-in per page, instantly revocable). The proposed column + table would be a *second* opt-in and a *second* token store for the same concept | **Architectural conflict — approval needed** |
-| **B** | **Shell repo (`apexure-shell` / `qa-ecosystem`) is not on this machine.** Step 3 — the entire render surface — cannot be built here | **Blocker** |
-| **C** | **T6 fired: no credentials.** No `.env`, `DATABASE_URL` and `SUPABASE_URL` both unset. The T3 dump and the T2 drift check are both impossible, so Step 1 cannot legally start | **Tripwire T6 — STOP** |
-| **D** | `client_timeline` **has no read path anywhere** — it is written and never read. The history section cannot "compose existing reads"; it needs a new one | Premise correction |
+| **A** | **A public, no-login, token-URL certificate already exists** (`/c/{shareId}`, opt-in per page, instantly revocable). A second opt-in + second token store would be §9 split-brain at the client-facing boundary | ✅ **Option 1** — reuse `shareId` as the one capability; the new boolean only selects a rendering. No new table (§9.1) |
+| **B** | **Shell repo is not on this machine** — Step 3's render surface has no home here | ⏭ **Deferred to Session 2.** This session ships data only |
+| **C** | **T6: no credentials.** `DATABASE_URL` / `SUPABASE_URL` unset, so the T3 dump and T2 drift check are impossible | ⛔ **STILL BLOCKING.** Operator supplying credentials; nothing in §9 may be built until the DB is reachable (§8) |
+| **D** | `client_timeline` is **written and never read** — no helper, no endpoint | ✅ Accepted as necessary, unestimated work: one new read endpoint (§9.3 #4) |
 
-None of T1, T2, T4, T7, T8 fired — because no code or DDL was written. T3 is
-pre-empted by T6.
+**Tripwires:** T6 fired and remains open. None of T1, T2, T4, T5, T7, T8 fired —
+no code, no DDL, no UI and no endpoint has been touched. T3 is pre-empted by T6
+and will be honoured in order once credentials land.
 
 ---
 
@@ -68,23 +81,13 @@ There are already **five** token/capability mechanisms in the platform:
 008), `attestations` (018), `invites` (007), plus HMAC handoff tokens. A sixth
 needs to justify itself.
 
-### Three options — operator decides
+### Resolution — Option 1 (approved)
 
-1. **Extend the existing socket (recommended).** Living Certificate becomes a
-   *richer rendering* of an existing `shareId`, not a new grant. Add
-   `Page.livingCertificateEnabled` as the **view toggle only** (which renderer
-   the token resolves to), reuse `shareId` as the capability, and inherit
-   revocation for free. One opt-in, one token, one revoke. Still additive-only:
-   one boolean column, **no new table at all**.
-2. **New parallel grant** (as briefed). Accept two independent share states and
-   mitigate with a reconciliation routine per §9 — more moving parts, and the
-   failure mode is silent over-exposure of client data.
-3. **Supersede.** Living Certificate replaces `/c/{shareId}`, which redirects.
-   Cleanest end state, but it *changes an existing surface* → **violates
-   invariant 1 and trips T7**. Not available under this brief.
-
-Option 1 satisfies every stated invariant, removes the split-brain, and *reduces*
-the DDL from one column + one table to one column.
+Living Certificate becomes a **richer rendering of the token that already
+exists**, not a second grant. `Page.shareId` stays the one capability; the new
+boolean only says *which renderings that token may resolve to*. One opt-in, one
+token, one revoke — and the DDL shrinks to a single column with **no new table
+at all**. Full architecture in §9.
 
 ---
 
@@ -193,7 +196,130 @@ the Dashboard already has a standing T4 test (`prefill-provenance.test.ts`:
 
 ---
 
-## 8. What is needed to proceed
+## 8. Blocking gate — T3/T6
+
+**Nothing in §9 may be built until the database is reachable.** T3 requires a
+verified dump before any migration; T6 fired because `DATABASE_URL` /
+`DIRECT_URL` (Dashboard) and Supabase access (LinkSpy) are all unset here.
+
+Order, strictly: operator supplies credentials → I confirm reachability → dump
+taken and filename recorded → `prisma migrate diff` shows an empty drift →
+migration applied. A failure at any point stops the session.
+
+---
+
+## 9. Approved architecture (Option 1)
+
+### 9.1 The share model
+
+One capability, two renderings. `Page.shareId` is unchanged and remains the only
+token; the new boolean says only *which renderings it may resolve to*.
+
+```
+Page.shareId (existing, unique, nullable)   ← THE capability. Mint/revoke unchanged.
+   │
+   ├── /c/{shareId}      existing static certificate — BYTE-IDENTICAL, untouched forever
+   └── /live/{shareId}   living certificate (Session 2, on the shell)
+                         resolves ONLY when Page.livingCertificateEnabled = true
+```
+
+Two levels of control, both already familiar to the operator:
+
+| Action | Effect on `/c/` | Effect on `/live/` |
+|---|---|---|
+| `revokeShareLink()` (existing, nulls `shareId`) | dead instantly | dead instantly |
+| `livingCertificateEnabled = false` | unaffected | dead instantly |
+| `LIVING_CERTIFICATE` unset | unaffected | 404 — as if it never existed |
+
+Revocation is inherited, so there is no second thing to remember to revoke. That
+was the whole point of Option 1.
+
+### 9.2 Schema — the entire DDL for this feature
+
+```prisma
+model Page {
+  shareId                  String?  @unique          // existing
+  livingCertificateEnabled Boolean  @default(false)  // NEW — the only change
+}
+```
+
+One additive, defaulted, non-null column on one table. **No new table.** No
+index, no constraint, no relation. Reverses with a bare `DROP COLUMN`.
+
+### 9.3 Endpoints
+
+Composition happens on the **Dashboard**, because the Dashboard owns the token.
+The shell therefore holds no service keys and makes exactly one call — which is
+also why Session 2 is small.
+
+| # | App | Endpoint | Auth | Status |
+|---|---|---|---|---|
+| 1 | Dashboard | `GET /api/living-certificate/{shareId}` | **the token itself** — no login | **new** |
+| 2 | LinkSpy | `GET /api/qa-bridge/status?qa_page_ref=` | `qab_` service key | existing, unchanged |
+| 3 | LinkSpy | `GET /api/registry-bridge/client-presence?registry_client_id=` | `qab_` service key | existing, unchanged |
+| 4 | LinkSpy | `GET /api/registry-bridge/timeline?registry_deliverable_id=` | `qab_` service key | **new** (§4) |
+
+Endpoint 1 validates `shareId` → `livingCertificateEnabled` → composes 2–4
+server-side → returns the four sections in one payload. Its own `LINKSPY_API_KEY`
+never leaves the server, exactly as `client-presence-chips.ts` already does.
+
+`GET /api/registry-bridge/timeline` reads `client_timeline`
+(`id, registry_site_id, registry_deliverable_id, type, payload, occurred_at,
+source`) ordered `occurred_at desc`, via a new `timeline_for_deliverable()`
+helper. Append-only ledger, `SELECT`-only, flag-gated, capped and paginated.
+
+**Enabling** is a server action next to the existing `createShareLink` /
+`revokeShareLink` in the same file — not a `POST` route — because that is the
+established pattern for Dashboard mutations and it inherits the session guard
+for free. The brief's `POST /api/living-certificate/enable` is dropped: under
+Option 1 there is no token to create, only a boolean to flip.
+
+### 9.4 The four sections, and where each field comes from
+
+| Section | Fields | Source |
+|---|---|---|
+| **Live health** | SSL, uptime, forms, tracking, links | endpoint 2 (`derive_checks` → `summarize`) |
+| **History timeline** | incidents + resolutions, narrative events | endpoint 4, plus incidents via endpoint 3 |
+| **Continuous verification** | "38 checks holding, verified 4 hours ago" | endpoint 2 (`summary.holding`, `as_of`) |
+| **Story mode** | days since delivery, uptime %, incidents handled, current state | `signed_off_at` (local DB) + endpoints 2–3 |
+
+Nothing here derives new intelligence. Every number is already computed by the
+module that owns it; this feature only arranges them.
+
+### 9.5 Flag behaviour
+
+`LIVING_CERTIFICATE=1` on **Vercel `dashboard`** (endpoint 1 + the enable
+action) and **Railway** (endpoint 4). Off on either surface ⇒ that surface's
+endpoint answers `404`, the enable toggle does not render, and every existing
+page is byte-identical. Session 2 adds the same flag to Vercel `qa-ecosystem`.
+
+### 9.6 T4 audit — final, for the approved design
+
+| # | Write | Target | Touches an existing table? |
+|---|---|---|---|
+| 1 | `db.page.update({ livingCertificateEnabled })` | `Page`, **new column only** | Existing row, new column |
+
+**That is the complete list.** One write, one column. No new table exists to
+write to. `shareId` mint/revoke is the *existing* action, unchanged by this work.
+Endpoints 1–4 are `SELECT`-only end to end.
+
+Zero writes to `QACheckItem`, `ChecklistTemplateItem`, `QACertificate`, `Issue`,
+or any tester-owned record — grep-enforced on the pattern already passing in
+both repos.
+
+### 9.7 Rollback
+
+1. Unset `LIVING_CERTIFICATE` on both surfaces → `/live/` 404s, toggle vanishes,
+   everything else unchanged. **No data touched.**
+2. If reverting the schema: `ALTER TABLE "Page" DROP COLUMN
+   "livingCertificateEnabled"`. No dependent objects, no cascade, and
+   `/c/{shareId}` is unaffected because it never read the column.
+
+There is no third step, because there is no new table and no new token.
+
+---
+
+## 10. What is needed to proceed
 
 1. **Decide Finding A** — Option 1, 2, or 3. This changes the DDL, the endpoint
    set, and the test matrix, so nothing should be built before it is settled.
@@ -203,5 +329,7 @@ the Dashboard already has a standing T4 test (`prefill-provenance.test.ts`:
 3. **The shell repo**, or a decision to defer Step 3.
 4. **Confirm the auth model** is stored-token, not HMAC-signed (§6).
 
-Steps 1–4 of the brief remain unstarted, by design. No implementation branch has
-been cut.
+Item 1 is settled (§9). Item 3 is deferred to Session 2. Item 4 is settled
+(stored-token). **Only item 2 — credentials — still blocks.**
+
+No implementation branch has been cut.
