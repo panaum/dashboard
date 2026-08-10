@@ -3504,6 +3504,56 @@ async def registry_bridge_link_client(request: Request,
             "dashboard_client_id": dashboard_client_id}
 
 
+_TIMELINE_MAX_LIMIT = 200
+
+
+@app.get("/api/registry-bridge/timeline")
+async def registry_bridge_timeline(registry_deliverable_id: str = Query(...),
+                                   limit: int = Query(default=100),
+                                   authorization: str = Header(default=None),
+                                   x_api_key: str = Header(default=None)):
+    """LIVING CERTIFICATE — the deliverable's narrative history from
+    `client_timeline`, newest first.
+
+    This is the first read of that ledger: it has been appended to since Phase 2
+    and never rendered (§8.2 — "start recording NOW, render later"). SELECT-only;
+    an append-only ledger is never mutated here.
+
+    ⚠ INTERNAL BOUNDARY, NOT A CLIENT SURFACE. Service-key auth, and `payload`
+    is returned RAW — spine event payloads may carry internal ids and URLs. The
+    Dashboard's composing endpoint is what whitelists fields before anything
+    reaches a client's browser. Do not point a public page at this route.
+
+    Gated on LIVING_CERTIFICATE=1: off, it answers 404 and is indistinguishable
+    from not existing."""
+    from datetime import datetime, timezone
+    from database import timeline_for_deliverable
+    if os.getenv("LIVING_CERTIFICATE") != "1":
+        return JSONResponse({"error": "living_certificate_disabled"}, status_code=404)
+
+    key = await _qa_authenticate(authorization, x_api_key)
+    if not key:
+        return JSONResponse({"error": "A valid registry service key is required."}, status_code=401)
+    if not _qa_rl.allow(key["id"], time.time()):
+        return JSONResponse({"error": "Rate limit exceeded. Try again shortly."}, status_code=429)
+
+    # Clamp rather than reject: a caller asking for too much gets the cap, not
+    # an error page on a client-facing render path.
+    capped = max(1, min(int(limit or 100), _TIMELINE_MAX_LIMIT))
+    try:
+        events = await timeline_for_deliverable(registry_deliverable_id, capped)
+    except Exception as e:
+        print(f"[living-certificate/timeline] read failed for {registry_deliverable_id}: {e}")
+        return JSONResponse({"error": "living_certificate_unavailable"}, status_code=503)
+
+    # An empty history is a valid answer, not a 404 — a freshly signed-off
+    # deliverable has nothing on its ledger yet.
+    return {"registry_deliverable_id": registry_deliverable_id,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "limit": capped, "truncated": len(events) == capped,
+            "count": len(events), "events": events}
+
+
 # ─── QA-bridge admin (agency-internal) — mapping + service keys ───────────────
 @app.get("/api/sites/{site_id}/qa-bridge/maps")
 async def qa_maps_list(site_id: str, _acc: dict = Depends(require_site_access("member"))):
