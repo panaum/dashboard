@@ -51,6 +51,7 @@ model Page {
   url           String?
   status        String         @default("IN_PROGRESS") // Status
   shareId       String?        @unique //                 public certificate link token (opt-in)
+  livingCertificateEnabled Boolean @default(false) //     opt-in: certificate keeps reflecting live status
   developer     TeamMember?    @relation("Dev", fields: [developerId], references: [id], onDelete: SetNull)
   developerId   String?
   tester        TeamMember?    @relation("Tester", fields: [testerId], references: [id], onDelete: SetNull)
