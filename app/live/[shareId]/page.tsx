@@ -4,6 +4,7 @@ import { fetchLivingCertificate } from "@/lib/living-certificate";
 import { StoryHeader } from "@/components/StoryHeader";
 import { VerificationCounters } from "@/components/VerificationCounters";
 import { LiveHealthStrip } from "@/components/LiveHealthStrip";
+import { TimelineSection } from "@/components/TimelineSection";
 
 // LIVING CERTIFICATE — /live/{shareId}
 //
@@ -15,8 +16,9 @@ import { LiveHealthStrip } from "@/components/LiveHealthStrip";
 // ⚠ PUBLIC BY DESIGN. This route must never sit behind the shell's auth wall.
 // See the exclusion in middleware.ts.
 //
-// Sections shipped: 4 (story header), 3 (verification counters), 1 (live health).
-// Section 2 (timeline) lands next; the payload already carries its key as null.
+// Sections shipped: 4 (story header), 1 (live health), 3 (verification counters),
+// 2 (history timeline) — in that reading order: who and how long, what is true
+// now, how much is holding, then how it got here.
 
 // Tokenised links are not for search engines — same posture as /c/{shareId}.
 export const metadata: Metadata = {
@@ -62,6 +64,12 @@ export default async function LivingCertificatePage({
                 not "zero checks hold" — so the section is absent, not empty. */}
             {result.data.verification && (
               <VerificationCounters verification={result.data.verification} now={now} />
+            )}
+            {/* null means we did not look successfully — no registry annotation,
+                the flag off on LinkSpy, or an unreachable host. An empty array
+                is a real answer and renders the empty state instead. */}
+            {result.data.timeline !== null && (
+              <TimelineSection events={result.data.timeline} />
             )}
           </>
         )}
