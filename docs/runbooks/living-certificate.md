@@ -27,8 +27,16 @@ steps below.
 | 1 | Merge `f280398` (*feat(living-certificate): read endpoint for client_timeline*) to `main` | LinkSpy (`brokenlinkchecker`) | `git show origin/main:backend/main.py \| grep 'registry-bridge/timeline'` returns a hit |
 | 2 | Deploy to Railway **and** set `LIVING_CERTIFICATE=1` there | LinkSpy · Railway | `GET /api/registry-bridge/timeline?registry_deliverable_id=<uuid>` with a `qab_` key returns `200`, not `404` |
 
-As of 2026-08-11 the branch `feat/living-certificate-timeline-read` is pushed but
-**not merged**; `timeline_for_deliverable` is absent from `main`.
+**Verified 2026-08-11 (later):** step 1 is DONE — the endpoint is merged and
+deployed. Step 2 is NOT: an unauthenticated probe returns
+`404 {"error":"living_certificate_disabled"}`, which is the route's own flag gate
+answering before authentication. The route exists; `LIVING_CERTIFICATE` is unset
+on Railway.
+
+A third prerequisite, not previously listed: **no page carries a
+`registryDeliverableId` (0 of 265)**, so even with the flag on every page returns
+`timeline: null`. Deliverables must be registered with LinkSpy before the section
+has anything to show.
 
 ---
 

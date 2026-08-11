@@ -5,6 +5,7 @@ import { buildStory } from "@/lib/living-certificate/story-shape";
 import { buildVerification } from "@/lib/living-certificate/verification-shape";
 import { buildLiveHealth, siteHealthFrom } from "@/lib/living-certificate/health-shape";
 import { getPageStatusReadOnly } from "@/lib/linkspy/status-readonly";
+import { getClientTimeline } from "@/lib/living-certificate/timeline-fetch";
 
 // LIVING CERTIFICATE — the composing endpoint. Dashboard → shell.
 //
@@ -56,7 +57,8 @@ export async function GET(
         livingCertificateEnabled: true,
         // Addressing keys for LinkSpy. `registrySiteId` gates Section 1 — no
         // site annotation means no live status to ask about.
-        // `registryDeliverableId` is Section 2's key and is still unused.
+        // `registryDeliverableId` is Section 2's key — the deliverable whose
+        // narrative ledger LinkSpy holds.
         registrySiteId: true,
         registryDeliverableId: true,
         project: {
@@ -105,7 +107,15 @@ export async function GET(
   //
   // Read-only (F3): getPageStatusReadOnly persists nothing. Unreachable LinkSpy
   // degrades to last-known-good, then to null — it never throws and never 500s.
-  const served = page.registrySiteId ? await getPageStatusReadOnly(page.id) : null;
+  // Both LinkSpy reads are keyed off values already on the page row, so neither
+  // waits on the other. Each degrades independently: one failing never blanks
+  // the other's section.
+  const [served, timeline] = await Promise.all([
+    page.registrySiteId ? getPageStatusReadOnly(page.id) : Promise.resolve(null),
+    // Section 2. null = no section; [] = registered but nothing recorded yet.
+    getClientTimeline(page.registryDeliverableId),
+  ]);
+
   const liveHealth = buildLiveHealth(served?.payload, {
     stale: served?.stale,
     asOf: served?.asOf ?? null,
@@ -150,9 +160,7 @@ export async function GET(
       verification, //  Section 3
       live_health: liveHealth, // Section 1 — derived chip states only, never the
       //                           raw LinkSpy payload (F10)
-      // Present-and-null means "this section has no data yet"; the renderer
-      // hides it. Filling it later is additive and never reshapes the response.
-      timeline: null, // Section 2 — blocked on the LinkSpy endpoint merge
+      timeline, //      Section 2 — whitelisted lifecycle events, or null
     },
     { headers: { "Cache-Control": CACHE_CONTROL } },
   );

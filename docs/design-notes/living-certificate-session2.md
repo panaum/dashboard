@@ -1,8 +1,9 @@
 # Living Certificate — Session 2 diagnosis (Step 0)
 
 **Date:** 2026-08-11 · **Repo:** Dashboard · **Branch:** `feat/living-certificate-timeline-shape`
-**Status:** ⏸ **Sections 4 + 3 built, palette ported. Section 1 + the Section 4
-per-site reword are PLANNED (§§16–17) and awaiting review. No code written for either.**
+**Status:** ✅ **All four sections built. Section 2 cannot be verified live yet:
+`LIVING_CERTIFICATE` is still unset on Railway and 0 of 265 pages carry a
+`registryDeliverableId` (§20). Nothing enabled anywhere.**
 
 Session 1 shipped `Page.livingCertificateEnabled` (boolean, default false, applied
 to production, 265 rows backfilled, drift-free — commit `bd30dd0`). This note is
@@ -27,6 +28,7 @@ the read-only diagnosis for the rendering work.
 | **F4** snapshots | **Two-render equality** in the same run, not a golden file |
 | **Scope** | **Option A** — Section 2 renders only whitelisted lifecycle events. Incidents deferred |
 | **F11** scope | **Option B** — Section 4's uptime/incidents become **per-site**, not per-client. Copy reworded to say so (§16) |
+| Null vitals | **Ship the nulls.** A null clause beats a fabricated number; the wire fields are ready for a real per-site source (§18) |
 
 ---
 
@@ -728,7 +730,7 @@ the operator-facing enable toggle.
 
 ---
 
-## 16. Section 4 copy — reword to per-site scope (PLANNED, not yet applied)
+## 16. Section 4 copy — reword to per-site scope (BUILT — see §18)
 
 Operator decision, 2026-08-11: **Option B.** Section 4's uptime and incident
 figures become **per-site**, not per-client. F11 killed the client aggregate; this
@@ -823,7 +825,7 @@ at, which is the only failure mode that matters here.
 
 ---
 
-## 17. Section 1 — live health strip (PLANNED, not started)
+## 17. Section 1 — live health strip (BUILT — see §18)
 
 Five status chips: SSL, uptime, forms, tracking, links. Palette-unblocked (§13);
 data path constrained by F10 and F11.
@@ -900,7 +902,262 @@ Needs no schema change, no LinkSpy merge, and no further palette decision.
 
 ---
 
-## 18. Deferred to Session 3+
+## 18. Section 1 + the reword — what actually landed
+
+Both shipped together, as agreed: the copy is honest from the first byte a client
+sees, because the vitals it describes arrive in the same commit.
+
+Dashboard `f7fdf83` · shell `b234c08`.
+
+### Four chip states, not five
+
+`settling` was specified and is **not implemented**. LinkSpy supplies three
+verdicts; the one candidate signal — `uptime` arriving with `last_checked: null`
+— is a *healthy* check that carries no per-check timestamp, its detail reading
+`"Reachable · 99.4% uptime"`. Labelling that "settling" would put a fault on a
+client's certificate that no measurement supports.
+
+Adding it needs a real input, e.g. a monitoring-start timestamp from LinkSpy.
+Until that exists the state is absent rather than guessed — the same rule that
+makes an ungraded checklist render nothing in §14.
+
+Rendered from the one mapped production page:
+
+| Chip | State | Renders |
+|---|---|---|
+| SSL | `healthy` | green · "Valid" |
+| Uptime | `healthy` | green · "Reachable" |
+| Forms | `unknown` | grey · "Not checked" |
+| Tracking | `unknown` | grey · "Not checked" |
+| Links | `attention` | amber · "Broken link found" |
+
+Severity is a **presentation** policy, documented as such: SSL and uptime
+failures are `critical` because a visitor is hurt right now; forms, tracking and
+links are `attention` because the page still works. An open `incident_ref`
+escalates anything. LinkSpy says "failing"; we decide how loudly a client hears it.
+
+### F11 dead weight — what the guard caught
+
+The new F11 assertion failed on first run against the route's own query:
+
+```prisma
+client: { select: { name: true, registryClientId: true } }   // ← removed
+```
+
+`registryClientId` was selected and never used — left from Section 4's original
+client-scoped plan, which F11 had since killed. Harmless while unused, and
+exactly the affordance that would let someone wire `client-presence` back in
+without noticing they had crossed a boundary. The key now never enters this path
+at all; only `client.name` is read.
+
+Two more guards fired and were **narrowed rather than loosened**:
+
+| Guard | Caught | Fix |
+|---|---|---|
+| `getPageStatus` ban | `getPageStatusReadOnly` by substring | negative lookahead — the ban is on the writer only |
+| `payload` ban | a legitimate server-side read handed to a pure deriver | banned as an object KEY (select / response), not as a property read |
+
+Both were my own tests being blunter than the rule they encoded. Neither rule was
+weakened.
+
+### The duplicate that only rendering caught
+
+The scope sentence appeared **twice** — once in `StoryHeader`, once in the strip.
+`site_health` is derived from the same chips, so the header always states the
+scope directly above the strip; saying it again read as a disclaimer rather than
+a fact. Removed from the strip. No test would have found this; rendering all four
+states side by side did.
+
+### Still null, and staying that way
+
+`site_uptime_pct` and `site_incidents_handled` remain null. `qa-bridge/status`
+returns verdicts, not a numeric uptime or an incident count — the uptime figure
+exists only inside a human sentence. The one structured source was the
+client-level feed, which F11 rules out.
+
+**Operator decision: ship the nulls.** When a real per-site source exists the wire
+fields are already in place and the copy already renders them correctly. A null
+clause beats a fabricated number.
+
+`site_health` **is** populated, derived from the same chips as the strip, so the
+header and the strip can never disagree.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Dashboard `npm test` | **215 pass, 0 fail** (67 living-certificate) |
+| Shell `npm test` | **32 pass, 0 fail** |
+| Both `tsc --noEmit` / `build` | clean |
+| F10 guard | ✅ no shell file names `qa-bridge` / `registry-bridge` / `LINKSPY_API_KEY` |
+| F11 guard | ✅ no `client-presence`, `getClientPresenceChips`, `registryClientId` |
+| No-write guard | ✅ extended to `status-readonly.ts` |
+| **Invariant 1** | ✅ `/c/` byte-identical to `origin/main` |
+| Flags | unset on all surfaces; **0 of 265** pages opted in |
+
+---
+
+## 19. Section 2 — the plan (BUILT — see §20)
+
+Section 2 is the only unbuilt section, and **nothing about it needs deciding**.
+Option A (whitelisted lifecycle events only) was settled in §0; the whitelist
+itself already exists and is tested
+([timeline-shape.ts](../../src/lib/living-certificate/timeline-shape.ts)); the
+payload already carries `timeline: null` as an additive seam.
+
+What remains is **pure operator work, both in the LinkSpy repo**:
+
+| # | Step | Verify |
+|---|---|---|
+| 1 | Merge `f280398` (*read endpoint for client_timeline*) to LinkSpy `main` and deploy to Railway | `git show origin/main:backend/main.py \| grep 'registry-bridge/timeline'` returns a hit |
+| 2 | Set `LIVING_CERTIFICATE=1` on Railway | the endpoint answers `200`, not `404`, for a `qab_` key |
+
+Once both are done, Section 2 is a short session: the Dashboard calls the
+endpoint with `Page.registryDeliverableId` (already selected by the query),
+whitelists through `toClientTimeline()`, and the shell renders narrative cards
+with the `lc-*` tokens that now exist. No schema change, no new decision.
+
+Full activation order and rollback: [runbooks/living-certificate.md](../runbooks/living-certificate.md).
+
+---
+
+## 20. Section 2 — history timeline (BUILT, not yet verifiable end-to-end)
+
+Built on `feat/living-certificate-timeline` in both repos, branched off the
+merged mains. The code is complete and tested; **three things prevent a live
+end-to-end check**, all recorded below with evidence.
+
+### Step 1 diagnosis — a stated prerequisite is not actually in effect
+
+**The LinkSpy endpoint is deployed, but `LIVING_CERTIFICATE` is NOT set on
+Railway.** Probed unauthenticated — no service key is needed to learn this:
+
+```
+GET …/api/registry-bridge/timeline?registry_deliverable_id=…&limit=100
+→ HTTP 404  {"error":"living_certificate_disabled"}
+```
+
+That exact body comes only from the timeline route's own flag gate, which runs
+**before** authentication:
+
+```python
+if os.getenv("LIVING_CERTIFICATE") != "1":
+    return JSONResponse({"error": "living_certificate_disabled"}, status_code=404)
+```
+
+So the merge and deploy landed — the route exists and is executing — and the flag
+is still off. Had the route been missing entirely, the response would have been a
+generic 404 with no such body.
+
+**No page carries a `registryDeliverableId`: 0 of 265.** Even with the flag on,
+every page returns `timeline: null` today, because the field the timeline is keyed
+on is unset everywhere.
+
+**The Dashboard's local `.env` has no `LINKSPY_API_URL` / `LINKSPY_API_KEY`**, so
+no live call could be made from this machine regardless. Vercel may have them;
+not verifiable from here.
+
+None of the three blocks the build — the code treats all of them as `null` by
+design, which is exactly Invariant 3. They block only the live check.
+
+### null vs [] — the distinction the section rests on
+
+| Value | Means | Renders |
+|---|---|---|
+| `null` | we did **not** look successfully — no annotation, flag off on LinkSpy, unreachable, unreadable body | **no section at all** |
+| `[]` | we **did** look; the ledger is genuinely empty | "Timeline begins after delivery." |
+| `[…]` | whitelisted events | cards, newest first |
+
+Collapsing those two would make a failed lookup read as *"nothing has ever
+happened to your site"* — something we have no basis for saying. Same rule as an
+unmapped page in Section 1 and an ungraded checklist in Section 3, asserted at
+three layers: `readLedger`, `serveTimeline`, and a shell grep that the route keys
+on `timeline !== null` rather than truthiness (an empty array is falsy-adjacent
+in a reviewer's head, and `&&` on `[]` renders nothing).
+
+### A restructure the tests forced
+
+`timeline-fetch.ts` began as one module and could not be unit-tested:
+`server-only` is not an installed package — Next resolves it at build time — and
+**no test in this repo imports a server-only module directly.**
+
+Rather than drop the import, which is what keeps the service key out of client
+bundles, the module was split along the line the repo already uses for
+`catalog-map.ts` + `linkspy/client.ts`:
+
+| File | Holds | Tested by |
+|---|---|---|
+| `timeline-source.ts` | URL building, body reading, null-vs-`[]` policy, cache window, staleness | import — 16 cases |
+| `timeline-fetch.ts` | env, `fetch`, a `Map` | grep — `server-only` present, no `db`, key never in the URL |
+
+The shell is now thin enough that everything worth asserting lives in the pure
+half.
+
+### Ordering, and why the renderer sorts anyway
+
+**Newest first**, matching Sections 1 and 3, which both lead with current state:
+this is a *living* certificate, so what is true now outranks what was true first.
+
+LinkSpy already returns the ledger newest-first and the whitelist preserves that
+order, so `orderNewestFirst()` is usually a no-op. It runs regardless because the
+section makes a promise about chronology to its reader, and a section should keep
+its own promise rather than inherit an upstream ordering it does not control. The
+sort is stable, so events sharing a timestamp keep ledger order.
+
+### Copy
+
+Cards are narrative-first: the sentence leads, the detail follows, the date sits
+muted underneath. A timestamp-first row would read as machine output, and this is
+the one section whose job is to read like a story.
+
+Dates are formatted explicitly in UTC (`28 July 2026`) rather than through
+`toLocaleDateString`: the same string must come out of the server and the
+browser, or React hydration mismatches and a reader in Sydney sees a different
+date from one in London. The format matches `/c/{shareId}`.
+
+The empty state is **"Timeline begins after delivery."** — a fact about the
+timeline, not an absence of data. A test asserts the copy never opens with "No…"
+and never contains *empty / none / nothing / yet*, because those read as a bug
+rather than a state.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Dashboard `npm test` | **232 pass, 0 fail** (84 living-certificate) |
+| Shell `npm test` | **43 pass, 0 fail** |
+| Both `tsc --noEmit` / `build` | clean |
+| Rendered — populated | 2 cards, newest first, rail joining them |
+| Rendered — empty | "Timeline begins after delivery." |
+| Rendered — null | section absent; Sections 1/3/4 unaffected |
+| Mobile 390 px | no horizontal overflow |
+| F10 | ✅ shell still names no `qa-bridge` / `registry-bridge` |
+| F11 | ✅ no `client-presence` / `registryClientId` on the path |
+| No writes | ✅ `timeline-fetch.ts` imports no `db` at all |
+| **Invariant 1** | ✅ `/c/` byte-identical to `origin/main` |
+| Flags | untouched everywhere; **0 of 265** pages opted in |
+
+### A merge note worth keeping
+
+PR #12 was merged one commit early: all Section 1 **code** reached `main`, but the
+closing docs commit `63ae844` did not, so §§16–19 were left reading PLANNED on
+`main` while the code they described was already there. Cherry-picked onto this
+branch rather than rewritten, so the history stays honest.
+
+### To see a timeline live, in order
+
+1. Set `LIVING_CERTIFICATE=1` on **Railway** → the endpoint stops answering 404.
+2. Ensure `LINKSPY_API_URL` / `LINKSPY_API_KEY` are set on **Vercel `dashboard`**.
+3. Register at least one deliverable, so a page has `registryDeliverableId`.
+4. Then activation proper: `LIVING_CERTIFICATE=1` on Vercel `dashboard` and
+   `qa-ecosystem`, and opt a page in.
+
+Steps 1–3 are prerequisites for the section having anything to show; step 4 is
+activation, and belongs with the enable toggle in Session 5.
+
+---
+
+## 21. Deferred to Session 3+
 
 The operator-facing **enable toggle** (a server action beside `createShareLink` /
 `revokeShareLink`), **custom domain**, **analytics**, and **incident cards** in
@@ -908,7 +1165,11 @@ Section 2 (Option B — revisit if the narrative reads as incomplete in real use
 
 ---
 
-**STOP.** Sections 4 and 3 are built and tested; the palette port is scoped and
-verified (§§12–14). §16 (the per-site reword) and §17 (Section 1) are PLANS —
-no code has been written for either, pending review. Section 2 remains blocked on
-the LinkSpy merge.
+**SESSION COMPLETE.** Sections 1, 3 and 4 are built and tested across both repos,
+the Option A palette port is scoped and verified, and the per-site reword shipped
+with the vitals it describes (§§12–18). Section 2 remains, blocked only on two
+operator steps in the LinkSpy repo (§19) — no design decisions are outstanding.
+
+Nothing is enabled: `LIVING_CERTIFICATE` is unset on every surface, no page has
+`livingCertificateEnabled` set, and `/c/{shareId}` is byte-identical to
+`origin/main`.
