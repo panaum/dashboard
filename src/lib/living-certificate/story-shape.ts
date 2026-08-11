@@ -21,11 +21,18 @@ export type StorySource = {
   signedOffAt: Date | null;
 };
 
-/** Section 1 fills these in. Shape is fixed now so it never has to change. */
+/**
+ * Section 1 fills these in.
+ *
+ * ⚠ PER-SITE, NOT PER-CLIENT (F11). These describe the site this page is
+ * published on — never the client's other properties. A page-level share token
+ * must not reveal a client's estate, so the field names carry the scope and the
+ * copy states it.
+ */
 export type LiveVitals = {
-  uptimePct: number | null;
-  incidentsHandled: number | null;
-  health: StoryHealth | null;
+  siteUptimePct: number | null;
+  siteIncidentsHandled: number | null;
+  siteHealth: StoryHealth | null;
 };
 
 export type StoryHealth = "healthy" | "attention" | "unknown";
@@ -38,9 +45,11 @@ export type Story = {
   delivered_on: string | null;
   /** Whole UTC days since sign-off. Null until signed off. */
   days_since_delivery: number | null;
-  uptime_pct: number | null;
-  incidents_handled: number | null;
-  health: StoryHealth | null;
+  /** Uptime of THIS PAGE'S SITE. Null when unavailable — never 0. */
+  site_uptime_pct: number | null;
+  /** Incidents handled on THIS PAGE'S SITE. */
+  site_incidents_handled: number | null;
+  site_health: StoryHealth | null;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -74,7 +83,7 @@ function isUsableDate(d: Date | null | undefined): d is Date {
 export function buildStory(
   src: StorySource,
   now: Date,
-  vitals: LiveVitals = { uptimePct: null, incidentsHandled: null, health: null },
+  vitals: LiveVitals = { siteUptimePct: null, siteIncidentsHandled: null, siteHealth: null },
 ): Story {
   const signed = isUsableDate(src.signedOffAt) ? src.signedOffAt : null;
   return {
@@ -82,8 +91,8 @@ export function buildStory(
     client_name: src.clientName,
     delivered_on: signed ? isoDate(signed) : null,
     days_since_delivery: signed ? daysSince(signed, now) : null,
-    uptime_pct: vitals.uptimePct,
-    incidents_handled: vitals.incidentsHandled,
-    health: vitals.health,
+    site_uptime_pct: vitals.siteUptimePct,
+    site_incidents_handled: vitals.siteIncidentsHandled,
+    site_health: vitals.siteHealth,
   };
 }

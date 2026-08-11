@@ -23,6 +23,9 @@ const code = (p: string) =>
 
 const ROUTE = "src/app/api/living-certificate/[shareId]/route.ts";
 const LIB = "src/lib/living-certificate";
+// The F3 sibling lives under lib/linkspy but is reachable from the public path,
+// so it carries the same no-write obligation as everything under LIB.
+const READONLY = "src/lib/linkspy/status-readonly.ts";
 
 function filesUnder(dir: string): string[] {
   const abs = resolve(process.cwd(), dir);
@@ -40,9 +43,37 @@ function filesUnder(dir: string): string[] {
 // write, an anonymous visitor can make our database do work on request.
 test("the living-certificate path never writes", () => {
   const WRITE = /\bdb\.[a-zA-Z]+\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\b/;
-  for (const f of [ROUTE, ...filesUnder(LIB)]) {
+  for (const f of [ROUTE, READONLY, ...filesUnder(LIB)]) {
     assert.doesNotMatch(code(f), WRITE, `${f} must not write to the database`);
   }
+});
+
+// The whole reason status-readonly.ts exists. getPageStatus() upserts on every
+// cache miss; on a public URL that would let anyone make our database write by
+// reloading. The sibling reads the same row and persists nothing.
+test("the read-only status sibling reads the LinkSpyStatus row but never writes it", () => {
+  const src = code(READONLY);
+  assert.match(src, /db\.linkSpyStatus\s*\n?\s*\.findUnique/, "it must read the durable row");
+  assert.doesNotMatch(src, /\.upsert|\.update|\.create/, "it must persist nothing");
+  assert.match(src, /^import "server-only";/m, "the API key must never reach a bundle");
+});
+
+// ═══ F11 — PAGE-SCOPED ONLY ═══
+// client-presence aggregates every site under sites.client_id — by its own
+// documentation "a superset". A page-level share token must not reveal a
+// client's estate, so that feed may not appear on this path at all.
+test("no client-level source can reach the public payload", () => {
+  for (const f of [ROUTE, READONLY, ...filesUnder(LIB)]) {
+    const src = code(f);
+    assert.doesNotMatch(src, /client-presence/, `${f} must not use the client-level feed`);
+    assert.doesNotMatch(src, /getClientPresenceChips/, `${f} must not call the chips helper`);
+    assert.doesNotMatch(src, /registryClientId/, `${f} must not address LinkSpy by client`);
+  }
+});
+
+// Section 1 is gated on the page's OWN site annotation, not on the client's.
+test("the strip is gated on the page's own site annotation", () => {
+  assert.match(code(ROUTE), /page\.registrySiteId/, "Section 1 must key off registrySiteId");
 });
 
 // getPageStatus() upserts LinkSpyStatus (src/lib/linkspy/client.ts:62). It is
@@ -50,7 +81,13 @@ test("the living-certificate path never writes", () => {
 // Invariant 3, so the ban is explicit rather than implied by the regex above.
 test("the endpoint does not reuse the writing status helper", () => {
   const src = code(ROUTE);
-  assert.doesNotMatch(src, /getPageStatus/, "must use the read-only sibling, not getPageStatus");
+  // The sibling is getPageStatusReadOnly; the banned one is the bare
+  // getPageStatus, which upserts. The lookahead keeps the ban on the writer only.
+  assert.doesNotMatch(
+    src,
+    /getPageStatus(?!ReadOnly)/,
+    "must use the read-only sibling, not the writing getPageStatus",
+  );
   // Reading `linkspyStatus.fetchedAt` through the Page relation is a READ and is
   // how Section 3 gets its freshness. What is banned is the model accessor,
   // which is the surface every write goes through.
@@ -60,8 +97,19 @@ test("the endpoint does not reuse the writing status helper", () => {
 // LinkSpyStatus.payload is LinkSpy's raw internal status. Section 3 needs the
 // timestamp beside it and nothing else; selecting the payload would put internal
 // state one JSON.stringify away from a client's browser.
-test("the raw LinkSpy payload is never selected", () => {
-  assert.doesNotMatch(code(ROUTE), /payload/, "the route must never read LinkSpyStatus.payload");
+test("the raw LinkSpy payload is never selected or serialised", () => {
+  const src = code(ROUTE);
+  // `payload` as an object KEY is what matters: it means either selecting the
+  // column out of the database, or placing it in the response. Reading
+  // `served.payload` server-side and handing it to a pure deriver is fine and is
+  // how Section 1 works — nothing derived from it carries the raw text (F10,
+  // proven in health-shape.test.ts).
+  assert.doesNotMatch(src, /payload\s*:/, "payload must never be a select or a response key");
+  assert.match(
+    src,
+    /linkspyStatus:\s*\{\s*select:\s*\{\s*fetchedAt:\s*true\s*\}\s*\}/,
+    "the LinkSpyStatus select must stay pinned to fetchedAt",
+  );
 });
 
 // ═══ F5 — the signed handoff links are internal ═══
