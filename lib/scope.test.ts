@@ -19,6 +19,7 @@ const LIVE_OWNED = [
   "app/live",
   "components/StoryHeader.tsx",
   "components/VerificationCounters.tsx",
+  "components/LiveHealthStrip.tsx",
 ];
 
 function walk(dir: string): string[] {
@@ -109,4 +110,43 @@ test("the light ground is conditional, never global", () => {
     /lc-root/,
     "the dark ground must stay unconditional",
   );
+});
+
+// ═══ F10 — THE SHELL NEVER REACHES LINKSPY ═══
+//
+// /live/{shareId} is an unauthenticated URL: anything its payload carries is
+// readable by anyone the link reaches. Composition therefore happens on the
+// Dashboard, which owns both the token and the service keys, and this repo — a
+// PUBLIC one — makes exactly one call, to the Dashboard.
+//
+// Naming a LinkSpy endpoint here would be the first step toward the shell
+// holding a `qab_` key. The guard is on the string itself, so the mistake
+// cannot be made quietly.
+test("no shell file names a LinkSpy endpoint", () => {
+  for (const f of sourceFiles) {
+    const src = readFileSync(join(ROOT, f), "utf8");
+    assert.doesNotMatch(src, /qa-bridge/, `${f} must not name a LinkSpy endpoint`);
+    assert.doesNotMatch(src, /registry-bridge/, `${f} must not name a LinkSpy endpoint`);
+    assert.doesNotMatch(src, /LINKSPY_API_KEY/, `${f} must never reference a service key`);
+  }
+});
+
+// The one call the shell is allowed to make.
+test("the shell fetches only the Dashboard", () => {
+  const fetcher = readFileSync(join(ROOT, "lib/living-certificate.ts"), "utf8");
+  const urls = [...fetcher.matchAll(/\$\{base\}([^`]*)/g)].map((m) => m[1]);
+  assert.deepEqual(urls, ["/api/living-certificate/${encodeURIComponent(shareId)}"]);
+  assert.match(fetcher, /process\.env\.DASHBOARD_URL/, "the base must be the Dashboard");
+  assert.doesNotMatch(fetcher, /LINKSPY_URL/, "the shell must not address LinkSpy");
+});
+
+// ═══ UNKNOWN IS NEVER GREEN ═══
+// The discipline held since Sections 3 and 4, asserted structurally: the strip's
+// unknown state must not reuse the success colour.
+test("the unknown chip state is not styled as success", () => {
+  const strip = readFileSync(join(ROOT, "components/LiveHealthStrip.tsx"), "utf8");
+  const unknownLine = strip.split("\n").find((l) => l.trim().startsWith("unknown:"));
+  assert.ok(unknownLine, "the strip must define an unknown state");
+  assert.doesNotMatch(unknownLine, /lc-success/, "unknown must never be green");
+  assert.match(unknownLine, /lc-muted/, "unknown must be the neutral treatment");
 });

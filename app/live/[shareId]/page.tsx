@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { fetchLivingCertificate } from "@/lib/living-certificate";
 import { StoryHeader } from "@/components/StoryHeader";
 import { VerificationCounters } from "@/components/VerificationCounters";
+import { LiveHealthStrip } from "@/components/LiveHealthStrip";
 
 // LIVING CERTIFICATE — /live/{shareId}
 //
@@ -14,9 +15,8 @@ import { VerificationCounters } from "@/components/VerificationCounters";
 // ⚠ PUBLIC BY DESIGN. This route must never sit behind the shell's auth wall.
 // See the exclusion in middleware.ts.
 //
-// Sections shipped: 4 (story header), 3 (verification counters).
-// Section 1 (live health strip) and 2 (timeline) land next; the payload already
-// carries their keys as null.
+// Sections shipped: 4 (story header), 3 (verification counters), 1 (live health).
+// Section 2 (timeline) lands next; the payload already carries its key as null.
 
 // Tokenised links are not for search engines — same posture as /c/{shareId}.
 export const metadata: Metadata = {
@@ -52,6 +52,12 @@ export default async function LivingCertificatePage({
         ) : (
           <>
             <StoryHeader story={result.data.story} />
+            {/* null means the page is not mapped on LinkSpy — we never looked,
+                which is not the same as looking and finding nothing. Five grey
+                chips would imply the former. */}
+            {result.data.live_health && (
+              <LiveHealthStrip health={result.data.live_health} now={now} />
+            )}
             {/* null means "no honest counter exists" (an ungraded checklist),
                 not "zero checks hold" — so the section is absent, not empty. */}
             {result.data.verification && (

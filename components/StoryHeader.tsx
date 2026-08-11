@@ -1,31 +1,36 @@
 import type { Story } from "@/lib/living-certificate";
-import { storyClauses } from "@/lib/story-clauses";
+import { storyClauses, scopeNote } from "@/lib/story-clauses";
 
 // LIVING CERTIFICATE — Section 4, the story mode header.
 //
 //   FAUTONS
 //   Fautons LP
-//   14 days since delivery · 99.8% uptime · 3 incidents handled
-//   ● Currently healthy
+//   14 days since delivery · 99.8% site uptime · 3 site incidents handled
+//   ● Site currently healthy
+//   Live figures cover the site this page is published on.
 //
-// Presentational only. The null-omission rule lives in lib/story-clauses.ts so
-// it can be tested without a renderer; this file only arranges the result.
+// Presentational only. The null-omission and scope rules live in
+// lib/story-clauses.ts so they can be tested without a renderer; this file only
+// arranges the result.
 //
 // Palette is the Dashboard's, ported as `lc-*` (see tailwind.config.ts), so this
 // reads as a sibling of /c/{shareId} rather than as a different product.
 
+// Every label names the SITE. Under the page's own title, an unqualified
+// "Currently healthy" would read as a claim about this page (F11).
 const HEALTH: Record<
-  NonNullable<Story["health"]>,
+  NonNullable<Story["site_health"]>,
   { dot: string; text: string; label: string }
 > = {
-  healthy: { dot: "bg-lc-success", text: "text-lc-success", label: "Currently healthy" },
-  attention: { dot: "bg-lc-warning", text: "text-lc-warning", label: "Needs attention" },
-  unknown: { dot: "bg-lc-muted", text: "text-lc-muted", label: "Status unknown" },
+  healthy: { dot: "bg-lc-success", text: "text-lc-success", label: "Site currently healthy" },
+  attention: { dot: "bg-lc-warning", text: "text-lc-warning", label: "Site needs attention" },
+  unknown: { dot: "bg-lc-muted", text: "text-lc-muted", label: "Site status unknown" },
 };
 
 export function StoryHeader({ story }: { story: Story }) {
   const clauses = storyClauses(story);
-  const health = story.health ? HEALTH[story.health] : null;
+  const health = story.site_health ? HEALTH[story.site_health] : null;
+  const scope = scopeNote(story);
 
   return (
     <header className="rounded-2xl border border-lc-line bg-lc-card p-6 shadow-lc sm:p-8">
@@ -44,11 +49,14 @@ export function StoryHeader({ story }: { story: Story }) {
       )}
 
       {health && (
-        <p className={`mt-4 inline-flex items-center gap-2 text-sm font-medium ${health.text}`}>
+        <p className={`mt-4 flex items-center gap-2 text-sm font-medium ${health.text}`}>
           <span className={`size-2 rounded-full ${health.dot}`} aria-hidden />
           {health.label}
         </p>
       )}
+
+      {/* One sentence fixes the scope for every live figure above it. */}
+      {scope && <p className="mt-3 text-[12px] text-lc-muted">{scope}</p>}
     </header>
   );
 }

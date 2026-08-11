@@ -20,9 +20,31 @@ export type Story = {
   days_since_delivery: number | null;
   // Filled by Section 1. null means "no data" and the clause is omitted —
   // never render null as 0.
-  uptime_pct: number | null;
-  incidents_handled: number | null;
-  health: "healthy" | "attention" | "unknown" | null;
+  //
+  // ⚠ PER-SITE, NOT PER-CLIENT (F11). These describe the site this page is
+  // published on. The names carry the scope so no future reader of this contract
+  // can mistake them for the client's estate or for the page alone.
+  site_uptime_pct: number | null;
+  site_incidents_handled: number | null;
+  site_health: "healthy" | "attention" | "unknown" | null;
+};
+
+/** Section 1 — one chip per check. Derived states only; never LinkSpy's text. */
+export type ChipState = "healthy" | "attention" | "critical" | "unknown";
+
+export type Chip = {
+  key: "ssl" | "uptime" | "forms" | "tracking" | "links";
+  label: string;
+  state: ChipState;
+  /** The Dashboard's wording, derived from the state. */
+  note: string;
+};
+
+export type LiveHealth = {
+  chips: Chip[];
+  as_of: string | null;
+  /** Served from last-known-good because LinkSpy was unreachable. */
+  stale: boolean;
 };
 
 /**
@@ -45,7 +67,7 @@ export type LivingCertificate = {
   as_of: string;
   story: Story;
   verification: Verification | null; // Section 3
-  live_health: unknown | null; //        Section 1
+  live_health: LiveHealth | null; //     Section 1
   timeline: unknown | null; //           Section 2
 };
 
