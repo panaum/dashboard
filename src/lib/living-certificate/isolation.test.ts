@@ -51,7 +51,17 @@ test("the living-certificate path never writes", () => {
 test("the endpoint does not reuse the writing status helper", () => {
   const src = code(ROUTE);
   assert.doesNotMatch(src, /getPageStatus/, "must use the read-only sibling, not getPageStatus");
-  assert.doesNotMatch(src, /linkSpyStatus/i, "must not touch the LinkSpyStatus table");
+  // Reading `linkspyStatus.fetchedAt` through the Page relation is a READ and is
+  // how Section 3 gets its freshness. What is banned is the model accessor,
+  // which is the surface every write goes through.
+  assert.doesNotMatch(src, /db\.linkSpyStatus/, "must not access the LinkSpyStatus model directly");
+});
+
+// LinkSpyStatus.payload is LinkSpy's raw internal status. Section 3 needs the
+// timestamp beside it and nothing else; selecting the payload would put internal
+// state one JSON.stringify away from a client's browser.
+test("the raw LinkSpy payload is never selected", () => {
+  assert.doesNotMatch(code(ROUTE), /payload/, "the route must never read LinkSpyStatus.payload");
 });
 
 // ═══ F5 — the signed handoff links are internal ═══
