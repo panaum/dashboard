@@ -1,8 +1,9 @@
 # Living Certificate — Session 2 diagnosis (Step 0)
 
 **Date:** 2026-08-11 · **Repo:** Dashboard · **Branch:** `feat/living-certificate-timeline-shape`
-**Status:** ⏸ **Sections 4 + 3 built, palette ported. Section 1 + the Section 4
-per-site reword are PLANNED (§§16–17) and awaiting review. No code written for either.**
+**Status:** ✅ **Sections 1, 3 and 4 built; palette ported; per-site reword shipped.
+Section 2 is the only remainder and needs no design decision — just two operator
+steps in the LinkSpy repo (§19). Nothing enabled anywhere.**
 
 Session 1 shipped `Page.livingCertificateEnabled` (boolean, default false, applied
 to production, 265 rows backfilled, drift-free — commit `bd30dd0`). This note is
@@ -27,6 +28,7 @@ the read-only diagnosis for the rendering work.
 | **F4** snapshots | **Two-render equality** in the same run, not a golden file |
 | **Scope** | **Option A** — Section 2 renders only whitelisted lifecycle events. Incidents deferred |
 | **F11** scope | **Option B** — Section 4's uptime/incidents become **per-site**, not per-client. Copy reworded to say so (§16) |
+| Null vitals | **Ship the nulls.** A null clause beats a fabricated number; the wire fields are ready for a real per-site source (§18) |
 
 ---
 
@@ -728,7 +730,7 @@ the operator-facing enable toggle.
 
 ---
 
-## 16. Section 4 copy — reword to per-site scope (PLANNED, not yet applied)
+## 16. Section 4 copy — reword to per-site scope (BUILT — see §18)
 
 Operator decision, 2026-08-11: **Option B.** Section 4's uptime and incident
 figures become **per-site**, not per-client. F11 killed the client aggregate; this
@@ -823,7 +825,7 @@ at, which is the only failure mode that matters here.
 
 ---
 
-## 17. Section 1 — live health strip (PLANNED, not started)
+## 17. Section 1 — live health strip (BUILT — see §18)
 
 Five status chips: SSL, uptime, forms, tracking, links. Palette-unblocked (§13);
 data path constrained by F10 and F11.
@@ -900,7 +902,126 @@ Needs no schema change, no LinkSpy merge, and no further palette decision.
 
 ---
 
-## 18. Deferred to Session 3+
+## 18. Section 1 + the reword — what actually landed
+
+Both shipped together, as agreed: the copy is honest from the first byte a client
+sees, because the vitals it describes arrive in the same commit.
+
+Dashboard `f7fdf83` · shell `b234c08`.
+
+### Four chip states, not five
+
+`settling` was specified and is **not implemented**. LinkSpy supplies three
+verdicts; the one candidate signal — `uptime` arriving with `last_checked: null`
+— is a *healthy* check that carries no per-check timestamp, its detail reading
+`"Reachable · 99.4% uptime"`. Labelling that "settling" would put a fault on a
+client's certificate that no measurement supports.
+
+Adding it needs a real input, e.g. a monitoring-start timestamp from LinkSpy.
+Until that exists the state is absent rather than guessed — the same rule that
+makes an ungraded checklist render nothing in §14.
+
+Rendered from the one mapped production page:
+
+| Chip | State | Renders |
+|---|---|---|
+| SSL | `healthy` | green · "Valid" |
+| Uptime | `healthy` | green · "Reachable" |
+| Forms | `unknown` | grey · "Not checked" |
+| Tracking | `unknown` | grey · "Not checked" |
+| Links | `attention` | amber · "Broken link found" |
+
+Severity is a **presentation** policy, documented as such: SSL and uptime
+failures are `critical` because a visitor is hurt right now; forms, tracking and
+links are `attention` because the page still works. An open `incident_ref`
+escalates anything. LinkSpy says "failing"; we decide how loudly a client hears it.
+
+### F11 dead weight — what the guard caught
+
+The new F11 assertion failed on first run against the route's own query:
+
+```prisma
+client: { select: { name: true, registryClientId: true } }   // ← removed
+```
+
+`registryClientId` was selected and never used — left from Section 4's original
+client-scoped plan, which F11 had since killed. Harmless while unused, and
+exactly the affordance that would let someone wire `client-presence` back in
+without noticing they had crossed a boundary. The key now never enters this path
+at all; only `client.name` is read.
+
+Two more guards fired and were **narrowed rather than loosened**:
+
+| Guard | Caught | Fix |
+|---|---|---|
+| `getPageStatus` ban | `getPageStatusReadOnly` by substring | negative lookahead — the ban is on the writer only |
+| `payload` ban | a legitimate server-side read handed to a pure deriver | banned as an object KEY (select / response), not as a property read |
+
+Both were my own tests being blunter than the rule they encoded. Neither rule was
+weakened.
+
+### The duplicate that only rendering caught
+
+The scope sentence appeared **twice** — once in `StoryHeader`, once in the strip.
+`site_health` is derived from the same chips, so the header always states the
+scope directly above the strip; saying it again read as a disclaimer rather than
+a fact. Removed from the strip. No test would have found this; rendering all four
+states side by side did.
+
+### Still null, and staying that way
+
+`site_uptime_pct` and `site_incidents_handled` remain null. `qa-bridge/status`
+returns verdicts, not a numeric uptime or an incident count — the uptime figure
+exists only inside a human sentence. The one structured source was the
+client-level feed, which F11 rules out.
+
+**Operator decision: ship the nulls.** When a real per-site source exists the wire
+fields are already in place and the copy already renders them correctly. A null
+clause beats a fabricated number.
+
+`site_health` **is** populated, derived from the same chips as the strip, so the
+header and the strip can never disagree.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Dashboard `npm test` | **215 pass, 0 fail** (67 living-certificate) |
+| Shell `npm test` | **32 pass, 0 fail** |
+| Both `tsc --noEmit` / `build` | clean |
+| F10 guard | ✅ no shell file names `qa-bridge` / `registry-bridge` / `LINKSPY_API_KEY` |
+| F11 guard | ✅ no `client-presence`, `getClientPresenceChips`, `registryClientId` |
+| No-write guard | ✅ extended to `status-readonly.ts` |
+| **Invariant 1** | ✅ `/c/` byte-identical to `origin/main` |
+| Flags | unset on all surfaces; **0 of 265** pages opted in |
+
+---
+
+## 19. Next: Section 2 — no design decisions remain
+
+Section 2 is the only unbuilt section, and **nothing about it needs deciding**.
+Option A (whitelisted lifecycle events only) was settled in §0; the whitelist
+itself already exists and is tested
+([timeline-shape.ts](../../src/lib/living-certificate/timeline-shape.ts)); the
+payload already carries `timeline: null` as an additive seam.
+
+What remains is **pure operator work, both in the LinkSpy repo**:
+
+| # | Step | Verify |
+|---|---|---|
+| 1 | Merge `f280398` (*read endpoint for client_timeline*) to LinkSpy `main` and deploy to Railway | `git show origin/main:backend/main.py \| grep 'registry-bridge/timeline'` returns a hit |
+| 2 | Set `LIVING_CERTIFICATE=1` on Railway | the endpoint answers `200`, not `404`, for a `qab_` key |
+
+Once both are done, Section 2 is a short session: the Dashboard calls the
+endpoint with `Page.registryDeliverableId` (already selected by the query),
+whitelists through `toClientTimeline()`, and the shell renders narrative cards
+with the `lc-*` tokens that now exist. No schema change, no new decision.
+
+Full activation order and rollback: [runbooks/living-certificate.md](../runbooks/living-certificate.md).
+
+---
+
+## 20. Deferred to Session 3+
 
 The operator-facing **enable toggle** (a server action beside `createShareLink` /
 `revokeShareLink`), **custom domain**, **analytics**, and **incident cards** in
@@ -908,7 +1029,11 @@ Section 2 (Option B — revisit if the narrative reads as incomplete in real use
 
 ---
 
-**STOP.** Sections 4 and 3 are built and tested; the palette port is scoped and
-verified (§§12–14). §16 (the per-site reword) and §17 (Section 1) are PLANS —
-no code has been written for either, pending review. Section 2 remains blocked on
-the LinkSpy merge.
+**SESSION COMPLETE.** Sections 1, 3 and 4 are built and tested across both repos,
+the Option A palette port is scoped and verified, and the per-site reword shipped
+with the vitals it describes (§§12–18). Section 2 remains, blocked only on two
+operator steps in the LinkSpy repo (§19) — no design decisions are outstanding.
+
+Nothing is enabled: `LIVING_CERTIFICATE` is unset on every surface, no page has
+`livingCertificateEnabled` set, and `/c/{shareId}` is byte-identical to
+`origin/main`.
