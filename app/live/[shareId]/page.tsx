@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { fetchLivingCertificate } from "@/lib/living-certificate";
 import { StoryHeader } from "@/components/StoryHeader";
+import { VerificationCounters } from "@/components/VerificationCounters";
 
 // LIVING CERTIFICATE — /live/{shareId}
 //
@@ -13,8 +14,9 @@ import { StoryHeader } from "@/components/StoryHeader";
 // ⚠ PUBLIC BY DESIGN. This route must never sit behind the shell's auth wall.
 // See the exclusion in middleware.ts.
 //
-// Sections 1–3 (live health, timeline, verification counters) land next; the
-// payload already carries their keys as null.
+// Sections shipped: 4 (story header), 3 (verification counters).
+// Section 1 (live health strip) and 2 (timeline) land next; the payload already
+// carries their keys as null.
 
 // Tokenised links are not for search engines — same posture as /c/{shareId}.
 export const metadata: Metadata = {
@@ -32,22 +34,33 @@ export default async function LivingCertificatePage({
   // Revoked, never enabled, or the feature is off — all indistinguishable.
   if (result.kind === "gone") notFound();
 
+  // One clock read for the whole render, so no two sections can disagree about
+  // what "now" is.
+  const now = new Date();
+
   return (
     <main className="min-h-screen px-4 py-10 sm:py-16">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto flex max-w-3xl flex-col gap-5">
         {result.kind === "unavailable" ? (
           // Staleness over errors: a client sees a calm sentence, never a stack
           // trace or a 500. The link itself is still good.
-          <div className="rounded-2xl border border-line bg-ink-850 p-8 text-center shadow-door">
-            <p className="text-sm text-text-secondary">
+          <div className="rounded-2xl border border-lc-line bg-lc-card p-8 text-center shadow-lc">
+            <p className="text-sm text-lc-secondary">
               This certificate is temporarily unavailable. Please try again shortly.
             </p>
           </div>
         ) : (
-          <StoryHeader story={result.data.story} />
+          <>
+            <StoryHeader story={result.data.story} />
+            {/* null means "no honest counter exists" (an ungraded checklist),
+                not "zero checks hold" — so the section is absent, not empty. */}
+            {result.data.verification && (
+              <VerificationCounters verification={result.data.verification} now={now} />
+            )}
+          </>
         )}
 
-        <p className="mt-6 text-center text-[12px] text-text-muted">
+        <p className="text-center text-[12px] text-lc-muted">
           Living quality certificate · Apexure
         </p>
       </div>

@@ -11,6 +11,7 @@
     "test": "node --test lib/**/*.test.ts"
   },
   "dependencies": {
+    "geist": "^1.7.2",
     "next": "^14.2.15",
     "next-auth": "^4.24.8",
     "react": "^18.3.1",

@@ -25,12 +25,28 @@ export type Story = {
   health: "healthy" | "attention" | "unknown" | null;
 };
 
+/**
+ * Section 3 — the continuous verification counters.
+ *
+ * The whole object is null when nothing has been graded. That is not "no data
+ * yet"; it is "there is no honest counter to show", because an ungraded
+ * checklist would otherwise render as "0 checks holding". Never substitute
+ * zeroes for a null Verification.
+ */
+export type Verification = {
+  total: number;
+  holding: number;
+  needs_attention: number;
+  /** When the Dashboard last checked. Null when it never has. */
+  last_checked_at: string | null;
+};
+
 export type LivingCertificate = {
   as_of: string;
   story: Story;
-  live_health: unknown | null; // Section 1
-  timeline: unknown | null; //   Section 2
-  verification: unknown | null; // Section 3
+  verification: Verification | null; // Section 3
+  live_health: unknown | null; //        Section 1
+  timeline: unknown | null; //           Section 2
 };
 
 /** `gone` = revoked, not enabled, or the flag is off — all answer 404 alike. */
