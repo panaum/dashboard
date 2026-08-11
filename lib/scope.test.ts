@@ -20,6 +20,7 @@ const LIVE_OWNED = [
   "components/StoryHeader.tsx",
   "components/VerificationCounters.tsx",
   "components/LiveHealthStrip.tsx",
+  "components/TimelineSection.tsx",
 ];
 
 function walk(dir: string): string[] {
@@ -149,4 +150,19 @@ test("the unknown chip state is not styled as success", () => {
   assert.ok(unknownLine, "the strip must define an unknown state");
   assert.doesNotMatch(unknownLine, /lc-success/, "unknown must never be green");
   assert.match(unknownLine, /lc-muted/, "unknown must be the neutral treatment");
+});
+
+// ═══ SECTION 2 — THE SECTION IS ABSENT, NOT EMPTY, ON A FAILED LOOK ═══
+// `timeline: null` means we did not look successfully (no registry annotation,
+// the flag off on LinkSpy, an unreachable host). Rendering "Timeline begins
+// after delivery." then would state something we have no basis for. The route
+// must therefore discriminate null from [], not merely truthiness — `[]` is
+// falsy-adjacent in reviewers' heads and `&&` on an array renders nothing.
+test("the timeline section keys on null, not on emptiness", () => {
+  const page = readFileSync(join(ROOT, "app/live/[shareId]/page.tsx"), "utf8");
+  assert.match(
+    page,
+    /result\.data\.timeline !== null/,
+    "an empty timeline must still render its empty state",
+  );
 });

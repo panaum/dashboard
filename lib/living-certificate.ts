@@ -63,12 +63,32 @@ export type Verification = {
   last_checked_at: string | null;
 };
 
+/**
+ * Section 2 — one whitelisted lifecycle event.
+ *
+ * The Dashboard's deny-by-default whitelist produces these; an event type nobody
+ * has explicitly approved never reaches this type at all. Note what is absent:
+ * no ids, no urls, no raw payload.
+ */
+export type TimelineEvent = {
+  /** ISO timestamp. */
+  at: string;
+  kind: "handed_to_qa" | "signed_off";
+  title: string;
+  detail: string | null;
+};
+
 export type LivingCertificate = {
   as_of: string;
   story: Story;
   verification: Verification | null; // Section 3
   live_health: LiveHealth | null; //     Section 1
-  timeline: unknown | null; //           Section 2
+  /**
+   * Section 2. `null` = no section (unregistered deliverable, flag off on
+   * LinkSpy, or a failed look). `[]` = registered, nothing recorded yet — that
+   * renders the empty state. Never conflate the two.
+   */
+  timeline: TimelineEvent[] | null;
 };
 
 /** `gone` = revoked, not enabled, or the flag is off — all answer 404 alike. */
