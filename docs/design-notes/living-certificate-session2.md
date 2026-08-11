@@ -1,9 +1,9 @@
 # Living Certificate — Session 2 diagnosis (Step 0)
 
 **Date:** 2026-08-11 · **Repo:** Dashboard · **Branch:** `feat/living-certificate-timeline-shape`
-**Status:** ✅ **Sections 1, 3 and 4 built; palette ported; per-site reword shipped.
-Section 2 is the only remainder and needs no design decision — just two operator
-steps in the LinkSpy repo (§19). Nothing enabled anywhere.**
+**Status:** ✅ **All four sections built. Section 2 cannot be verified live yet:
+`LIVING_CERTIFICATE` is still unset on Railway and 0 of 265 pages carry a
+`registryDeliverableId` (§20). Nothing enabled anywhere.**
 
 Session 1 shipped `Page.livingCertificateEnabled` (boolean, default false, applied
 to production, 265 rows backfilled, drift-free — commit `bd30dd0`). This note is
@@ -997,7 +997,7 @@ header and the strip can never disagree.
 
 ---
 
-## 19. Next: Section 2 — no design decisions remain
+## 19. Section 2 — the plan (BUILT — see §20)
 
 Section 2 is the only unbuilt section, and **nothing about it needs deciding**.
 Option A (whitelisted lifecycle events only) was settled in §0; the whitelist
@@ -1021,7 +1021,143 @@ Full activation order and rollback: [runbooks/living-certificate.md](../runbooks
 
 ---
 
-## 20. Deferred to Session 3+
+## 20. Section 2 — history timeline (BUILT, not yet verifiable end-to-end)
+
+Built on `feat/living-certificate-timeline` in both repos, branched off the
+merged mains. The code is complete and tested; **three things prevent a live
+end-to-end check**, all recorded below with evidence.
+
+### Step 1 diagnosis — a stated prerequisite is not actually in effect
+
+**The LinkSpy endpoint is deployed, but `LIVING_CERTIFICATE` is NOT set on
+Railway.** Probed unauthenticated — no service key is needed to learn this:
+
+```
+GET …/api/registry-bridge/timeline?registry_deliverable_id=…&limit=100
+→ HTTP 404  {"error":"living_certificate_disabled"}
+```
+
+That exact body comes only from the timeline route's own flag gate, which runs
+**before** authentication:
+
+```python
+if os.getenv("LIVING_CERTIFICATE") != "1":
+    return JSONResponse({"error": "living_certificate_disabled"}, status_code=404)
+```
+
+So the merge and deploy landed — the route exists and is executing — and the flag
+is still off. Had the route been missing entirely, the response would have been a
+generic 404 with no such body.
+
+**No page carries a `registryDeliverableId`: 0 of 265.** Even with the flag on,
+every page returns `timeline: null` today, because the field the timeline is keyed
+on is unset everywhere.
+
+**The Dashboard's local `.env` has no `LINKSPY_API_URL` / `LINKSPY_API_KEY`**, so
+no live call could be made from this machine regardless. Vercel may have them;
+not verifiable from here.
+
+None of the three blocks the build — the code treats all of them as `null` by
+design, which is exactly Invariant 3. They block only the live check.
+
+### null vs [] — the distinction the section rests on
+
+| Value | Means | Renders |
+|---|---|---|
+| `null` | we did **not** look successfully — no annotation, flag off on LinkSpy, unreachable, unreadable body | **no section at all** |
+| `[]` | we **did** look; the ledger is genuinely empty | "Timeline begins after delivery." |
+| `[…]` | whitelisted events | cards, newest first |
+
+Collapsing those two would make a failed lookup read as *"nothing has ever
+happened to your site"* — something we have no basis for saying. Same rule as an
+unmapped page in Section 1 and an ungraded checklist in Section 3, asserted at
+three layers: `readLedger`, `serveTimeline`, and a shell grep that the route keys
+on `timeline !== null` rather than truthiness (an empty array is falsy-adjacent
+in a reviewer's head, and `&&` on `[]` renders nothing).
+
+### A restructure the tests forced
+
+`timeline-fetch.ts` began as one module and could not be unit-tested:
+`server-only` is not an installed package — Next resolves it at build time — and
+**no test in this repo imports a server-only module directly.**
+
+Rather than drop the import, which is what keeps the service key out of client
+bundles, the module was split along the line the repo already uses for
+`catalog-map.ts` + `linkspy/client.ts`:
+
+| File | Holds | Tested by |
+|---|---|---|
+| `timeline-source.ts` | URL building, body reading, null-vs-`[]` policy, cache window, staleness | import — 16 cases |
+| `timeline-fetch.ts` | env, `fetch`, a `Map` | grep — `server-only` present, no `db`, key never in the URL |
+
+The shell is now thin enough that everything worth asserting lives in the pure
+half.
+
+### Ordering, and why the renderer sorts anyway
+
+**Newest first**, matching Sections 1 and 3, which both lead with current state:
+this is a *living* certificate, so what is true now outranks what was true first.
+
+LinkSpy already returns the ledger newest-first and the whitelist preserves that
+order, so `orderNewestFirst()` is usually a no-op. It runs regardless because the
+section makes a promise about chronology to its reader, and a section should keep
+its own promise rather than inherit an upstream ordering it does not control. The
+sort is stable, so events sharing a timestamp keep ledger order.
+
+### Copy
+
+Cards are narrative-first: the sentence leads, the detail follows, the date sits
+muted underneath. A timestamp-first row would read as machine output, and this is
+the one section whose job is to read like a story.
+
+Dates are formatted explicitly in UTC (`28 July 2026`) rather than through
+`toLocaleDateString`: the same string must come out of the server and the
+browser, or React hydration mismatches and a reader in Sydney sees a different
+date from one in London. The format matches `/c/{shareId}`.
+
+The empty state is **"Timeline begins after delivery."** — a fact about the
+timeline, not an absence of data. A test asserts the copy never opens with "No…"
+and never contains *empty / none / nothing / yet*, because those read as a bug
+rather than a state.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Dashboard `npm test` | **232 pass, 0 fail** (84 living-certificate) |
+| Shell `npm test` | **43 pass, 0 fail** |
+| Both `tsc --noEmit` / `build` | clean |
+| Rendered — populated | 2 cards, newest first, rail joining them |
+| Rendered — empty | "Timeline begins after delivery." |
+| Rendered — null | section absent; Sections 1/3/4 unaffected |
+| Mobile 390 px | no horizontal overflow |
+| F10 | ✅ shell still names no `qa-bridge` / `registry-bridge` |
+| F11 | ✅ no `client-presence` / `registryClientId` on the path |
+| No writes | ✅ `timeline-fetch.ts` imports no `db` at all |
+| **Invariant 1** | ✅ `/c/` byte-identical to `origin/main` |
+| Flags | untouched everywhere; **0 of 265** pages opted in |
+
+### A merge note worth keeping
+
+PR #12 was merged one commit early: all Section 1 **code** reached `main`, but the
+closing docs commit `63ae844` did not, so §§16–19 were left reading PLANNED on
+`main` while the code they described was already there. Cherry-picked onto this
+branch rather than rewritten, so the history stays honest.
+
+### To see a timeline live, in order
+
+1. Set `LIVING_CERTIFICATE=1` on **Railway** → the endpoint stops answering 404.
+2. Ensure `LINKSPY_API_URL` / `LINKSPY_API_KEY` are set on **Vercel `dashboard`**.
+3. Register at least one deliverable, so a page has `registryDeliverableId`.
+4. Then activation proper: `LIVING_CERTIFICATE=1` on Vercel `dashboard` and
+   `qa-ecosystem`, and opt a page in.
+
+Steps 1–3 are prerequisites for the section having anything to show; step 4 is
+activation, and belongs with the enable toggle in Session 5.
+
+---
+
+## 21. Deferred to Session 3+
 
 The operator-facing **enable toggle** (a server action beside `createShareLink` /
 `revokeShareLink`), **custom domain**, **analytics**, and **incident cards** in
