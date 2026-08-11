@@ -1,7 +1,7 @@
 # Living Certificate — Session 2 diagnosis (Step 0)
 
 **Date:** 2026-08-11 · **Repo:** Dashboard · **Branch:** `feat/living-certificate-timeline-shape`
-**Status:** ⛔ **Stopped. Design settled; blocked on the shell repo not being on this machine.**
+**Status:** ⏸ **Section 4 built (both repos). Stopped for review before Section 3.**
 
 Session 1 shipped `Page.livingCertificateEnabled` (boolean, default false, applied
 to production, 265 rows backfilled, drift-free — commit `bd30dd0`). This note is
@@ -308,7 +308,7 @@ In all seven: **zero writes** to `Page`, `QACheckItem`, `QACertificate`, `Issue`
 
 ## 9. Prerequisites before Session 2 code
 
-1. ⛔ **Clone the shell repo** — see §10. Nothing renders until it is on disk.
+1. ✅ **Shell repo** — already present at `/Users/apexure/qa-ecosystem` (§12).
 2. ⛔ **F2** — merge `f280398` to LinkSpy `main`, deploy to Railway, set
    `LIVING_CERTIFICATE=1` there. **Section 2 only.** Recorded in
    [docs/runbooks/living-certificate.md](../runbooks/living-certificate.md).
@@ -364,7 +364,117 @@ means moving one of them (`next dev -p 3001`).
 
 ---
 
-## 12. Deferred to Session 3+
+## 12. Section 4 — story mode header (BUILT)
+
+Shipped across both repos. Sections 1–3 not started.
+
+### Wireframe — as built
+
+Only the delivery age is known today. The vitals are wired by Section 1; until
+then their clauses are **absent**, not zeroed.
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  FAUTONS                              ← client, overline   │
+│  Fautons Homepage                     ← page, display font │
+│  180 days since delivery                                   │
+│                                                            │
+│  [ once Section 1 lands, the same line becomes: ]          │
+│  180 days since delivery · 99.8% uptime · 3 incidents      │
+│  ● Currently healthy                                       │
+└────────────────────────────────────────────────────────────┘
+```
+
+**The load-bearing rule:** a null field is dropped, never rendered as `0` or
+`—`. "0% uptime" on a client's certificate is a false and alarming claim; saying
+nothing is correct. Zero itself is real data and survives — `0 incidents handled`
+renders, `null` does not.
+
+### Fetch plan — as built
+
+```
+SHELL   /live/{shareId}                        Next 14 server component
+  │     fetchLivingCertificate(shareId)
+  │       60 s revalidate · 6 s timeout · no keys held
+  │       404 → notFound()   ·   5xx/network → quiet "temporarily unavailable"
+  ▼
+DASHBOARD  GET /api/living-certificate/{shareId}      force-dynamic
+  1. livingCertificateFlagOn()      → 404 if LIVING_CERTIFICATE ≠ "1"
+  2. db.page.findUnique({ shareId }) — ONE read, no writes
+  3. !page || !livingCertificateEnabled → 404   (uniform with 1)
+  4. buildStory({ pageName, clientName, signedOffAt }, new Date())
+  → { as_of, story, live_health: null, timeline: null, verification: null }
+```
+
+No LinkSpy call is made for Section 4 — every field comes from the Dashboard's
+own database, which is why it went first.
+
+### Response contract
+
+`live_health` / `timeline` / `verification` are **present and null** from day
+one. Sections 1–3 fill them in; no consumer ever sees the response shape change
+(T8). The addressing keys (`registrySiteId`, `registryDeliverableId`,
+`registryClientId`) are already read by the query, so those sections need no
+second query.
+
+⚠️ **The contract is duplicated across repos** — Next 16/React 19 here, Next
+14/React 18 there, no shared package (F7). `lib/living-certificate.ts` on the
+shell mirrors the route's response by hand. Mitigation is discipline: additive
+keys only, meanings never change, so an older shell keeps rendering against a
+newer Dashboard.
+
+### Files
+
+| Repo | File | Purpose |
+|---|---|---|
+| Dashboard | `src/lib/living-certificate/flag.ts` | the kill switch, injectable env |
+| Dashboard | `src/lib/living-certificate/story-shape.ts` | pure; `now` injected, no clock read |
+| Dashboard | `src/app/api/living-certificate/[shareId]/route.ts` | the composing endpoint |
+| Dashboard | `…/story-shape.test.ts`, `…/isolation.test.ts` | 12 unit + 7 invariant tests |
+| Shell | `lib/living-certificate.ts` | the one fetch + mirrored types |
+| Shell | `lib/story-clauses.ts` | pure null-omission rule |
+| Shell | `components/StoryHeader.tsx` | presentational only |
+| Shell | `app/live/[shareId]/page.tsx` | the route |
+| Shell | `middleware.ts` | **F8 exclusion** (`PUBLIC_EXEMPT`) |
+
+### Test results
+
+| Suite | Result |
+|---|---|
+| Dashboard `npm test` | **182 pass, 0 fail** (34 living-certificate) |
+| Shell `npm test` | **9 pass, 0 fail** |
+| Dashboard `tsc --noEmit` | clean |
+| Shell `tsc --noEmit` | clean |
+| Dashboard `npm run build` | ✅ route registered as `ƒ /api/living-certificate/[shareId]` |
+| Shell `npm run build` | ✅ `ƒ /live/[shareId]`, 138 B |
+| **Invariant 1** | `git diff --exit-code origin/main -- src/app/c/ certificate-document.tsx` → **no diff** |
+
+Shell tests run on **Node's built-in type stripping** — no test framework and no
+new dependency in that repo. This is why `storyClauses` lives in a `.ts` module
+rather than inside the `.tsx` component: JSX cannot be stripped, plain types can.
+
+### Deviations worth knowing
+
+1. **The shell repo was already cloned** at `/Users/apexure/qa-ecosystem`, at
+   `origin/main`, with `node_modules` installed. §10's earlier "not on this
+   machine" was inherited from the older note and was wrong. No clone or
+   `npm install` was needed.
+2. **Section 4 renders Dashboard-only fields.** Uptime, incidents and health are
+   LinkSpy-sourced and arrive with Section 1 — as the operator's ordering
+   intended. The header is complete and correct today; it simply says less.
+3. **The shell is dark.** Its tokens (`ink-*`, `signal`, `teal`) are the opposite
+   of the Dashboard's light certificate. Following the repo you are in is the
+   right call, but `/live/` and `/c/` will not look like siblings. Flagging as a
+   design question for Section 1, not a defect.
+4. **`npm run lint` is unconfigured on the shell** — `next lint` prompts to set
+   ESLint up interactively. Left alone as out of scope; typecheck, build and
+   tests cover the new code.
+5. **`tsconfig.json` gained `allowImportingTsExtensions`** on the shell, required
+   because Node's stripper resolves real files. Safe under the existing `noEmit`.
+
+---
+
+## 13. Deferred to Session 3+
 
 The operator-facing **enable toggle** (a server action beside `createShareLink` /
 `revokeShareLink`), **custom domain**, **analytics**, and **incident cards** in
@@ -372,5 +482,5 @@ Section 2 (Option B — revisit if the narrative reads as incomplete in real use
 
 ---
 
-**STOP.** No Session 2 UI code written. Blocked on §9.1 — the shell repo is not
-on this machine.
+**STOP.** Section 4 is built and tested in both repos (§12). Awaiting review
+before Section 3 (verification counters).
