@@ -3298,6 +3298,30 @@ async def timeline_add(reg_site, reg_deliverable, type_, payload, source="spine"
     await asyncio.to_thread(_timeline_add_sync, reg_site, reg_deliverable, type_, payload, source)
 
 
+# ─── Living Certificate: the first READ of client_timeline ───────────────────
+# The ledger has been recording since Phase 2 and has never been read. §8.2:
+# "ledgers cannot be backfilled — start recording NOW, render later." This is
+# the 'later'. Newest-first, SELECT-only, never mutates the ledger.
+def _timeline_for_deliverable_sync(deliverable_id, limit) -> list:
+    client = _get_client()
+    try:
+        return client.table("client_timeline")\
+            .select("id, registry_site_id, registry_deliverable_id, type, payload, occurred_at, source")\
+            .eq("registry_deliverable_id", deliverable_id)\
+            .order("occurred_at", desc=True).limit(limit).execute().data or []
+    except Exception as e:
+        if _tables_missing(e):
+            return []
+        raise
+
+
+async def timeline_for_deliverable(deliverable_id, limit=100) -> list:
+    import asyncio
+    if not deliverable_id:
+        return []
+    return await asyncio.to_thread(_timeline_for_deliverable_sync, deliverable_id, limit)
+
+
 def _spine_marker_set_sync(key) -> None:
     from datetime import datetime, timezone
     client = _get_client()
