@@ -40,6 +40,8 @@ the read-only diagnosis for the rendering work.
 | **F7** | **The shell is Next 14 / React 18 / Tailwind v3.** The Dashboard is Next 16 / React 19 / Tailwind v4. **No component or design token is portable** | ⛔ **new — scope impact** |
 | **F8** | **The shell's auth middleware is disabled today but designed to be re-enabled**, and its matcher would gate `/live/` | ⚠️ **new — landmine** |
 | **F9** | **All three repos are public.** The shell must hold no service keys — architectural hygiene becomes a hard requirement | ℹ️ new |
+| **F10** | **The shell must never reach LinkSpy.** `/live/` is unauthenticated, so its payload is readable by anyone the link reaches. Compose on the Dashboard, expose derived states only | ⛔ **hard constraint on Section 1** — see §15 |
+| **F11** | **`client-presence` is client-level; the share token is page-level.** Piping it through would let one page's link reveal every site that client owns | ⛔ **blocks the naive Section 1** — see §15 |
 
 ---
 
@@ -641,7 +643,90 @@ Two related rules, both tested:
 
 ---
 
-## 15. Deferred to Session 3+
+## 15. Next: Sections 1 and 2
+
+Both are unstarted. Section 1 is unblocked on palette but now carries a hard
+constraint on its data path; Section 2 is still blocked on LinkSpy.
+
+### F10 — the shell must never reach LinkSpy (HARD CONSTRAINT on Section 1)
+
+> Operator, 2026-08-11: *"Section 1 needs a Dashboard-side proxy for the LinkSpy
+> chip data so an unauthenticated observer can't infer client health. Compose on
+> the Dashboard, expose through endpoint 1's shape, keep the shell fetching only
+> from the Dashboard."*
+
+Recorded here as **F10**. (The instruction cited "F16"; this note's findings run
+F1–F5 and F7–F9, so the label is new rather than a reference to something
+existing. The constraint itself stands.)
+
+§4 already routes all composition through the Dashboard, but for a *key-custody*
+reason — the shell is a public repo and may hold no `qab_` key. F10 adds a
+second, independent reason that survives even if key custody were solved:
+**`/live/{shareId}` is an unauthenticated URL, so anything in its payload is
+readable by anyone the link reaches.** The share token is a capability to view
+*one page's* certificate, not a credential to observe a client's estate.
+
+Practically, for Section 1:
+
+- The shell keeps making **exactly one** call, to endpoint 1. No LinkSpy origin
+  is ever named in shell code. Worth a `scope.test.ts` assertion in the same
+  commit — the shell must contain no `qa-bridge`/`registry-bridge` string.
+- Endpoint 1 returns **derived chip states only** — `ok` / `attention` /
+  `unknown` per check — never LinkSpy's raw payload, never counts that let an
+  observer reconstruct the estate.
+- F5 still applies: `hrefByChip` holds signed deep links into internal LinkSpy
+  and must not enter the payload.
+
+### F11 — client-presence is the wrong granularity for a per-page token
+
+Concrete, and the sharpest instance of F10. `getClientPresenceChips()` is keyed
+on `registry_client_id` and, by its own documentation
+([client-presence-chips.ts](../../src/lib/linkspy/client-presence-chips.ts)),
+aggregates **every site LinkSpy holds under `sites.client_id` — including sites
+that never had a Dashboard deliverable.** It is explicitly *"a superset"*.
+
+Piping that through Section 1 means a holder of **one page's** share link learns
+the aggregate health of **all of that client's sites**, including properties we
+never built. The token is per-page; the data is per-client. That mismatch is
+exactly what F10 exists to prevent.
+
+**Recommended resolution:** Section 1 sources from `Page.registrySiteId` — the
+page's own site — via `qa-bridge/status`, not from the client-level presence
+feed. If a client-level figure is genuinely wanted later (Section 4's uptime and
+incident counts are client-level in the original brief), that is a **separate
+decision with an operator sign-off**, not a default. Section 4's vitals stay null
+until then.
+
+### Section 2 — unchanged, still blocked
+
+`f280398` remains unmerged on LinkSpy `main`, and `LIVING_CERTIFICATE=1` is not
+set on Railway. See §2 and the runbook. Option A (whitelisted lifecycle events
+only) stands; incidents remain deferred.
+
+### Recommended next session — the smallest useful one
+
+**Section 1, page-scoped, in one sitting.** It is the only remaining work that is
+both unblocked and self-contained:
+
+1. `statusReadOnly()` — the F3 sibling to `getPageStatus()`. Reads the
+   `LinkSpyStatus` cache row, fetches `qa-bridge/status` on miss, **persists
+   nothing**; 60 s in-memory cache, mirroring `client-presence-chips.ts`.
+2. A pure `health-shape.ts` that maps the derived catalogue to five chip states,
+   with the same null-means-absent discipline as Sections 3 and 4.
+3. `live_health` filled in endpoint 1 — an additive fill-in, no shape change.
+4. `LiveHealthStrip.tsx` on the shell, using the `lc-*` tokens that now exist.
+5. Tests: the F10 assertion above, plus the no-write guard extended to the new
+   helper.
+
+It needs no palette decision, no LinkSpy merge, and no schema change. Everything
+it touches on the Dashboard is already read by endpoint 1's single query.
+
+**Defer to the session after:** Section 2 (needs the LinkSpy merge first), and
+the operator-facing enable toggle.
+
+---
+
+## 16. Deferred to Session 3+
 
 The operator-facing **enable toggle** (a server action beside `createShareLink` /
 `revokeShareLink`), **custom domain**, **analytics**, and **incident cards** in
@@ -650,5 +735,5 @@ Section 2 (Option B — revisit if the narrative reads as incomplete in real use
 ---
 
 **STOP.** Sections 4 and 3 are built and tested in both repos, and the Option A
-palette port is scoped and verified (§§12–14). Section 1 is next and is now
-unblocked — the palette it needs for the five status chips exists.
+palette port is scoped and verified (§§12–14). Sections 1 and 2 are next; F10 and
+F11 (§15) constrain Section 1's data path before any of it is written.
