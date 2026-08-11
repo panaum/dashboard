@@ -56,23 +56,37 @@ test("an invalid date is treated as no sign-off", () => {
   assert.equal(story.days_since_delivery, null);
 });
 
-// ═══ THE SECTION 1 SEAM ═══
-// These three fields exist in the shape today so wiring them later is a fill-in,
-// never a response-shape change (T8).
+// ═══ THE SECTION 1 SEAM — PER-SITE, NOT PER-CLIENT (F11) ═══
+// The names carry the scope on purpose. A field called `uptime_pct` on a
+// page-scoped payload would mislead every future reader of the contract.
 test("vitals default to null so the renderer omits those clauses", () => {
   const story = buildStory(src, NOW);
-  assert.equal(story.uptime_pct, null);
-  assert.equal(story.incidents_handled, null);
-  assert.equal(story.health, null);
+  assert.equal(story.site_uptime_pct, null);
+  assert.equal(story.site_incidents_handled, null);
+  assert.equal(story.site_health, null);
+});
+
+test("the shape carries no client-scoped field", () => {
+  const keys = Object.keys(buildStory(src, NOW));
+  for (const banned of ["uptime_pct", "incidents_handled", "health"]) {
+    assert.ok(!keys.includes(banned), `${banned} must not exist — scope must be explicit`);
+  }
+  assert.ok(keys.includes("site_uptime_pct"));
+  assert.ok(keys.includes("site_incidents_handled"));
+  assert.ok(keys.includes("site_health"));
 });
 
 test("vitals pass through unchanged once Section 1 supplies them", () => {
-  const vitals: LiveVitals = { uptimePct: 99.8, incidentsHandled: 3, health: "healthy" };
+  const vitals: LiveVitals = {
+    siteUptimePct: 99.8,
+    siteIncidentsHandled: 3,
+    siteHealth: "healthy",
+  };
   const story = buildStory(src, NOW);
   const withVitals = buildStory(src, NOW, vitals);
-  assert.equal(withVitals.uptime_pct, 99.8);
-  assert.equal(withVitals.incidents_handled, 3);
-  assert.equal(withVitals.health, "healthy");
+  assert.equal(withVitals.site_uptime_pct, 99.8);
+  assert.equal(withVitals.site_incidents_handled, 3);
+  assert.equal(withVitals.site_health, "healthy");
   // Adding vitals must not disturb anything the Dashboard already answered.
   assert.equal(withVitals.page_name, story.page_name);
   assert.equal(withVitals.days_since_delivery, story.days_since_delivery);
@@ -81,12 +95,12 @@ test("vitals pass through unchanged once Section 1 supplies them", () => {
 // Zero is real data and must survive; only null means "no data".
 test("zero incidents is data, not absence", () => {
   const story = buildStory(src, NOW, {
-    uptimePct: 100,
-    incidentsHandled: 0,
-    health: "healthy",
+    siteUptimePct: 100,
+    siteIncidentsHandled: 0,
+    siteHealth: "healthy",
   });
-  assert.equal(story.incidents_handled, 0);
-  assert.notEqual(story.incidents_handled, null);
+  assert.equal(story.site_incidents_handled, 0);
+  assert.notEqual(story.site_incidents_handled, null);
 });
 
 // Same inputs, same output — no clock read inside.
