@@ -1,7 +1,8 @@
 # Living Certificate — Session 2 diagnosis (Step 0)
 
 **Date:** 2026-08-11 · **Repo:** Dashboard · **Branch:** `feat/living-certificate-timeline-shape`
-**Status:** ⏸ **Sections 4 + 3 built, palette ported (Option A). Stopped before Section 1.**
+**Status:** ⏸ **Sections 4 + 3 built, palette ported. Section 1 + the Section 4
+per-site reword are PLANNED (§§16–17) and awaiting review. No code written for either.**
 
 Session 1 shipped `Page.livingCertificateEnabled` (boolean, default false, applied
 to production, 265 rows backfilled, drift-free — commit `bd30dd0`). This note is
@@ -25,6 +26,7 @@ the read-only diagnosis for the rendering work.
 | **F3** status reads | **Read-only sibling** to `getPageStatus()`, in-memory pattern. **No writes on the `/live/` path, ever** |
 | **F4** snapshots | **Two-render equality** in the same run, not a golden file |
 | **Scope** | **Option A** — Section 2 renders only whitelisted lifecycle events. Incidents deferred |
+| **F11** scope | **Option B** — Section 4's uptime/incidents become **per-site**, not per-client. Copy reworded to say so (§16) |
 
 ---
 
@@ -726,7 +728,179 @@ the operator-facing enable toggle.
 
 ---
 
-## 16. Deferred to Session 3+
+## 16. Section 4 copy — reword to per-site scope (PLANNED, not yet applied)
+
+Operator decision, 2026-08-11: **Option B.** Section 4's uptime and incident
+figures become **per-site**, not per-client. F11 killed the client aggregate; this
+records what replaces it and how the copy stops implying a scope it does not have.
+
+### Why nothing is broken today
+
+`uptime_pct`, `incidents_handled` and `health` are `null` in every response, and
+`storyClauses()` drops null clauses entirely. **No scoped copy renders anywhere
+right now.** The misleading reading only becomes possible the moment Section 1
+supplies the vitals — so the reword belongs in that same commit, and applying it
+early would be a change no test could meaningfully exercise.
+
+### The scope that is actually available
+
+Three different things could be measured, and only the middle one is both useful
+and permitted:
+
+| Scope | Source | Verdict |
+|---|---|---|
+| This page alone | — | Not measured. LinkSpy monitors sites, not pages |
+| **The site this page is published on** | `Page.registrySiteId` → `qa-bridge/status` | ✅ **what we ship** |
+| Every site the client owns | `registry_client_id` → `client-presence` | ⛔ F11 — a page token must not reveal an estate |
+
+So the honest unit is **the site**, which is neither the page nor the client. The
+copy has to say so, because a figure sitting directly under the page's own name
+reads as the page's figure.
+
+### Wire fields — rename now, while it is free
+
+| Today | Becomes |
+|---|---|
+| `uptime_pct` | `site_uptime_pct` |
+| `incidents_handled` | `site_incidents_handled` |
+| `health` | `site_health` |
+
+Normally T8 forbids reshaping a response. It does not apply here: the endpoint is
+**not deployed** (flag unset on every surface), both branches are **unmerged**,
+and these three fields have **never been non-null**. This is the last moment the
+rename is free, and a field called `uptime_pct` on a page-scoped payload would
+mislead every future reader of the contract.
+
+### Copy — before and after
+
+```
+BEFORE (would imply the page, or worse the client)
+  Fautons LP
+  14 days since delivery · 99.8% uptime · 3 incidents handled
+  ● Currently healthy
+
+AFTER (states its own scope, once)
+  Fautons LP
+  14 days since delivery · 99.8% site uptime · 3 site incidents handled
+  ● Site currently healthy
+  Live figures cover the site this page is published on.
+```
+
+Exact strings in `lib/story-clauses.ts` and `components/StoryHeader.tsx`:
+
+| Element | Before | After |
+|---|---|---|
+| uptime clause | `` `${uptime_pct}% uptime` `` | `` `${site_uptime_pct}% site uptime` `` |
+| incidents clause | `` `${n} incident(s) handled` `` | `` `${n} site incident(s) handled` `` |
+| health `healthy` | `Currently healthy` | `Site currently healthy` |
+| health `attention` | `Needs attention` | `Site needs attention` |
+| health `unknown` | `Status unknown` | `Site status unknown` |
+| scope line | *(none)* | `Live figures cover the site this page is published on.` |
+
+`14 days since delivery` is **unchanged** — it is page-level, comes from our own
+`QACertificate.completedAt`, and is accurate as written.
+
+The qualifier appears on each clause *and* in the scope sentence deliberately.
+The sentence alone is missable; the per-clause word alone reads as noise. Together
+a client cannot come away thinking the number describes the page they are looking
+at, which is the only failure mode that matters here.
+
+### The snapshot test that proves it
+
+`lib/story-clauses.test.ts`, added with the reword:
+
+1. **Golden snapshot** of the full clause list for all three states — no vitals,
+   vitals present, vitals partial — asserted against literal expected strings, so
+   any future copy edit has to be deliberate.
+2. **Scope-honesty assertion:** if any site-scoped clause is present, the scope
+   sentence must render. Encoded as: `storyClauses()` returning any string
+   matching `/site/` implies `scopeNote()` is non-null.
+3. **No client-level vocabulary:** no rendered string may match
+   `/\b(all|every|your)\s+(sites?|properties)\b/i` or the word `estate` — the
+   language F11 exists to keep out.
+4. **Null still vanishes** — the existing rule, re-asserted against the renamed
+   fields so the rename cannot quietly reintroduce zeroes.
+
+---
+
+## 17. Section 1 — live health strip (PLANNED, not started)
+
+Five status chips: SSL, uptime, forms, tracking, links. Palette-unblocked (§13);
+data path constrained by F10 and F11.
+
+### Wireframe
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  LIVE HEALTH                                               │
+│  ┌────────┬────────┬────────┬──────────┬────────┐          │
+│  │  SSL   │ Uptime │ Forms  │ Tracking │ Links  │          │
+│  │   ●    │   ●    │   ●    │    ●     │   ●    │          │
+│  │ Valid  │  99.8% │   OK   │  Active  │ 2 dead │          │
+│  └────────┴────────┴────────┴──────────┴────────┘          │
+│  Live figures cover the site this page is published on.    │
+└────────────────────────────────────────────────────────────┘
+```
+
+Chip state is `ok` / `attention` / `unknown` → `lc-success` / `lc-warning` /
+`lc-muted`. A chip whose underlying check is absent renders `unknown`, never a
+green tick — same discipline as Sections 3 and 4: absence is never success.
+
+### Fetch plan
+
+```
+DASHBOARD  endpoint 1, after the existing single query
+  │
+  ├─ page.registrySiteId ?  no  → live_health: null, strip hidden
+  │
+  └─ statusReadOnly(page.id)              ← F3 sibling, NEVER writes
+       ├─ read LinkSpyStatus row (cache)  ← a READ; the internal page owns the write
+       ├─ miss → GET qa-bridge/status?qa_page_ref=…   4 s timeout
+       ├─ 60 s in-memory Map, mirroring client-presence-chips.ts
+       └─ failure → last-known-good, then null. Never throws, never 500s.
+  │
+  └─ buildLiveHealth(payload) → five derived chip states ONLY
+```
+
+**No `client-presence` call. No `registry_client_id`. Anywhere.** (F11)
+
+### The five constraints this must satisfy
+
+| # | Constraint | Enforcement |
+|---|---|---|
+| F3 | `statusReadOnly()` persists nothing | no-write grep extended to the new helper |
+| F5 | no `hrefByChip` / `signHandoff` in the payload | existing assertion covers new files |
+| F10 | the shell never names a LinkSpy origin | **new**: no `qa-bridge` / `registry-bridge` string anywhere in the shell |
+| F11 | no client-level source | **new**: endpoint 1 must not reference `client-presence` or `registryClientId` |
+| T8 | `live_health` is an additive fill-in | key already present and null since Section 4 |
+
+### Files
+
+| Repo | File | Status |
+|---|---|---|
+| Dashboard | `src/lib/linkspy/status-readonly.ts` | new — the F3 sibling |
+| Dashboard | `src/lib/living-certificate/health-shape.ts` | new — pure catalogue → five chips |
+| Dashboard | `…/health-shape.test.ts` | new |
+| Dashboard | `…/[shareId]/route.ts` | fill `live_health` |
+| Dashboard | `…/isolation.test.ts` | extend no-write + add F11 assertion |
+| Shell | `components/LiveHealthStrip.tsx` | new |
+| Shell | `lib/living-certificate.ts` | `LiveHealth` type |
+| Shell | `lib/story-clauses.ts`, `components/StoryHeader.tsx` | §16 reword |
+| Shell | `lib/scope.test.ts` | add the F10 assertion |
+
+### Order of work
+
+1. `statusReadOnly()` + its no-write test — the riskiest piece, proven first.
+2. `health-shape.ts` + tests, pure, against real payload fixtures.
+3. Fill `live_health`; extend the isolation tests (F10, F11).
+4. §16 reword + snapshot test, in the same commit as the vitals it describes.
+5. `LiveHealthStrip.tsx`; verify chips in both the all-ok and degraded states.
+
+Needs no schema change, no LinkSpy merge, and no further palette decision.
+
+---
+
+## 18. Deferred to Session 3+
 
 The operator-facing **enable toggle** (a server action beside `createShareLink` /
 `revokeShareLink`), **custom domain**, **analytics**, and **incident cards** in
@@ -734,6 +908,7 @@ Section 2 (Option B — revisit if the narrative reads as incomplete in real use
 
 ---
 
-**STOP.** Sections 4 and 3 are built and tested in both repos, and the Option A
-palette port is scoped and verified (§§12–14). Sections 1 and 2 are next; F10 and
-F11 (§15) constrain Section 1's data path before any of it is written.
+**STOP.** Sections 4 and 3 are built and tested; the palette port is scoped and
+verified (§§12–14). §16 (the per-site reword) and §17 (Section 1) are PLANS —
+no code has been written for either, pending review. Section 2 remains blocked on
+the LinkSpy merge.
