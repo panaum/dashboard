@@ -5,6 +5,7 @@ import {
   metricValue,
   rollingMonths,
   sortForMetric,
+  thinSamples,
   windowLabel,
   type TeamPerfPage,
 } from "./team-performance";
@@ -107,6 +108,41 @@ test("sortForMetric breaks ties by name, so the order never jitters", () => {
   assert.deepEqual(sortForMetric(r.devs, "onTime").map((d) => d.name), ["Ada", "Bo", "Cy"]);
 });
 
+test("defect rate counts every issue, not only the fixed ones", () => {
+  const r = computeTeamPerformance([
+    page({ issues: issues("FIXED", "OPEN") }),
+    page({ issues: issues("OPEN") }),
+  ]);
+  const d = r.devs[0];
+  assert.equal(d.issuesDone, 1); // only FIXED
+  assert.equal(d.issuesTotal, 3); // fixed + open
+  assert.equal(d.issuesPerPage, 1.5); // 3 issues / 2 pages
+});
+
+test("defect rate ranks worst (highest) first", () => {
+  const r = computeTeamPerformance([
+    page({ issues: issues("OPEN") }), // Ada: 1.0 / page
+    page({ developer: dev("d2", "Bo"), issues: issues("OPEN", "FIXED", "OPEN") }), // Bo: 3.0
+  ]);
+  assert.deepEqual(sortForMetric(r.devs, "defects").map((d) => d.name), ["Bo", "Ada"]);
+  assert.equal(r.averages.defects, 2); // mean of 1.0 and 3.0
+});
+
+test("a developer with no issues has a defect rate of 0, not NaN", () => {
+  const r = computeTeamPerformance([page({ issues: [] })]);
+  assert.equal(r.devs[0].issuesPerPage, 0);
+});
+
+test("thinSamples names developers below the ranking floor", () => {
+  const r = computeTeamPerformance([
+    page({ developer: dev("d1", "Ada") }),
+    page({ developer: dev("d2", "Bo") }),
+    page({ developer: dev("d2", "Bo") }),
+    page({ developer: dev("d2", "Bo") }),
+  ]);
+  assert.deepEqual(thinSamples(r.devs).map((d) => d.name), ["Ada"]); // 1 page < 3
+});
+
 test("metricValue reads the field each metric plots", () => {
   const d = computeTeamPerformance([
     page({ delayDays: 3, issues: issues("FIXED") }),
@@ -114,6 +150,7 @@ test("metricValue reads the field each metric plots", () => {
   assert.equal(metricValue(d, "pages"), 1);
   assert.equal(metricValue(d, "issues"), 1);
   assert.equal(metricValue(d, "delay"), 3);
+  assert.equal(metricValue(d, "defects"), 1);
   assert.equal(metricValue(d, "onTime"), 0);
 });
 

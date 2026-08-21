@@ -11,11 +11,12 @@ test.describe("insights", () => {
       timeout: 30_000,
     });
 
+    const tiles = page.getByRole("group", { name: "Headline numbers" });
     for (const tile of ["Pages", "Avg issues / page", "On-time delivery", "Repetitive bugs"]) {
-      await expect(page.getByText(tile, { exact: true })).toBeVisible();
+      await expect(tiles.getByText(tile, { exact: true })).toBeVisible();
     }
 
-    for (const section of ["Quality by platform", "Quality trend", "Developer quality"]) {
+    for (const section of ["Team performance", "Quality by platform", "Quality trend"]) {
       await expect(page.getByRole("heading", { name: section })).toBeVisible();
     }
   });

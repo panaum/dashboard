@@ -11,12 +11,23 @@
  * in the app, not two.
  */
 
-export const METRICS = ["onTime", "delay", "issues", "pages"] as const;
+export const METRICS = [
+  "onTime",
+  "delay",
+  "issues",
+  "defects",
+  "pages",
+] as const;
 export type Metric = (typeof METRICS)[number];
 
 /** Days late before the delay bar turns from amber to red. Matches the
  *  "needs attention" threshold in attention.ts so the two agree. */
 export const LATE_THRESHOLD = 5;
+
+/** Below this many pages a defect rate is one bad day, not a pattern. The
+ *  Insights leaderboard used the same floor to decide who to rank; here nobody
+ *  is hidden, the thin samples are named under the chart instead. */
+export const MIN_SAMPLE = 3;
 
 /** How many delivery months the panel shows by default. `deliveryMonth` is
  *  month-granular, so a rolling window can only be counted in months — three
@@ -36,6 +47,12 @@ export type DevPerf = {
    *  "built" count — the deliverable unit everywhere else in the dashboard. */
   pages: number;
   issuesDone: number;
+  /** Every issue logged against their pages, fixed or still open. */
+  issuesTotal: number;
+  /** Issues per page — the defect rate the Insights leaderboard ranked on.
+   *  Lower is better, and it is the one metric here where more work does not
+   *  mean a bigger number. */
+  issuesPerPage: number;
   delayDays: number;
   /** 0–100, rounded. Share of this developer's pages with delayDays <= 0. */
   onTimePct: number;
@@ -76,7 +93,14 @@ export function computeTeamPerformance(
 ): TeamPerformance {
   const map = new Map<
     string,
-    { name: string; pages: number; issuesDone: number; delayDays: number; onTime: number }
+    {
+      name: string;
+      pages: number;
+      issuesDone: number;
+      issuesTotal: number;
+      delayDays: number;
+      onTime: number;
+    }
   >();
 
   for (const p of pages) {
@@ -85,11 +109,13 @@ export function computeTeamPerformance(
       name: p.developer.name,
       pages: 0,
       issuesDone: 0,
+      issuesTotal: 0,
       delayDays: 0,
       onTime: 0,
     };
     e.pages++;
     e.issuesDone += p.issues.filter((i) => i.status === "FIXED").length;
+    e.issuesTotal += p.issues.length;
     e.delayDays += p.delayDays;
     if (p.delayDays <= 0) e.onTime++;
     map.set(p.developer.id, e);
@@ -101,6 +127,8 @@ export function computeTeamPerformance(
       name: e.name,
       pages: e.pages,
       issuesDone: e.issuesDone,
+      issuesTotal: e.issuesTotal,
+      issuesPerPage: e.pages ? e.issuesTotal / e.pages : 0,
       delayDays: e.delayDays,
       onTimePct: e.pages ? Math.round((e.onTime / e.pages) * 100) : 0,
     }))
@@ -128,10 +156,17 @@ export function computeTeamPerformance(
       onTime: mean(devs.map((d) => d.onTimePct)),
       delay: mean(devs.map((d) => d.delayDays)),
       issues: mean(devs.map((d) => d.issuesDone)),
+      defects: mean(devs.map((d) => d.issuesPerPage)),
       pages: mean(devs.map((d) => d.pages)),
     },
     delayRecorded: pages.some((p) => p.delayDays > 0),
   };
+}
+
+/** Developers whose defect rate rests on too few pages to mean much. Named
+ *  under the chart rather than filtered out of it. */
+export function thinSamples(devs: DevPerf[]): DevPerf[] {
+  return devs.filter((d) => d.pages < MIN_SAMPLE);
 }
 
 /** The value a given metric plots for a developer. */
@@ -143,13 +178,16 @@ export function metricValue(d: DevPerf, m: Metric): number {
       return d.delayDays;
     case "issues":
       return d.issuesDone;
+    case "defects":
+      return d.issuesPerPage;
     case "pages":
       return d.pages;
   }
 }
 
-/** Worst-first for the two metrics where "worst" is meaningful (lowest on-time
- *  rate, highest delay); busiest-first for the two volume metrics. */
+/** Worst-first for the metrics where "worst" is meaningful (lowest on-time
+ *  rate, highest delay, highest defect rate); busiest-first for the volume
+ *  metrics. */
 export function sortForMetric(devs: DevPerf[], m: Metric): DevPerf[] {
   const dir = m === "onTime" ? 1 : -1;
   return [...devs].sort(

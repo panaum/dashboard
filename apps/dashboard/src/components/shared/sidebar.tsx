@@ -11,7 +11,6 @@ import { logout } from "@/app/dashboard/actions";
 const NAV = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/reports", label: "Monthly", icon: BarChart3 },
-  { href: "/dashboard/search", label: "Search", icon: Search },
   { href: "/dashboard/clients", label: "Clients", icon: Users },
   { href: "/dashboard/team", label: "Team", icon: UsersRound },
   { href: "/dashboard/checklists", label: "Checklists", icon: ListChecks },
