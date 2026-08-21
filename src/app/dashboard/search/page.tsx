@@ -1,11 +1,15 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { db } from "@/lib/db";
-import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PageHeader } from "@/components/shared/page-header";
+import {
+  TeamPerformancePanel,
+  TeamPerformanceSkeleton,
+} from "@/components/team/team-performance";
 import { OpenSite } from "@/components/shared/open-site";
 import { Select } from "@/components/ui/field";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -30,9 +34,12 @@ export default async function SearchPage({
     developerId?: string;
     testerId?: string;
     month?: string;
+    /** "all" widens the Team performance panel past its rolling window. */
+    scope?: string;
   }>;
 }) {
-  const sp = await searchParams;
+  const { scope, ...sp } = await searchParams;
+  const allTime = scope === "all";
 
   const [members, monthRows, platforms] = await Promise.all([
     db.teamMember.findMany({
@@ -79,6 +86,7 @@ export default async function SearchPage({
       <PageHeader title="Search" subtitle="Find any client, project or page." />
 
       <form method="get" className="mb-6 flex flex-wrap items-end gap-2">
+        {allTime && <input type="hidden" name="scope" value="all" />}
         <Select name="platform" defaultValue={sp.platform ?? ""} className={`${fieldCls} w-auto`}>
           <option value="">Any platform</option>
           {platforms.map((p) => (
@@ -119,6 +127,15 @@ export default async function SearchPage({
           </Link>
         )}
       </form>
+
+      <Suspense fallback={<TeamPerformanceSkeleton />}>
+        <TeamPerformancePanel
+          sp={sp}
+          allTime={allTime}
+          months={months}
+          developerName={members.find((m) => m.id === sp.developerId)?.name}
+        />
+      </Suspense>
 
       {hasFilters ? (
         <>
@@ -185,18 +202,13 @@ export default async function SearchPage({
           )}
         </>
       ) : (
-        <Card className="p-10 text-center">
-          <p className="text-sm text-text-secondary">
-            Pick a filter to begin.
-          </p>
-          <p className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-text-muted">
-            Tip: press
-            <kbd className="rounded-md border border-border-soft bg-card-soft px-1.5 py-0.5 text-[11px] font-medium text-text-secondary">
-              ⌘K
-            </kbd>
-            anywhere for quick search.
-          </p>
-        </Card>
+        <p className="flex flex-wrap items-center justify-center gap-1.5 py-2 text-[13px] text-text-muted">
+          Filter above to list individual pages, or press
+          <kbd className="rounded-md border border-border-soft bg-card-soft px-1.5 py-0.5 text-[11px] font-medium text-text-secondary">
+            ⌘K
+          </kbd>
+          for quick search.
+        </p>
       )}
     </>
   );

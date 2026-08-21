@@ -24,3 +24,26 @@ export function hasAnyFilter(sp: PageSearchParams): boolean {
     sp.platform || sp.status || sp.developerId || sp.testerId || sp.month,
   );
 }
+
+/**
+ * Filter for the Team performance panel. Deliberately different from
+ * `buildPageWhere` in two ways:
+ *
+ *  - the developer filter is dropped, so narrowing to one person keeps the
+ *    whole team on the chart (that developer is highlighted instead);
+ *  - with no explicit month chosen it scopes to a rolling window of recent
+ *    delivery months instead of all time. Pass `months: null` for all time.
+ *
+ * Everything else (platform, status, tester, an explicit month) comes straight
+ * from the shared parser above — one filter definition, not two.
+ */
+export function buildTeamPanelWhere(
+  sp: PageSearchParams,
+  months: string[] | null,
+): Prisma.PageWhereInput {
+  const { platform, status, testerId, month } = sp; // developerId deliberately dropped
+  return {
+    ...buildPageWhere({ platform, status, testerId, month }),
+    ...(sp.month || months === null ? {} : { deliveryMonth: { in: months } }),
+  };
+}
