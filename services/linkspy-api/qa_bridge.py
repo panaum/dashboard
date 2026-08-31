@@ -33,3 +33,34 @@ class RateLimiter:
             return False
         b[1] += 1
         return True
+
+
+# ─── Latest-scan snapshot (Deliverables "Sites" view) ────────────────────────
+# Pure shaping of a stored `scans` row into the service-key read payload.
+# Buckets come from checker.bucket_for_label; anything unrecognized counts as
+# its own bucket rather than being silently folded into "ok" — a new bucket
+# should surface, not vanish.
+
+SCAN_FLAG_FIELDS = ("url", "bucket", "label", "status_code", "reason",
+                    "resource_type", "category", "source_page", "priority")
+SCAN_FLAG_LIMIT = 200
+
+
+def summarize_scan(scan):
+    """None → no_scan marker; a scans row ({id, results_json, scanned_at}) →
+    totals by bucket + the flagged (non-ok) rows, whitelisted and capped."""
+    if not scan:
+        return {"no_scan": True}
+    links = [r for r in (scan.get("results_json") or []) if isinstance(r, dict)]
+    counts = {}
+    for r in links:
+        b = r.get("bucket") or "ok"
+        counts[b] = counts.get(b, 0) + 1
+    flagged = [{k: r.get(k) for k in SCAN_FLAG_FIELDS if k in r}
+               for r in links if (r.get("bucket") or "ok") != "ok"][:SCAN_FLAG_LIMIT]
+    totals = {"links": len(links)}
+    for k in ("ok", "broken", "unverifiable", "dead_cta"):
+        totals[k] = counts.pop(k, 0)
+    totals.update(counts)  # unknown buckets surface by name
+    return {"no_scan": False, "scanned_at": scan.get("scanned_at"),
+            "totals": totals, "flagged": flagged}
