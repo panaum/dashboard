@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="apx" x1="6" y1="6" x2="58" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8E1C9E" />
+      <stop offset="0.55" stop-color="#6612A3" />
+      <stop offset="1" stop-color="#440DA6" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#ffffff" />
+  <!-- The Apexure mark: two chevrons meeting at a hairline gap. -->
+  <path fill="url(#apx)" d="M8 9 L30 32 L8 55 L8 42 L17.6 32 L8 22 Z" />
+  <path fill="url(#apx)" d="M56 9 L34 32 L56 55 L56 42 L46.4 32 L56 22 Z" />
+</svg>
