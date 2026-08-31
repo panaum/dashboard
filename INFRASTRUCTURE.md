@@ -13,10 +13,15 @@ was true, the code wins and the disagreement is recorded in
 
 | | |
 |---|---|
-| **Repos** | `panaum/brokenlinkchecker` (LinkSpy), `panaum/dashboard` (Deliverables Dashboard), `apexure-shell` (QA ecosystem shell) |
+| **Repo** | `panaum/dashboard` — monorepo since 2026-08-31: `apps/dashboard` (Deliverables Dashboard), `apps/linkspy` (LinkSpy frontend), `services/linkspy-api` (LinkSpy backend), `apps/shell` (QA ecosystem shell) |
 | **Surfaces** | 1 Railway service, 3 Vercel projects, 2 Supabase projects |
 | **Last derived** | 2026-07-20 |
-| **Mirrored at** | root of the LinkSpy repo **and** root of the Dashboard repo (keep both copies in sync) |
+| **Copies** | this file, at the monorepo root, is the only copy — the byte-identical two-repo mirror regime ended with the monorepo merge |
+
+**Path note:** code references below predate the monorepo and use the old
+per-repo paths. Read `frontend/…` as `apps/linkspy/…`, `backend/…` as
+`services/linkspy-api/…`, the Dashboard's `src/…` as `apps/dashboard/src/…`,
+and shell paths as `apps/shell/…`.
 
 ---
 
@@ -726,11 +731,11 @@ deliberate scaffolding for the third door (D10).
 
 ## Maintaining this file
 
-Two identical copies exist, at the root of the LinkSpy repo and the Dashboard
-repo. When either changes, update both in the same session — there is no
-automation keeping them in sync.
+One copy exists, at the monorepo root. (Until 2026-08-31 two byte-identical
+copies were mirrored across the LinkSpy and Dashboard repos; the monorepo merge
+ended that.)
 
-Re-derive after any change to deployment config by grepping all three repos:
+Re-derive after any change to deployment config by grepping all four app trees:
 
 ```bash
 grep -rEn "process\.env\.[A-Z0-9_]+" --include=*.ts --include=*.tsx <repo>
