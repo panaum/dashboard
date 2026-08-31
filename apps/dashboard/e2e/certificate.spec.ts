@@ -14,7 +14,9 @@ test.describe("public certificate", () => {
   }) => {
     // Broad search ("a" matches most names) so we get many pages to choose from;
     // only 2/214 are shared, so an unshared one is easy to find.
-    await page.goto("/dashboard/search?q=a");
+    // Any filter that lists pages; the merged Insights page only
+    // renders the page list once a filter is set.
+    await page.goto("/dashboard/insights?status=LIVE&scope=all");
     const hrefs = [
       ...new Set(
         (

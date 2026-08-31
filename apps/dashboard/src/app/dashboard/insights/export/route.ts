@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { isAuthenticated } from "@/lib/auth";
 import { toCsv, csvResponse } from "@/lib/csv";
 import { buildPageWhere, hasAnyFilter, type PageSearchParams } from "@/lib/page-search";
+import { rollingMonths } from "@/lib/team-performance";
 import { label, monthLabel } from "@/lib/constants";
 
 export async function GET(req: NextRequest) {
@@ -19,9 +20,28 @@ export async function GET(req: NextRequest) {
     month: p.get("month") ?? undefined,
   };
 
+  // Same scope as the Insights page: the rolling window unless a month was
+  // chosen or "all time" is on, so the CSV matches what was on screen.
+  const allTime = p.get("scope") === "all";
+  let where = buildPageWhere(sp);
+  if (!allTime && !sp.month) {
+    const monthRows = await db.page.findMany({
+      where: { deliveryMonth: { not: null } },
+      distinct: ["deliveryMonth"],
+      select: { deliveryMonth: true },
+      orderBy: { deliveryMonth: "desc" },
+    });
+    where = {
+      ...where,
+      deliveryMonth: {
+        in: rollingMonths(monthRows.map((m) => m.deliveryMonth!).filter(Boolean)),
+      },
+    };
+  }
+
   const pages = hasAnyFilter(sp)
     ? await db.page.findMany({
-        where: buildPageWhere(sp),
+        where,
         take: 1000,
         orderBy: { name: "asc" },
         include: {

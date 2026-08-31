@@ -47,6 +47,12 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
+/**
+ * The filters moved to /dashboard/insights when the Search page was merged into
+ * it. These cross-checks compare against a member's lifetime built/QA'd counts,
+ * so they ask for `scope=all` — the page itself now defaults to a rolling
+ * window of recent delivery months.
+ */
 test.describe("search filters", () => {
   test("developer filter returns exactly that developer's built pages", async ({
     page,
@@ -68,7 +74,7 @@ test.describe("search filters", () => {
     test.skip(built > 100, "developer has more built pages than the result cap");
 
     // Searching by this developer must return exactly their built pages.
-    await page.goto(`/dashboard/search?developerId=${id}`);
+    await page.goto(`/dashboard/insights?developerId=${id}&scope=all`);
     expect(await resultCount(page)).toBe(built);
   });
 
@@ -76,7 +82,7 @@ test.describe("search filters", () => {
     const { id, value: qad } = await firstMemberStat(page, "Pages QA'd");
     test.skip(qad > 100, "tester has more QA'd pages than the result cap");
 
-    await page.goto(`/dashboard/search?testerId=${id}`);
+    await page.goto(`/dashboard/insights?testerId=${id}&scope=all`);
     expect(await resultCount(page)).toBe(qad);
   });
 
@@ -84,7 +90,7 @@ test.describe("search filters", () => {
     const { id, value: built } = await firstMemberStat(page, "Pages built");
     test.skip(built === 0 || built > 100, "need a developer with 1..100 built pages");
 
-    await page.goto(`/dashboard/search?developerId=${id}`);
+    await page.goto(`/dashboard/insights?developerId=${id}`);
     const count = await resultCount(page);
 
     const href = await page
@@ -98,15 +104,21 @@ test.describe("search filters", () => {
     expect(dataRows.length, "CSV rows should match the on-screen result count").toBe(count);
   });
 
-  test("clearing filters returns to the empty prompt", async ({ page }) => {
-    await page.goto("/dashboard/search?q=a");
+  test("clearing filters drops the page list but keeps the analysis", async ({
+    page,
+  }) => {
+    await page.goto("/dashboard/insights?status=LIVE");
     await expect(page.getByText(/\d+\s+results?/)).toBeVisible({ timeout: 30_000 });
 
     await page.getByRole("link", { name: "Clear" }).click();
 
-    await expect(page).toHaveURL(/\/dashboard\/search$/);
+    await expect(page).toHaveURL(/\/dashboard\/insights$/);
     await expect(
-      page.getByText("Enter a search term or pick a filter"),
+      page.getByRole("heading", { name: "Matching pages" }),
+    ).toHaveCount(0);
+    // The analytics stay — that is the point of the merged page.
+    await expect(
+      page.getByRole("heading", { name: "Team performance" }),
     ).toBeVisible();
   });
 });

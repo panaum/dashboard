@@ -1,0 +1,27 @@
+name: dashboard tests
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/dashboard/**"]
+  pull_request:
+    paths: ["apps/dashboard/**"]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/dashboard/package-lock.json
+      - run: npm ci
+      # The unit suite is deliberately DB-free (pure aggregation lives outside
+      # Server Components), so no env vars and no database are provided here —
+      # a test that starts needing them should fail loudly in CI.
+      - run: npm test

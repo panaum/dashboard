@@ -8,8 +8,10 @@ import { Select } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 import {
   LATE_THRESHOLD,
+  MIN_SAMPLE,
   metricValue,
   sortForMetric,
+  thinSamples,
   type DevPerf,
   type Metric,
   type TeamPerformance,
@@ -19,6 +21,7 @@ const METRIC_TABS: { key: Metric; label: string }[] = [
   { key: "onTime", label: "On-time %" },
   { key: "delay", label: "Delay days" },
   { key: "issues", label: "Issues done" },
+  { key: "defects", label: "Issues / page" },
   { key: "pages", label: "Pages" },
 ];
 
@@ -26,6 +29,7 @@ const HEADINGS: Record<Metric, string> = {
   onTime: "Lowest on-time rate first",
   delay: "Most delay first",
   issues: "Most issues done first",
+  defects: "Highest defect rate first",
   pages: "Most pages first",
 };
 
@@ -35,7 +39,16 @@ function formatAverage(value: number, m: Metric): string {
   const n = value % 1 === 0 ? String(value) : value.toFixed(1);
   if (m === "onTime") return `${n}%`;
   if (m === "delay") return `${n} day${value === 1 ? "" : "s"}`;
+  if (m === "defects") return `${value.toFixed(1)} / page`;
   return n;
+}
+
+/** The number shown at the end of a bar. */
+function formatBarValue(value: number, m: Metric): string {
+  if (m === "onTime") return `${value}%`;
+  if (m === "delay") return `${value}d`;
+  if (m === "defects") return value.toFixed(1);
+  return String(value);
 }
 
 /** Delay is the one metric where the number itself carries severity, so the
@@ -55,7 +68,7 @@ const CHART_GRID =
 const CHART_TRACK = "col-span-2 sm:col-span-1 sm:col-start-2 sm:row-start-1";
 
 const TABLE_GRID =
-  "grid grid-cols-[minmax(0,1fr)_5rem_6rem_6rem_5.5rem] items-center gap-4";
+  "grid grid-cols-[minmax(0,1fr)_4.5rem_6rem_6rem_6rem_5.5rem] items-center gap-3";
 
 type SortKey = "name" | Metric;
 
@@ -63,6 +76,7 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "name", label: "Developer" },
   { key: "pages", label: "Pages" },
   { key: "issues", label: "Issues done" },
+  { key: "defects", label: "Issues / page" },
   { key: "delay", label: "Delay (days)" },
   { key: "onTime", label: "On-time %" },
 ];
@@ -118,6 +132,7 @@ export function TeamPerformanceView({
     metric === "onTime"
       ? 100
       : Math.max(1, ...ranked.map((d) => metricValue(d, metric)));
+  const thin = useMemo(() => thinSamples(data.devs), [data.devs]);
   const avg = data.averages[metric];
   const avgPct = Math.min(100, (avg / scaleMax) * 100);
 
@@ -238,11 +253,7 @@ export function TeamPerformanceView({
                       : "text-text-secondary",
                   )}
                 >
-                  {metric === "onTime"
-                    ? `${value}%`
-                    : metric === "delay"
-                      ? `${value}d`
-                      : value}
+                  {formatBarValue(value, metric)}
                 </span>
 
                 <div
@@ -275,7 +286,18 @@ export function TeamPerformanceView({
           })}
         </div>
 
-        {!data.delayRecorded && (
+        {metric === "defects" && thin.length > 0 && (
+          <p className="mt-4 text-[13px] text-text-muted">
+            A rate from fewer than {MIN_SAMPLE} pages is one bad day, not a
+            pattern:{" "}
+            {thin
+              .map((d) => `${d.name} (${d.pages} page${d.pages === 1 ? "" : "s"})`)
+              .join(", ")}
+            .
+          </p>
+        )}
+
+        {metric !== "defects" && !data.delayRecorded && (
           <p className="mt-4 text-[13px] text-text-muted">
             Delay is typed in on the page form — it is not derived from dates —
             and none is recorded against {scopeNote}. On-time therefore reads as
@@ -358,6 +380,10 @@ export function TeamPerformanceView({
                 page{d.pages === 1 ? "" : "s"} ·{" "}
                 <span className="tabular-nums">{d.issuesDone}</span> issue
                 {d.issuesDone === 1 ? "" : "s"} done ·{" "}
+                <span className="tabular-nums">
+                  {d.issuesPerPage.toFixed(1)}
+                </span>{" "}
+                per page ·{" "}
                 <span className={cn("tabular-nums", delayTone(d.delayDays))}>
                   {days(d.delayDays)}
                 </span>{" "}
@@ -446,6 +472,12 @@ export function TeamPerformanceView({
                   className="text-right text-[13px] tabular-nums text-text-secondary"
                 >
                   {d.issuesDone}
+                </span>
+                <span
+                  role="cell"
+                  className="text-right text-[13px] tabular-nums text-text-secondary"
+                >
+                  {d.issuesPerPage.toFixed(1)}
                 </span>
                 <span
                   role="cell"

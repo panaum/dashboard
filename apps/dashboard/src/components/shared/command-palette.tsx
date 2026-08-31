@@ -11,6 +11,7 @@ import {
   Building2,
   FolderKanban,
   FileText,
+  Sparkles,
   CornerDownLeft,
   type LucideIcon,
 } from "lucide-react";
@@ -38,7 +39,7 @@ const ACTIONS: Entry[] = [
   { key: "a-monthly", label: "Monthly report", href: "/dashboard/reports", tag: "Go to", icon: BarChart3 },
   { key: "a-clients", label: "Clients", href: "/dashboard/clients", tag: "Go to", icon: Users },
   { key: "a-team", label: "Team", href: "/dashboard/team", tag: "Go to", icon: UsersRound },
-  { key: "a-search", label: "Advanced search", href: "/dashboard/search", tag: "Go to", icon: Search },
+  { key: "a-insights", label: "Insights & filters", href: "/dashboard/insights", tag: "Go to", icon: Sparkles },
 ];
 
 const TYPE_ICON: Record<CommandItem["type"], LucideIcon> = {

@@ -13,7 +13,9 @@ test.describe("issue log (write)", () => {
     const title = `__e2e issue ${Date.now()}`;
 
     // Open any page detail (issue log renders on every page).
-    await page.goto("/dashboard/search?q=a");
+    // Any filter that lists pages; the merged Insights page only
+    // renders the page list once a filter is set.
+    await page.goto("/dashboard/insights?status=LIVE&scope=all");
     const href = await page
       .locator('a[href^="/dashboard/clients/"]')
       .first()

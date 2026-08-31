@@ -1,35 +1,27 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 
 /**
- * Search — focuses on the case-insensitivity fix (Postgres LIKE is case-sensitive
- * by default, which silently regressed search after the SQLite→Supabase move).
+ * /dashboard/search was merged into /dashboard/insights. The route survives as
+ * a redirect so old links and bookmarks keep working; this pins that contract.
  *
- * The query token is discovered from real data on the Clients page, so the test
- * isn't pinned to specific seed values.
+ * NOTE: this spec used to cover a `?q=` text query on the search page (a guard
+ * against Postgres LIKE being case-sensitive). That filter is not in the page
+ * any more — finding a page by name is ⌘K's job — so there is nothing left here
+ * to case-check. If a text filter comes back, restore that test with it.
  */
+test.describe("search route", () => {
+  test("redirects to insights and keeps the filters", async ({ page }) => {
+    await page.goto("/dashboard/search?status=LIVE&scope=all");
+    await expect(page).toHaveURL(/\/dashboard\/insights\?/, { timeout: 30_000 });
 
-const resultCount = async (page: Page, q: string): Promise<number> => {
-  await page.goto(`/dashboard/search?q=${encodeURIComponent(q)}`);
-  // "12 results" / "1 result" / "100 results (showing first 100)" — take the
-  // number that precedes "result(s)", not any trailing count.
-  const txt = await page.getByText(/\d+\s+results?/).first().innerText();
-  return Number(txt.match(/(\d+)\s+results?/)?.[1] ?? "0");
-};
+    const url = new URL(page.url());
+    expect(url.searchParams.get("status")).toBe("LIVE");
+    expect(url.searchParams.get("scope")).toBe("all");
+    await expect(page.getByRole("heading", { name: "Insights" })).toBeVisible();
+  });
 
-test.describe("search", () => {
-  test("a text query returns matches and is case-insensitive", async ({ page }) => {
-    // Discover a real client name to search for. Read the name span directly —
-    // the card's innerText leads with the Avatar's initials, not the name.
-    await page.goto("/dashboard/clients");
-    const firstCard = page.locator('a[href^="/dashboard/clients/"]').first();
-    await expect(firstCard).toBeVisible({ timeout: 30_000 });
-    const name = (await firstCard.locator("span.font-medium").first().innerText()).trim();
-    const token = name.match(/[A-Za-z]{3,}/)?.[0] ?? name;
-
-    const lower = await resultCount(page, token.toLowerCase());
-    const upper = await resultCount(page, token.toUpperCase());
-
-    expect(upper, `searching "${token}" should return matches`).toBeGreaterThan(0);
-    expect(lower, "lower- and upper-case queries should return the same count").toBe(upper);
+  test("redirects the bare route", async ({ page }) => {
+    await page.goto("/dashboard/search");
+    await expect(page).toHaveURL(/\/dashboard\/insights$/, { timeout: 30_000 });
   });
 });

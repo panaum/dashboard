@@ -17,7 +17,9 @@ const readPassed = async (page: Page): Promise<number> => {
 test.describe("qa checklist (write)", () => {
   test("grading a check updates QA progress, then restores it", async ({ page }) => {
     // Find a page that actually has a QA checklist.
-    await page.goto("/dashboard/search?q=a");
+    // Any filter that lists pages; the merged Insights page only
+    // renders the page list once a filter is set.
+    await page.goto("/dashboard/insights?status=LIVE&scope=all");
     const hrefs = [
       ...new Set(
         (
