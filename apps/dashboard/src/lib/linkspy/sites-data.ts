@@ -127,3 +127,10 @@ export async function fetchSiteVitals(siteId: string) {
     `/api/qa-bridge/site-vitals?registry_site_id=${encodeURIComponent(siteId)}`,
   );
 }
+
+export async function fetchSiteHistory(siteId: string) {
+  if (!configured()) return null;
+  return getJson<import("./sites-view").HistoryPayload>(
+    `/api/qa-bridge/site-history?registry_site_id=${encodeURIComponent(siteId)}`,
+  );
+}

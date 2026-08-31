@@ -10,6 +10,7 @@ import {
   fetchSiteScan,
   fetchSiteIncidents,
   fetchSiteVitals,
+  fetchSiteHistory,
   pagesForSite,
   linkspySiteHref,
 } from "@/lib/linkspy/sites-data";
@@ -17,7 +18,9 @@ import {
   buildScanView,
   buildIncidentsView,
   buildVitalsView,
+  buildHistoryView,
   bucketTone,
+  healthTone,
   ESCALATION_TONE,
 } from "@/lib/linkspy/sites-view";
 import { hostOf } from "@/lib/linkspy/link-match";
@@ -35,16 +38,19 @@ export default async function SiteDetailPage({
   const site = sites?.find((s) => s.id === siteId);
   if (sites !== null && !site) notFound();
 
-  const [presence, scanPayload, incidentsPayload, vitalsPayload, pages] = await Promise.all([
-    fetchSitePresence(siteId),
-    fetchSiteScan(siteId),
-    fetchSiteIncidents(siteId),
-    fetchSiteVitals(siteId),
-    pagesForSite(siteId),
-  ]);
+  const [presence, scanPayload, incidentsPayload, vitalsPayload, historyPayload, pages] =
+    await Promise.all([
+      fetchSitePresence(siteId),
+      fetchSiteScan(siteId),
+      fetchSiteIncidents(siteId),
+      fetchSiteVitals(siteId),
+      fetchSiteHistory(siteId),
+      pagesForSite(siteId),
+    ]);
   const scan = buildScanView(scanPayload);
   const incidents = buildIncidentsView(incidentsPayload);
   const vitals = buildVitalsView(vitalsPayload);
+  const history = buildHistoryView(historyPayload);
   const openHref = linkspySiteHref(presence?.site_path ?? `/dashboard/${siteId}`);
   const host = hostOf(site?.url) ?? siteId;
 
@@ -198,6 +204,33 @@ export default async function SiteDetailPage({
             )}
           </CardContent>
         </Card>
+
+        {/* Scan history — per-scan trend from stored snapshots, newest first. */}
+        {history.state === "series" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Scan history</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="flex flex-col gap-2">
+                {history.points.map((p) => (
+                  <li key={p.at} className="flex items-center gap-2.5 text-[13px]">
+                    <span className="w-24 shrink-0 text-text-muted">{p.at?.slice(0, 10)}</span>
+                    <Badge tone={healthTone(p.health_score)}>
+                      {typeof p.health_score === "number" ? `${p.health_score} health` : "no score"}
+                    </Badge>
+                    <span className="text-text-secondary">
+                      {p.total_links ?? "—"} links · {p.findings ?? 0} finding{(p.findings ?? 0) === 1 ? "" : "s"}
+                    </span>
+                    {(p.new ?? 0) > 0 && <Badge tone="error">+{p.new} new</Badge>}
+                    {(p.fixed ?? 0) > 0 && <Badge tone="success">−{p.fixed} fixed</Badge>}
+                    {(p.recurring ?? 0) > 0 && <Badge tone="warning">{p.recurring} recurring</Badge>}
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Downtime history — stored sentinel windows, newest first. */}
         <Card>
