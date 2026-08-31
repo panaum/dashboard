@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 700px at 50% -10%, rgba(168, 85, 247, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 85% 110%, rgba(45, 212, 191, 0.06), transparent 55%),
+    #08080c;
+  color: #f4f4f7;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  ═══ LIVING CERTIFICATE — /live/{shareId} ONLY ═══
+
+  The shell's body paints a dark radial gradient and :root declares
+  color-scheme: dark, so a light certificate needs both swapped or it renders a
+  white card on a black ground with dark-styled scrollbars.
+
+  The swap is keyed on .lc-root, which only app/live/layout.tsx sets. No
+  .lc-root in the tree, no change — the doors page, sign-in and handoff routes
+  are untouched by construction.
+
+  :has() on html/body rather than a full-bleed wrapper, so overscroll and short
+  pages stay light too; a wrapper leaves the gradient showing above and below.
+  Values are the Dashboard's --color-page / --color-text-primary / --color-accent.
+*/
+html:has(.lc-root) {
+  color-scheme: light;
+}
+
+body:has(.lc-root) {
+  background: #f6f6f9;
+  color: #1c1c2e;
+}
+
+.lc-root {
+  min-height: 100%;
+}
+
+/* The Dashboard's focus ring, so the two certificates behave alike as well as
+   look alike. */
+.lc-root :focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+
+/* A quiet hairline grid the doors sit on. */
+.door-grain {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
