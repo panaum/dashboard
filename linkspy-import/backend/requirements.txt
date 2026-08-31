@@ -1,0 +1,21 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+playwright>=1.44.0
+beautifulsoup4>=4.12.3
+lxml>=5.2.1
+httpx[http2]>=0.27.0
+pydantic>=2.7.1
+python-dotenv>=1.0.1
+rank-bm25==0.2.2
+# Phase 6 fix engine: fuzzy-matching a missing #fragment against real page ids.
+rapidfuzz>=3.9.0
+# Phase 6 template libraries (fix_templates/, client_templates/).
+PyYAML>=6.0
+
+# After pip install, also run:
+# playwright install chromium
+supabase>=2.0.0
+apscheduler>=3.10
+# Client portal (P0): verify the short-lived HS256 backend token minted from
+# the NextAuth session. See auth.py.
+PyJWT>=2.8.0

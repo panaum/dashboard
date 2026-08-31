@@ -1,0 +1,637 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS — light / indigo, mirrored from the Deliverables Dashboard so
+   the two apps read as one product. Accent = a single flat indigo (brand,
+   actions, interactive). Health keeps its OWN language (green healthy · amber
+   attention · red broken · gray neutral) — the accent is never a status.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Spacing — 8px scale */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+
+  /* Type — 4-step scale. Nothing data-bearing below 13px. */
+  --text-display: 30px;
+  --text-heading: 19px;
+  --text-body: 14px;
+  --text-caption: 13px;
+  --leading-tight: 1.2; --leading-normal: 1.55;
+
+  /* Font families — Geist (Dashboard-matched), loaded via next/font in layout. */
+  --font-body: var(--font-geist-sans);
+  --font-display: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-stack-display: var(--font-geist-sans), system-ui, sans-serif;
+  --font-stack-body: var(--font-geist-sans), system-ui, sans-serif;
+  --font-stack-mono: var(--font-geist-mono), ui-monospace, "JetBrains Mono", monospace;
+
+  /* Radius — one family */
+  --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px; --radius-pill: 999px;
+
+  /* Surfaces — calm neutral canvas; white cards lift a soft step above it. */
+  --surface-page: #f6f6f9;
+  --surface-card: #ffffff;
+  --surface-raised: #ffffff;
+  --border-subtle: #e8e8f0;
+  --border-strong: #d7d7e2;
+
+  /* Ambient page gradient — soft lavender melting into warm peach. Applied to
+     the body (fixed), so the whole app shares one calm backdrop. */
+  --page-gradient: linear-gradient(
+    158deg,
+    #e8e4f6 0%,
+    #ece7f3 26%,
+    #f2ece9 52%,
+    #f8eede 80%,
+    #f7e6d2 100%
+  );
+
+  /* Text — 3 tiers, all AA on --surface-card */
+  --text-primary: #1c1c2e;
+  --text-secondary: #66667a;
+  --text-muted: #7a7a8c;
+
+  /* Elevation ramp — soft, layered, low-contrast (premium depth) */
+  --elev-1: 0 1px 2px rgba(20,20,43,0.04), 0 2px 6px rgba(20,20,43,0.05);
+  --elev-2: 0 4px 12px rgba(20,20,43,0.06), 0 8px 24px rgba(20,20,43,0.07);
+  --elev-3: 0 12px 40px rgba(20,20,43,0.10);
+
+  /* THE accent — a single flat indigo. Brand, primary action, links, focus,
+     interactive highlight. Never a status. */
+  --signal: #4f46e5;
+  --signal-bright: #6366f1;
+  --signal-dim: #eceafd;         /* atmospheric only (glows) */
+  --signal-ink: #ffffff;         /* text that sits on an accent fill */
+  --signal-gradient: #4f46e5;    /* flat — no gradients in this system */
+
+  /* Health language — its own colors, independent of the accent.
+     healthy = green · broken = red · attention = amber · neutral = gray. */
+  --status-healthy: #4caf7d;   --status-healthy-bg: rgba(76,175,125,0.12);
+  --status-broken: #e05c5c;    --status-broken-bg: rgba(224,92,92,0.12);
+  --status-attention: #f5a623; --status-attention-bg: rgba(245,166,35,0.12);
+  --status-neutral: #7a7a8c;   --status-neutral-bg: rgba(122,122,140,0.12);
+
+  --accent-solid: var(--signal);
+
+  /* Brand shadow for primary actions (Dashboard parity). */
+  --shadow-brand: 0 6px 20px rgba(79, 70, 229, 0.25);
+
+  /* Legacy alias: many components still set font-family: var(--font-poppins). */
+  --font-poppins: var(--font-stack-body);
+
+  --content-max: 1140px;
+
+  /* Motion — ONE easing curve. All motion ≤300ms except the 600ms score reveal. */
+  --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --motion: 170ms var(--ease-out-quart);
+  --motion-fast: 120ms var(--ease-out-quart);
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  body {
+    background-color: var(--surface-page);
+    background-image: var(--page-gradient);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    background-size: 200% 200%;
+    animation: gradient-drift 26s ease-in-out infinite alternate;
+    color: var(--text-primary);
+    font-family: var(--font-stack-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    position: relative;
+    min-height: 100vh;
+    transition: color var(--motion);
+  }
+  /* The lavender→peach backdrop is quietly alive — it drifts and breathes. */
+  @keyframes gradient-drift {
+    0%   { background-position: 0% 0%; }
+    100% { background-position: 100% 100%; }
+  }
+
+  /* ── ATMOSPHERE ── retired: the Dashboard canvas is flat and clean. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: none;
+  }
+  /* Keep app content above the atmosphere layer. */
+  body > * { position: relative; z-index: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(28,28,46,0.14); border-radius: 4px; }
+}
+
+/* ═══ Typography utilities ═══ */
+.font-display { font-family: var(--font-stack-display); letter-spacing: -0.01em; }
+.font-mono, .mono { font-family: var(--font-stack-mono); font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+/* Every number is tabular so counts don't jitter as they change. */
+.tabular { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+/* ═══ Component classes ═══ */
+
+/* Card — lifts a visible step above the page; hover raises elevation and
+   brightens the hairline. */
+.ds-card {
+  background: rgba(255, 255, 255, 0.50);
+  backdrop-filter: blur(22px) saturate(1.4);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition: box-shadow var(--motion), border-color var(--motion), transform var(--motion);
+}
+.ds-card-hover:hover {
+  box-shadow: var(--elev-2);
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+}
+.ds-card-pad { padding: var(--space-5); }
+
+.ds-text-primary { color: var(--text-primary); }
+.ds-text-secondary { color: var(--text-secondary); }
+.ds-text-muted { color: var(--text-muted); }
+
+/* Primary action — solid signal, dark ink. Real click physics: presses down
+   1px with a brightness lift, 120ms on the one easing curve. */
+.ds-btn-primary {
+  background: var(--signal);
+  color: var(--signal-ink);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 10px 18px;
+  font-size: var(--text-body);
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter var(--motion-fast), transform var(--motion-fast), box-shadow var(--motion);
+  box-shadow: 0 0 0 rgba(79,70,229,0);
+}
+.ds-btn-primary:hover { filter: brightness(1.05); box-shadow: var(--shadow-brand); }
+.ds-btn-primary:active { transform: translateY(1px); filter: brightness(0.96); }
+.ds-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; filter: none; box-shadow: none; }
+
+/* Ghost action — no fill, quiet. Same press physics. */
+.ds-btn-ghost {
+  background: var(--surface-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 9px 16px;
+  font-size: var(--text-body);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--motion), border-color var(--motion), transform var(--motion-fast);
+}
+.ds-btn-ghost:hover { background: rgba(79, 70, 229, 0.06); border-color: rgba(79,70,229,0.35); }
+.ds-btn-ghost:active { transform: translateY(1px); }
+.ds-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Status — dot + word. Healthy dots breathe (the board feels alive). */
+.ds-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-caption); font-weight: 500; }
+.ds-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.ds-status-healthy   { color: var(--status-healthy); }
+.ds-status-healthy   .ds-status-dot { background: var(--status-healthy); animation: ds-breathe 3s var(--ease-out-quart) infinite; }
+.ds-status-broken    { color: var(--status-broken); }
+.ds-status-broken    .ds-status-dot { background: var(--status-broken); }
+.ds-status-attention { color: var(--status-attention); }
+.ds-status-attention .ds-status-dot { background: var(--status-attention); }
+.ds-status-neutral   { color: var(--status-neutral); }
+.ds-status-neutral   .ds-status-dot { background: var(--status-neutral); }
+
+@keyframes ds-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(76,175,125,0.40); opacity: 1; }
+  50%      { box-shadow: 0 0 0 4px rgba(76,175,125,0);   opacity: 0.7; }
+}
+
+/* Skeleton — matches final layout, no jump. */
+@keyframes ds-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.ds-skeleton {
+  background: linear-gradient(90deg, rgba(28,28,46,0.05) 25%, rgba(28,28,46,0.10) 50%, rgba(28,28,46,0.05) 75%);
+  background-size: 200% 100%;
+  animation: ds-shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* Keyboard focus ring — the signal color. */
+.ds-focusable:focus-visible,
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.ds-container { max-width: var(--content-max); margin-left: auto; margin-right: auto; }
+
+/* Staggered content reveal on mount (page transitions feel intentional). */
+@keyframes ds-rise { from { opacity: 0; transform: translateY(22px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.ds-rise { animation: ds-rise 560ms var(--ease-out-quart) both; }
+
+/* ═══ Micro-interactions — calm, consistent feedback everywhere ═══ */
+
+/* Smooth colour/shadow feedback on every interactive control. (Transform is
+   intentionally left out so it never fights framer-motion transforms.) */
+a, button, select, summary, [role="button"], [cmdk-item], label[for] {
+  transition: color var(--motion), background-color var(--motion),
+    border-color var(--motion), box-shadow var(--motion), opacity var(--motion);
+}
+
+/* Staggered entrance — pair .ds-rise with a delay step for a cascade. */
+.ds-delay-1 { animation-delay: 60ms; }
+.ds-delay-2 { animation-delay: 120ms; }
+.ds-delay-3 { animation-delay: 190ms; }
+.ds-delay-4 { animation-delay: 270ms; }
+.ds-delay-5 { animation-delay: 360ms; }
+
+/* Opt-in interactive card — lifts and brightens its hairline on hover. */
+.card-lift { transition: box-shadow var(--motion), border-color var(--motion), transform var(--motion); will-change: transform; }
+.card-lift:hover { box-shadow: var(--elev-2); border-color: var(--border-strong); transform: translateY(-2px); }
+
+/* Staggered entrance cascade — add .stagger to a grid/list; its direct children
+   rise in one after another with a refined ease. Depth caps at 14 so long
+   lists don't feel slow. */
+.stagger > * { animation: ds-rise 600ms var(--ease-out-quart) both; }
+.stagger > *:nth-child(1)  { animation-delay: 40ms; }
+.stagger > *:nth-child(2)  { animation-delay: 85ms; }
+.stagger > *:nth-child(3)  { animation-delay: 130ms; }
+.stagger > *:nth-child(4)  { animation-delay: 175ms; }
+.stagger > *:nth-child(5)  { animation-delay: 220ms; }
+.stagger > *:nth-child(6)  { animation-delay: 265ms; }
+.stagger > *:nth-child(7)  { animation-delay: 310ms; }
+.stagger > *:nth-child(8)  { animation-delay: 355ms; }
+.stagger > *:nth-child(9)  { animation-delay: 400ms; }
+.stagger > *:nth-child(10) { animation-delay: 445ms; }
+.stagger > *:nth-child(11) { animation-delay: 490ms; }
+.stagger > *:nth-child(12) { animation-delay: 535ms; }
+.stagger > *:nth-child(n+13) { animation-delay: 570ms; }
+
+/* Refined hover elevation for the frosted cards — a lift plus a whisper of
+   indigo depth. Premium, not loud. */
+.ds-card-hover:hover {
+  box-shadow: var(--elev-2), 0 10px 32px rgba(79, 70, 229, 0.10);
+}
+
+/* Specular sheen — a soft diagonal light sweep across a surface on hover.
+   Opt-in via .sheen; the element must be able to clip (overflow hidden). */
+.sheen { position: relative; overflow: hidden; isolation: isolate; }
+.sheen::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 60%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 100%
+  );
+  transform: skewX(-18deg);
+  transition: left 620ms var(--ease-out-quart);
+}
+.sheen:hover::after { left: 140%; }
+
+/* Primary CTA gets the same quiet sheen on hover. */
+.ds-btn-primary { position: relative; overflow: hidden; isolation: isolate; }
+.ds-btn-primary::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 55%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.30) 50%,
+    transparent 100%
+  );
+  transform: skewX(-18deg);
+  transition: left 600ms var(--ease-out-quart);
+}
+.ds-btn-primary:hover::after { left: 150%; }
+
+/* ═══ Light glassmorphism — reserved for the scanner focal surface ═══ */
+/* A frosted translucent panel. Needs a soft tinted backdrop behind it (see
+   .scanner-aura) to actually read as glass rather than a flat card. */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.48);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-2), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+/* Soft indigo/violet aura the frosted panel sits over. Absolutely positioned,
+   purely decorative, and clipped by the scanner's overflow-hidden container. */
+.scanner-aura {
+  position: absolute;
+  top: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(840px, 94vw);
+  height: 380px;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 9999px;
+  filter: blur(40px);
+  opacity: 0.5;
+  background:
+    radial-gradient(42% 58% at 26% 34%, rgba(99, 102, 241, 0.22), transparent 72%),
+    radial-gradient(46% 60% at 78% 46%, rgba(147, 51, 234, 0.16), transparent 72%),
+    radial-gradient(52% 70% at 52% 82%, rgba(56, 189, 248, 0.10), transparent 75%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .scanner-aura { animation: aura-drift 14s var(--ease-out-quart) infinite alternate; }
+}
+@keyframes aura-drift {
+  from { transform: translateX(-50%) translateY(0) scale(1); }
+  to   { transform: translateX(-50%) translateY(10px) scale(1.05); }
+}
+
+/* Focus-glow for the hero input surface (a soft indigo ring on focus-within). */
+.focus-glow { transition: box-shadow var(--motion), border-color var(--motion); }
+.focus-glow:focus-within {
+  border-color: rgba(79,70,229,0.55) !important;
+  box-shadow: 0 0 0 4px rgba(79,70,229,0.12), var(--elev-2);
+}
+
+/* Icon nudge — a small directional shift on hover (arrows, chevrons, links). */
+.nudge-x { transition: transform var(--motion-fast); }
+.group:hover .nudge-x, a:hover > .nudge-x, button:hover > .nudge-x { transform: translateX(2px); }
+
+/* Primary CTA gets a quiet upward lift on top of its existing press physics. */
+.ds-btn-primary { transition: filter var(--motion-fast), transform var(--motion-fast), box-shadow var(--motion); }
+.ds-btn-primary:hover { transform: translateY(-1px); }
+
+/* Count-up numbers and score reveals shouldn't jitter width. */
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ═══ Signature: the radar scan ═══ */
+@keyframes radar-sweep { to { transform: rotate(360deg); } }
+@keyframes radar-blip {
+  0% { transform: scale(0.4); opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+.radar-sweep {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 300deg, rgba(79,70,229,0.05) 330deg, rgba(79,70,229,0.55) 360deg);
+  animation: radar-sweep 2.4s linear infinite;
+}
+.radar-sweep-locking { animation: radar-sweep 2.4s var(--ease-out-quart) forwards; }
+
+/* ═══ Legacy utility classes — gradients retired to a single flat indigo ═══ */
+.bg-gradient-1 { background: var(--signal); }
+.bg-gradient-2 { background: var(--signal); }
+.bg-gradient-3 { background: var(--signal); }
+
+/* Frosted glass card — translucent white over the ambient page gradient. */
+.glass-card {
+  background: rgba(255, 255, 255, 0.50);
+  backdrop-filter: blur(22px) saturate(1.4);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 16px;
+  box-shadow: var(--elev-1), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+/* ═══ Welded report card ═══
+   Several sections joined into ONE card: the wrapper owns the single frame,
+   children sit as flush rows separated by hairline dividers. Deliberately NO
+   backdrop-filter and NO position here — either would create a stacking context
+   that traps the toolbar's z-30 and hide the Integrations dropdown behind a
+   later weld. Weld A carries no overflow (so that dropdown can escape); Weld B
+   adds .weld-clip for StatsBar's tinted tiles. */
+.weld {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--elev-1);
+}
+.weld > * { border-bottom: 1px solid var(--border-subtle); }
+.weld > *:last-child { border-bottom: none; }
+.weld-clip { overflow: hidden; }
+
+/* ═══ Segmented action row (X-ray · Share · Integrations) ═══
+   Equal segments spanning the card, split by hairlines like the stat tiles —
+   NOT right-pinned buttons. flex 1 1 0 splits evenly across whatever ACTUALLY
+   renders: a null child (IntegrationsPanel with 0 integrations, or an absent
+   Share when scanId is null) emits no DOM node, so there is no empty track and
+   no dangling divider. The buttons are styled as the flex container's DIRECT
+   children — NO per-segment wrapper div (a wrapper renders even when its child
+   returns null, which would reintroduce the blank cell).
+   No border-top here: the weld already draws ReportHeader's border-bottom as
+   the hairline above this row. No overflow: the dropdowns must escape (z-30).
+   ShareButton / IntegrationsPanel are untouched — we only neutralise their
+   TRIGGER (`.seg-row > div > button`, a direct child of their root); their
+   dropdown is a sibling `div[role="dialog"]`, so it keeps its own frame. */
+.seg-row { display: flex; }
+.seg-row > * { flex: 1 1 0; min-width: 0; }
+.seg-row > *:not(:first-child) { border-left: 1px solid var(--border-subtle); }
+.seg-row > button,
+.seg-row > div > button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+/* Hover tints the segment, not a border. */
+.seg-row > button:hover,
+.seg-row > div > button:hover { background: rgba(28, 28, 46, 0.04) !important; }
+/* X-ray active — aria-pressed keeps working; signal tint replaces the border. */
+.seg-row > button[aria-pressed="true"] {
+  color: var(--signal) !important;
+  background: rgba(79, 70, 229, 0.08) !important;
+}
+/* Below ~640px: stack to a column; dividers become row separators (top). */
+@media (max-width: 640px) {
+  .seg-row { flex-direction: column; }
+  .seg-row > * { flex: 0 0 auto; }
+  .seg-row > *:not(:first-child) { border-left: none; border-top: 1px solid var(--border-subtle); }
+}
+
+.gradient-text {
+  color: var(--signal);
+}
+
+/* Signal border retired to a static soft hairline (no rotating gradient). */
+.animated-border { position: relative; z-index: 0; }
+.animated-border::before {
+  content: ""; position: absolute; z-index: -1; inset: -1px; border-radius: 18px;
+  background: var(--border-subtle);
+}
+.animated-border::after {
+  content: ""; position: absolute; z-index: -1; inset: 0; border-radius: 16px;
+  background: var(--surface-card);
+}
+@keyframes gradient-rotate {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Noise overlay retired — the Dashboard surface is clean. */
+.noise-overlay::before {
+  content: none;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.5); }
+}
+.animate-pulse-dot { animation: pulse-dot 2s var(--ease-out-quart) infinite; }
+
+.progress-fill { transition: width 0.5s var(--ease-out-quart); }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══ Command palette (cmdk) ═══ */
+[cmdk-overlay] {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(20, 20, 43, 0.35);
+  backdrop-filter: blur(4px);
+  animation: fadeIn 120ms var(--ease-out-quart);
+}
+.cmdk-root {
+  position: fixed; z-index: 201;
+  top: 18vh; left: 50%; transform: translateX(-50%);
+  width: min(92vw, 580px);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-3);
+  overflow: hidden;
+  animation: ds-rise 180ms var(--ease-out-quart) both;
+}
+.cmdk-input-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border-subtle);
+}
+.cmdk-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--text-primary); font-family: var(--font-stack-body);
+  font-size: 15px;
+}
+.cmdk-input::placeholder { color: var(--text-muted); }
+.cmdk-kbd {
+  font-family: var(--font-stack-mono); font-size: 10px; color: var(--text-muted);
+  border: 1px solid var(--border-subtle); border-radius: 5px; padding: 2px 6px;
+}
+.cmdk-list { max-height: 340px; overflow-y: auto; padding: 8px; }
+.cmdk-empty { padding: 24px; text-align: center; color: var(--text-muted); font-size: var(--text-body); }
+.cmdk-group [cmdk-group-heading] {
+  font-family: var(--font-stack-mono); font-size: 10px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+  padding: 10px 10px 6px;
+}
+.cmdk-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  color: var(--text-primary); font-size: var(--text-body); cursor: pointer;
+  transition: background var(--motion-fast);
+}
+.cmdk-item[data-selected="true"] {
+  background: rgba(79,70,229,0.10);
+  box-shadow: inset 2px 0 0 var(--signal);
+}
+.cmdk-dim { color: var(--text-muted); }
+
+/* ═══ Print — agency-grade PDF from any report view (Ctrl+P) ═══ */
+.print-only { display: none; }
+@media print {
+  /* Force our colors through — status colors, score, backgrounds. */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  /* Drop the ops-room atmosphere and app chrome. */
+  body::before, body::after { display: none !important; }
+  nav, .no-print, [cmdk-overlay], .cmdk-root { display: none !important; }
+  body { background: #ffffff !important; }
+
+  .print-only { display: flex !important; }
+  /* Running header on every printed page: domain · date · score. */
+  .report-print-header {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px; font-family: var(--font-stack-mono); font-size: 11px;
+    color: var(--text-secondary); border-bottom: 1px solid var(--border-subtle);
+  }
+  main { padding-top: 40px !important; }
+
+  /* No finding split across a page break; keep cards intact. */
+  .report-issue, .report-verdict { break-inside: avoid; page-break-inside: avoid; }
+  .ds-card { box-shadow: none !important; }
+  a { text-decoration: none; color: inherit; }
+}
+
+/* ═══ Keyboard-triage active row ═══ */
+[data-triage-active] {
+  box-shadow: inset 3px 0 0 var(--signal);
+  background: rgba(79, 70, 229, 0.06) !important;
+  transition: background var(--motion), box-shadow var(--motion);
+}
+
+/* ═══ Optimistic verify: shake on "still broken", fade on resolved ═══ */
+@keyframes ds-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+.ds-shake { animation: ds-shake 360ms var(--ease-out-quart); }
+@keyframes ds-resolve { to { opacity: 0.35; } }
+.ds-resolving { animation: ds-resolve 500ms var(--ease-out-quart) forwards; }
+.ds-verifying { text-decoration: line-through; opacity: 0.6; }
+
+/* ─── Vigilance report print stylesheet (Ctrl+P → clean PDF) ─── */
+@media print {
+  .report-print-btn { display: none !important; }
+  .report-root { background: #fff !important; padding: 0 !important; }
+  .report-root article {
+    box-shadow: none !important; border-radius: 0 !important; max-width: 100% !important;
+  }
+  /* Never split a section or an incident card across pages. */
+  .report-block, .report-incident { break-inside: avoid; page-break-inside: avoid; }
+  .report-masthead { break-after: avoid; }
+  /* Force the light palette + backgrounds to actually print. */
+  .report-root, .report-root * {
+    -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+  }
+  @page { margin: 14mm; }
+}
+
+/* Vigilance report shelf — document-cover hover lift */
+.report-cover:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
