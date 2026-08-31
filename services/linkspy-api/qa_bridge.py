@@ -104,3 +104,16 @@ def summarize_history(rows):
             point[k] = v if isinstance(v, (int, float)) else None
         out.append(point)
     return {"points": out}
+
+
+# ─── Dashboard-run checks (async job snapshots) ──────────────────────────────
+
+CHECK_PUBLIC_FIELDS = ("status", "url", "progress", "summary", "error")
+
+
+def check_snapshot(entry):
+    """Public view of one check-job entry: whitelisted, never internals.
+    Unknown id → a typed not_found, so the poller can stop cleanly."""
+    if not entry:
+        return {"status": "not_found"}
+    return {k: entry.get(k) for k in CHECK_PUBLIC_FIELDS if entry.get(k) is not None}

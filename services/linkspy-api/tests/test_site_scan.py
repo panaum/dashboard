@@ -57,3 +57,24 @@ def test_flagged_list_is_capped():
 def test_non_dict_rows_are_ignored():
     out = summarize_scan({"results_json": ["junk", None, _row("broken")]})
     assert out["totals"]["links"] == 1 and out["totals"]["broken"] == 1
+
+
+# ─── check_snapshot (dashboard-run checks) ───────────────────────────────────
+from qa_bridge import check_snapshot
+
+
+def test_unknown_check_is_a_typed_not_found():
+    assert check_snapshot(None) == {"status": "not_found"}
+
+
+def test_snapshot_whitelists_and_drops_internals():
+    snap = check_snapshot({"status": "running", "url": "u", "task": object(),
+                           "started_at": 1.0, "progress": {"percent": 40, "message": "m"}})
+    assert snap == {"status": "running", "url": "u", "progress": {"percent": 40, "message": "m"}}
+
+
+def test_done_snapshot_carries_summary_and_failed_carries_error():
+    done = check_snapshot({"status": "done", "url": "u", "summary": {"totals": {}}})
+    assert "summary" in done and "error" not in done
+    failed = check_snapshot({"status": "failed", "url": "u", "error": "scan timed out"})
+    assert failed["error"] == "scan timed out"

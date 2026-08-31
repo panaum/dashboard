@@ -3472,6 +3472,112 @@ async def qa_bridge_site_history(registry_site_id: str = Query(...),
             **summarize_history(rows)}
 
 
+# ─── QA-bridge: dashboard-run checks ─────────────────────────────────────────
+# The Deliverables app starts a REAL scan (the same scan_events pipeline the
+# checker UI drives — scrape, check, audits, diffing, persistence) and polls a
+# snapshot. In-memory job store: a check is ephemeral progress state; the scan
+# itself persists to the scans table exactly as always.
+_qa_check_jobs = {}                 # id -> {status, url, progress, summary, error, started_at, task}
+_QA_CHECK_TTL_S = 1800.0
+_QA_CHECK_MAX_RUNNING = 2
+_QA_CHECK_HARD_CAP_S = 900
+
+
+def _qa_checks_gc(now: float):
+    dead = [cid for cid, e in _qa_check_jobs.items()
+            if now - e.get("started_at", 0) > _QA_CHECK_TTL_S]
+    for cid in dead:
+        _qa_check_jobs.pop(cid, None)
+
+
+async def _run_qa_check(check_id: str, url: str):
+    from datetime import datetime, timezone
+    from qa_bridge import summarize_scan
+    entry = _qa_check_jobs[check_id]
+    try:
+        async def drive():
+            async for kind, data in scan_events(url, email="qa-dashboard", notify=False):
+                if kind == "progress":
+                    entry["progress"] = {"message": data.get("message"),
+                                         "percent": data.get("percent")}
+                elif kind == "result":
+                    rows = [r.model_dump() for r in (data.results or [])]
+                    summary = summarize_scan({
+                        "results_json": rows,
+                        "scanned_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    summary["health_score"] = data.health_score
+                    entry["summary"] = summary
+                    entry["status"] = "done"
+                elif kind == "error":
+                    entry["status"] = "failed"
+                    entry["error"] = (data or {}).get("message") or "scan failed"
+        await asyncio.wait_for(drive(), timeout=_QA_CHECK_HARD_CAP_S)
+        if entry["status"] == "running":
+            entry["status"] = "failed"
+            entry["error"] = "scan ended without a result"
+    except asyncio.TimeoutError:
+        entry["status"] = "failed"
+        entry["error"] = "scan timed out"
+    except Exception as e:
+        entry["status"] = "failed"
+        entry["error"] = f"scan failed ({type(e).__name__})"
+
+
+@app.post("/api/qa-bridge/check")
+async def qa_bridge_check_start(request: Request,
+                                authorization: str = Header(default=None),
+                                x_api_key: str = Header(default=None)):
+    """Start a dashboard-run check of one URL. Same service-key auth + rate
+    limit as the other bridge endpoints, plus a small concurrent-run cap —
+    scans are heavy (headless browser), and this must never starve the
+    interactive checker."""
+    import uuid
+    from urllib.parse import urlparse
+    key = await _qa_authenticate(authorization, x_api_key)
+    if not key:
+        return JSONResponse({"error": "A valid QA-bridge service key is required."}, status_code=401)
+    if not _qa_rl.allow(key["id"], time.time()):
+        return JSONResponse({"error": "Rate limit exceeded. Try again shortly."}, status_code=429)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    raw = str(body.get("url") or "").strip()
+    target = raw if "://" in raw else (f"https://{raw}" if raw else "")
+    parsed = urlparse(target)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return JSONResponse({"error": "a valid http(s) url is required"}, status_code=400)
+
+    now = time.time()
+    _qa_checks_gc(now)
+    running = sum(1 for e in _qa_check_jobs.values() if e.get("status") == "running")
+    if running >= _QA_CHECK_MAX_RUNNING:
+        return JSONResponse({"error": "check_capacity", "detail":
+                             "Two checks are already running — try again in a minute."}, status_code=429)
+
+    check_id = uuid.uuid4().hex
+    entry = {"status": "running", "url": target, "started_at": now,
+             "progress": {"message": "Starting…", "percent": 0}}
+    _qa_check_jobs[check_id] = entry
+    entry["task"] = asyncio.create_task(_run_qa_check(check_id, target))
+    return {"check_id": check_id, "status": "running"}
+
+
+@app.get("/api/qa-bridge/check-status")
+async def qa_bridge_check_status(check_id: str = Query(...),
+                                 authorization: str = Header(default=None),
+                                 x_api_key: str = Header(default=None)):
+    from qa_bridge import check_snapshot
+    key = await _qa_authenticate(authorization, x_api_key)
+    if not key:
+        return JSONResponse({"error": "A valid QA-bridge service key is required."}, status_code=401)
+    if not _qa_rl.allow(key["id"], time.time()):
+        return JSONResponse({"error": "Rate limit exceeded. Try again shortly."}, status_code=429)
+    _qa_checks_gc(time.time())
+    return check_snapshot(_qa_check_jobs.get(check_id))
+
+
 @app.get("/api/registry-bridge/client-presence")
 async def registry_bridge_client_presence(registry_client_id: str = Query(...),
                                         authorization: str = Header(default=None),
