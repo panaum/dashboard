@@ -9,10 +9,17 @@ import {
   fetchSitePresence,
   fetchSiteScan,
   fetchSiteIncidents,
+  fetchSiteVitals,
   pagesForSite,
   linkspySiteHref,
 } from "@/lib/linkspy/sites-data";
-import { buildScanView, buildIncidentsView, bucketTone } from "@/lib/linkspy/sites-view";
+import {
+  buildScanView,
+  buildIncidentsView,
+  buildVitalsView,
+  bucketTone,
+  ESCALATION_TONE,
+} from "@/lib/linkspy/sites-view";
 import { hostOf } from "@/lib/linkspy/link-match";
 
 export const metadata = { title: "Site" };
@@ -28,14 +35,16 @@ export default async function SiteDetailPage({
   const site = sites?.find((s) => s.id === siteId);
   if (sites !== null && !site) notFound();
 
-  const [presence, scanPayload, incidentsPayload, pages] = await Promise.all([
+  const [presence, scanPayload, incidentsPayload, vitalsPayload, pages] = await Promise.all([
     fetchSitePresence(siteId),
     fetchSiteScan(siteId),
     fetchSiteIncidents(siteId),
+    fetchSiteVitals(siteId),
     pagesForSite(siteId),
   ]);
   const scan = buildScanView(scanPayload);
   const incidents = buildIncidentsView(incidentsPayload);
+  const vitals = buildVitalsView(vitalsPayload);
   const openHref = linkspySiteHref(presence?.site_path ?? `/dashboard/${siteId}`);
   const host = hostOf(site?.url) ?? siteId;
 
@@ -66,6 +75,31 @@ export default async function SiteDetailPage({
       />
 
       <div className="flex flex-col gap-4">
+        {/* Vitals — LinkSpy's own guard cards (SSL / domain / indexability /
+            uptime), most urgent first, exactly as its site view sorts them. */}
+        {vitals.state === "cards" && (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {vitals.cards.map((c) => (
+              <Card key={c.key} className="px-4 py-3.5">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
+                    {c.label}
+                  </span>
+                  <Badge tone={ESCALATION_TONE[c.escalation] ?? "neutral"}>
+                    {c.escalation === "ok" ? "ok" : c.escalation}
+                  </Badge>
+                </div>
+                <p className="text-lg font-semibold text-text-primary">{c.fact}</p>
+                {c.detail && (
+                  <p className="truncate text-[12px] text-text-muted" title={c.detail}>
+                    {c.detail}
+                  </p>
+                )}
+              </Card>
+            ))}
+          </div>
+        )}
+
         {/* Production signals — same wire read as the checklist strip. */}
         <Card>
           <CardHeader>

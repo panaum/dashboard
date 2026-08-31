@@ -3420,6 +3420,33 @@ async def qa_bridge_site_incidents(registry_site_id: str = Query(...),
             **summarize_incidents(rows)}
 
 
+@app.get("/api/qa-bridge/site-vitals")
+async def qa_bridge_site_vitals(registry_site_id: str = Query(...),
+                                authorization: str = Header(default=None),
+                                x_api_key: str = Header(default=None)):
+    """The sentinel guard cards for one site (SSL / domain / indexability /
+    uptime), exactly as LinkSpy's own site view computes them — the pure
+    summarize_sentinel over STORED status + pings. Service-key read; never
+    probes a host."""
+    from datetime import datetime, timezone
+    from database import get_sentinel_status, recent_pings
+    from sentinel import summarize_sentinel
+    key = await _qa_authenticate(authorization, x_api_key)
+    if not key:
+        return JSONResponse({"error": "A valid QA-bridge service key is required."}, status_code=401)
+    if not _qa_rl.allow(key["id"], time.time()):
+        return JSONResponse({"error": "Rate limit exceeded. Try again shortly."}, status_code=429)
+    try:
+        status = await get_sentinel_status(registry_site_id)
+        pings = await recent_pings(registry_site_id)
+    except Exception as e:
+        print(f"[site-vitals] read failed for {registry_site_id}: {e}")
+        return JSONResponse({"error": "vitals_unavailable"}, status_code=503)
+    return {"registry_site_id": registry_site_id,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            **summarize_sentinel(status, pings)}
+
+
 @app.get("/api/registry-bridge/client-presence")
 async def registry_bridge_client_presence(registry_client_id: str = Query(...),
                                         authorization: str = Header(default=None),
