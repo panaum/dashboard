@@ -44,7 +44,7 @@ def test_duplicate_fire_guard_upserts_on_period(monkeypatch):
 def test_print_stylesheet_guards_page_breaks():
     """The print rules that keep incident cards whole and force backgrounds must
     stay present — a client-ready PDF depends on them."""
-    css = pathlib.Path(__file__).resolve().parents[2] / "frontend" / "app" / "globals.css"
+    css = pathlib.Path(__file__).resolve().parents[3] / "apps" / "linkspy" / "app" / "globals.css"
     text = css.read_text(encoding="utf-8")
     assert "@media print" in text
     assert "break-inside: avoid" in text          # incident cards + sections never split
