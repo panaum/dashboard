@@ -140,3 +140,22 @@ test("vitals: unavailable on null/empty, cards otherwise; every escalation has a
   }
   assert.notEqual(ESCALATION_TONE.unknown, "success");
 });
+
+test("history: unavailable, none, series; points without a timestamp are dropped", async () => {
+  const { buildHistoryView } = await import("./sites-view");
+  assert.deepEqual(buildHistoryView(null), { state: "unavailable" });
+  assert.deepEqual(buildHistoryView({ points: [] }), { state: "none" });
+  const v = buildHistoryView({ points: [{ at: "t", health_score: 91 }, { health_score: 88 }] });
+  assert.equal(v.state, "series");
+  if (v.state === "series") assert.equal(v.points.length, 1);
+});
+
+test("health tones match LinkSpy's thresholds; missing scores stay neutral", async () => {
+  const { healthTone } = await import("./sites-view");
+  assert.equal(healthTone(95), "success");
+  assert.equal(healthTone(90), "success");
+  assert.equal(healthTone(75), "warning");
+  assert.equal(healthTone(40), "error");
+  assert.equal(healthTone(null), "neutral");
+  assert.equal(healthTone(undefined), "neutral");
+});

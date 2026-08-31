@@ -80,3 +80,27 @@ def summarize_incidents(rows):
              for r in (rows or []) if isinstance(r, dict)]
     return {"incidents": items,
             "open": sum(1 for i in items if not i.get("restored_at"))}
+
+
+# ─── Scan history (Deliverables site detail trend) ───────────────────────────
+# totals_json also carries link_fingerprints / redirect_rules / builder hints —
+# internals that must never cross the bridge. Scalars only.
+
+HISTORY_FIELDS = ("health_score", "total_links", "findings", "new", "fixed", "recurring")
+HISTORY_LIMIT = 30
+
+
+def summarize_history(rows):
+    """scan_snapshots rows ({created_at, totals_json}) → whitelisted scalar
+    points, order preserved (caller reads newest-first), capped."""
+    out = []
+    for r in (rows or [])[:HISTORY_LIMIT]:
+        if not isinstance(r, dict):
+            continue
+        totals = r.get("totals_json") or {}
+        point = {"at": r.get("created_at")}
+        for k in HISTORY_FIELDS:
+            v = totals.get(k)
+            point[k] = v if isinstance(v, (int, float)) else None
+        out.append(point)
+    return {"points": out}

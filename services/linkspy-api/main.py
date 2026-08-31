@@ -3447,6 +3447,31 @@ async def qa_bridge_site_vitals(registry_site_id: str = Query(...),
             **summarize_sentinel(status, pings)}
 
 
+@app.get("/api/qa-bridge/site-history")
+async def qa_bridge_site_history(registry_site_id: str = Query(...),
+                                 authorization: str = Header(default=None),
+                                 x_api_key: str = Header(default=None)):
+    """Per-scan trend points for one site — whitelisted scalars from stored
+    scan_snapshots (newest first). The heavy internals in totals_json
+    (fingerprints, redirect rules, builder hints) never cross the bridge."""
+    from datetime import datetime, timezone
+    from database import get_recent_snapshots
+    from qa_bridge import summarize_history, HISTORY_LIMIT
+    key = await _qa_authenticate(authorization, x_api_key)
+    if not key:
+        return JSONResponse({"error": "A valid QA-bridge service key is required."}, status_code=401)
+    if not _qa_rl.allow(key["id"], time.time()):
+        return JSONResponse({"error": "Rate limit exceeded. Try again shortly."}, status_code=429)
+    try:
+        rows = await get_recent_snapshots(registry_site_id, limit=HISTORY_LIMIT)
+    except Exception as e:
+        print(f"[site-history] read failed for {registry_site_id}: {e}")
+        return JSONResponse({"error": "history_unavailable"}, status_code=503)
+    return {"registry_site_id": registry_site_id,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            **summarize_history(rows)}
+
+
 @app.get("/api/registry-bridge/client-presence")
 async def registry_bridge_client_presence(registry_client_id: str = Query(...),
                                         authorization: str = Header(default=None),

@@ -256,3 +256,39 @@ export const ESCALATION_TONE: Record<VitalEscalation, "error" | "warning" | "inf
   unknown: "neutral",
   ok: "success",
 };
+
+// ── Scan history (GET /api/qa-bridge/site-history) ──────────────────────────
+
+export type HistoryPoint = {
+  at?: string | null;
+  health_score?: number | null;
+  total_links?: number | null;
+  findings?: number | null;
+  new?: number | null;
+  fixed?: number | null;
+  recurring?: number | null;
+};
+
+export type HistoryPayload = { points?: HistoryPoint[] };
+
+export type HistoryView =
+  | { state: "unavailable" }
+  | { state: "none" }
+  | { state: "series"; points: Required<Pick<HistoryPoint, "at">>[] & HistoryPoint[] };
+
+export function buildHistoryView(payload: HistoryPayload | null | undefined): HistoryView {
+  if (!payload) return { state: "unavailable" };
+  const points = (payload.points ?? []).filter(
+    (p): p is HistoryPoint & { at: string } => typeof p?.at === "string",
+  );
+  if (!points.length) return { state: "none" };
+  return { state: "series", points };
+}
+
+/** Health score → tone, matching LinkSpy's own thresholds (green ≥90, amber ≥70). */
+export function healthTone(score: number | null | undefined): "success" | "warning" | "error" | "neutral" {
+  if (typeof score !== "number") return "neutral";
+  if (score >= 90) return "success";
+  if (score >= 70) return "warning";
+  return "error";
+}
