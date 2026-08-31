@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchClients } from "@/lib/registry";
+import { requireApiAuth } from "@/lib/auth";
 
 // Proxy: the client picker searches through here so LINKSPY_API_KEY stays
 // server-side. Unavailable → 200 { unavailable: true } (the UI degrades, never
 // errors).
 export async function GET(req: NextRequest) {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   const q = req.nextUrl.searchParams.get("search") ?? "";
   const r = await searchClients(q);
   return NextResponse.json(r);
