@@ -820,8 +820,15 @@ def _progress(message: str, percent: int) -> tuple:
     return ("progress", {"type": "progress", "message": message, "percent": percent})
 
 
-async def scan_events(url: str, email: str = "anonymous", notify: bool = True):
-    """Yields ("progress", dict) … then ("result", ScanOutcome) or ("error", dict)."""
+async def scan_events(url: str, email: str = "anonymous", notify: bool = True,
+                      persist: bool = True):
+    """Yields ("progress", dict) … then ("result", ScanOutcome) or ("error", dict).
+
+    persist=False runs the identical pipeline but writes NOTHING — no site
+    upsert, no scan row, no snapshot, no watchdog/integration rows. The
+    qa-bridge's dashboard checks use it: sites are keyed (url, user_email),
+    so persisting under a service identity would mint clientless duplicate
+    site rows — the exact pollution the registry hygiene fights."""
     try:
         yield _progress("Launching headless browser...", 5)
         await asyncio.sleep(0.1)
@@ -915,38 +922,40 @@ async def scan_events(url: str, email: str = "anonymous", notify: bool = True):
         # Save to Supabase (non-blocking — never fail the scan)
         saved = {}
         effective_site_id = site_id
-        try:
-            saved = await save_scan(
-                site_url=url,
-                user_email=email,
-                results=results,
-                health_score=health_score,
-            ) or {}
-        except Exception as db_err:
-            print(f"[DB] Save failed (non-critical): {db_err}")
+        if persist:
+            try:
+                saved = await save_scan(
+                    site_url=url,
+                    user_email=email,
+                    results=results,
+                    health_score=health_score,
+                ) or {}
+            except Exception as db_err:
+                print(f"[DB] Save failed (non-critical): {db_err}")
 
-        try:
-            effective_site_id = await _resolve_site_id(saved, site_id, url, email)
-            await _persist_snapshot(
-                effective_site_id, saved.get("scan_id"),
-                diff, link_counts, current_findings, current_fps, health_score,
-                redirect_rules=collapse_rules(results, url),
-                saved=saved,
-                detected_builders=detected_builders,
-            )
-        except Exception as db_err:
-            # The scan still succeeds, but the next one will have no baseline.
-            print(f"[DB] Snapshot save failed: {describe_exception(db_err)}")
-            baseline_status = BASELINE_UNAVAILABLE
+            try:
+                effective_site_id = await _resolve_site_id(saved, site_id, url, email)
+                await _persist_snapshot(
+                    effective_site_id, saved.get("scan_id"),
+                    diff, link_counts, current_findings, current_fps, health_score,
+                    redirect_rules=collapse_rules(results, url),
+                    saved=saved,
+                    detected_builders=detected_builders,
+                )
+            except Exception as db_err:
+                # The scan still succeeds, but the next one will have no baseline.
+                print(f"[DB] Snapshot save failed: {describe_exception(db_err)}")
+                baseline_status = BASELINE_UNAVAILABLE
 
-        # Watchdog: record this scan's third-party hosts, and if any is down,
-        # aggregate across every site and alert once. Best-effort — a watchdog
-        # failure never touches the scan.
-        await _run_watchdog_after_scan(effective_site_id, results, url)
+            # Watchdog: record this scan's third-party hosts, and if any is down,
+            # aggregate across every site and alert once. Best-effort — a watchdog
+            # failure never touches the scan.
+            await _run_watchdog_after_scan(effective_site_id, results, url)
 
-        # Persist per-page integrations under this scan, then background-check any
-        # resource the scan did not already health-check. Never blocks the stream.
-        await _persist_and_check_integrations(saved.get("scan_id"), url, page_integrations)
+            # Persist per-page integrations under this scan, then background-check
+            # any resource the scan did not already health-check. Never blocks the
+            # stream.
+            await _persist_and_check_integrations(saved.get("scan_id"), url, page_integrations)
 
         diff_payload = _diff_payload(diff, link_counts, now, baseline_status)
 
@@ -3496,7 +3505,8 @@ async def _run_qa_check(check_id: str, url: str):
     entry = _qa_check_jobs[check_id]
     try:
         async def drive():
-            async for kind, data in scan_events(url, email="qa-dashboard", notify=False):
+            async for kind, data in scan_events(url, email="qa-dashboard",
+                                                notify=False, persist=False):
                 if kind == "progress":
                     entry["progress"] = {"message": data.get("message"),
                                          "percent": data.get("percent")}
