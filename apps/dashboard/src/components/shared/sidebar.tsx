@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { LayoutDashboard, Users, BarChart3, UsersRound, Search, ListChecks, Lightbulb, Sparkles, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, BarChart3, UsersRound, Search, ListChecks, Lightbulb, Sparkles, LogOut, Radar, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/shared/logo";
 import { logout } from "@/app/dashboard/actions";
@@ -82,6 +82,23 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        <span className="mb-1 mt-4 px-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+          Apps
+        </span>
+        {/* A hop, not a page: /dashboard/linkspy mints a signed handoff and
+            forwards to LinkSpy, so this opens in a new tab and never claims
+            the active pill. */}
+        <a
+          href="/dashboard/linkspy"
+          target="_blank"
+          rel="noopener"
+          className="relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary"
+        >
+          <Radar className="size-[18px]" strokeWidth={1.5} />
+          <span className="flex-1">LinkSpy</span>
+          <ExternalLink className="size-3.5 text-text-muted/60" strokeWidth={1.5} />
+        </a>
       </nav>
 
       <form action={logout} className="mt-2 border-t border-border-soft pt-3">
