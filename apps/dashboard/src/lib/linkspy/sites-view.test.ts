@@ -84,3 +84,42 @@ test("bucket tones: broken is error, dead CTA warns, anything else neutral", () 
   assert.equal(bucketTone("unverifiable"), "neutral");
   assert.equal(bucketTone(undefined), "neutral");
 });
+
+test("incidents: unavailable, none, and a list with open count", async () => {
+  const { buildIncidentsView } = await import("./sites-view");
+  assert.deepEqual(buildIncidentsView(null), { state: "unavailable" });
+  assert.deepEqual(buildIncidentsView({ incidents: [] }), { state: "none" });
+  const v = buildIncidentsView({
+    incidents: [
+      { down_at: "2026-08-01T00:00:00Z", restored_at: null },
+      { down_at: "2026-08-02T00:00:00Z", restored_at: "2026-08-02T02:14:00Z" },
+    ],
+    open: 1,
+  });
+  assert.equal(v.state, "list");
+  if (v.state === "list") {
+    assert.equal(v.open, 1);
+    assert.equal(v.items[0].ongoing, true);
+    assert.equal(v.items[0].duration, null, "ongoing windows carry no duration — no clock reads");
+    assert.equal(v.items[1].duration, "2h 14m");
+  }
+});
+
+test("window formatting: minutes, hours, days, garbage", async () => {
+  const { formatWindow } = await import("./sites-view");
+  assert.equal(formatWindow("2026-08-01T00:00:00Z", "2026-08-01T00:00:20Z"), "under a minute");
+  assert.equal(formatWindow("2026-08-01T00:00:00Z", "2026-08-01T00:45:00Z"), "45m");
+  assert.equal(formatWindow("2026-08-01T00:00:00Z", "2026-08-01T03:00:00Z"), "3h");
+  assert.equal(formatWindow("2026-08-01T00:00:00Z", "2026-08-03T05:00:00Z"), "2d 5h");
+  assert.equal(formatWindow("garbage", "2026-08-01T00:00:00Z"), null);
+  assert.equal(formatWindow("2026-08-02T00:00:00Z", "2026-08-01T00:00:00Z"), null, "negative windows are data errors, not durations");
+});
+
+test("sites health rollup buckets worst states honestly", async () => {
+  const { summarizeSitesHealth } = await import("./sites-view");
+  const h = summarizeSitesHealth([
+    { worst: "critical" }, { worst: "warn" }, { worst: "ok" },
+    { worst: "settling" }, { worst: "unknown" }, { worst: "notice" },
+  ]);
+  assert.deepEqual(h, { total: 6, attention: 2, healthy: 1, quiet: 3 });
+});

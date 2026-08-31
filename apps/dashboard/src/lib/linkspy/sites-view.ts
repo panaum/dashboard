@@ -141,3 +141,74 @@ export function bucketTone(bucket: string | undefined): "error" | "warning" | "n
   if (bucket === "dead_cta") return "warning";
   return "neutral";
 }
+
+// ── Downtime incidents (GET /api/qa-bridge/site-incidents) ──────────────────
+
+export type IncidentRow = { down_at?: string | null; restored_at?: string | null };
+export type IncidentsPayload = { incidents?: IncidentRow[]; open?: number };
+
+export type IncidentItem = {
+  downAt: string;
+  restoredAt: string | null;
+  /** "2h 14m" for a closed window; null while ongoing (no clock reads here —
+   *  elapsed time for an open incident is a live fact this pure layer can't
+   *  know, so the UI renders the state, not a number). */
+  duration: string | null;
+  ongoing: boolean;
+};
+
+export type IncidentsView =
+  | { state: "unavailable" }
+  | { state: "none" }
+  | { state: "list"; open: number; items: IncidentItem[] };
+
+export function formatWindow(downAt: string, restoredAt: string | null): string | null {
+  if (!restoredAt) return null;
+  const ms = Date.parse(restoredAt) - Date.parse(downAt);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const mins = Math.round(ms / 60000);
+  if (mins < 1) return "under a minute";
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h < 24) return m ? `${h}h ${m}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+
+export function buildIncidentsView(payload: IncidentsPayload | null | undefined): IncidentsView {
+  if (!payload) return { state: "unavailable" };
+  const rows = (payload.incidents ?? []).filter((r): r is IncidentRow & { down_at: string } =>
+    typeof r?.down_at === "string",
+  );
+  if (!rows.length) return { state: "none" };
+  return {
+    state: "list",
+    open: payload.open ?? rows.filter((r) => !r.restored_at).length,
+    items: rows.map((r) => ({
+      downAt: r.down_at,
+      restoredAt: r.restored_at ?? null,
+      duration: formatWindow(r.down_at, r.restored_at ?? null),
+      ongoing: !r.restored_at,
+    })),
+  };
+}
+
+// ── Sites health rollup (the Overview strip) ────────────────────────────────
+
+export type SitesHealth = {
+  total: number;
+  attention: number; // critical + warn
+  healthy: number;   // ok
+  quiet: number;     // everything else: notice / settling / unknown
+};
+
+export function summarizeSitesHealth(items: Pick<SiteListItem, "worst">[]): SitesHealth {
+  const out: SitesHealth = { total: items.length, attention: 0, healthy: 0, quiet: 0 };
+  for (const i of items) {
+    if (i.worst === "critical" || i.worst === "warn") out.attention++;
+    else if (i.worst === "ok") out.healthy++;
+    else out.quiet++;
+  }
+  return out;
+}

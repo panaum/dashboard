@@ -113,3 +113,10 @@ export function linkspySiteHref(sitePath: string | null): string | null {
   const token = signHandoff(sitePath, secret, Math.floor(Date.now() / 1000));
   return `${base.replace(/\/$/, "")}/handoff?token=${encodeURIComponent(token)}`;
 }
+
+export async function fetchSiteIncidents(siteId: string) {
+  if (!configured()) return null;
+  return getJson<import("./sites-view").IncidentsPayload>(
+    `/api/qa-bridge/site-incidents?registry_site_id=${encodeURIComponent(siteId)}`,
+  );
+}

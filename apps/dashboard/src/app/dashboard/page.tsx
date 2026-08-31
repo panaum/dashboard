@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { AnimatedNumber } from "@/components/shared/animated-number";
 import { StatRailBar } from "@/components/shared/stat-rail-bar";
 import { AttentionPanel } from "@/components/shared/attention-panel";
+import { SitesHealthStrip } from "@/components/linkspy/sites-health-strip";
 import { Bar } from "@/components/reports/bar";
 import { buildAttention } from "@/lib/attention";
 import {
@@ -118,6 +119,8 @@ export default async function OverviewPage() {
           </div>
         ))}
       </div>
+
+      <SitesHealthStrip />
 
       <AttentionPanel attention={attention} />
 

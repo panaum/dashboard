@@ -64,3 +64,19 @@ def summarize_scan(scan):
     totals.update(counts)  # unknown buckets surface by name
     return {"no_scan": False, "scanned_at": scan.get("scanned_at"),
             "totals": totals, "flagged": flagged}
+
+
+# ─── Downtime incidents (Deliverables site detail) ───────────────────────────
+
+INCIDENT_FIELDS = ("down_at", "restored_at")
+
+
+def summarize_incidents(rows):
+    """sentinel_incidents rows → whitelisted windows plus the open count.
+    An incident with no restored_at is ongoing; the consumer renders that as a
+    state, never computes elapsed time (no clock here, per the same rule the
+    Dashboard applies to its own aggregation)."""
+    items = [{k: r.get(k) for k in INCIDENT_FIELDS}
+             for r in (rows or []) if isinstance(r, dict)]
+    return {"incidents": items,
+            "open": sum(1 for i in items if not i.get("restored_at"))}
