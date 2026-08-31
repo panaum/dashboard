@@ -96,6 +96,14 @@ export default function HomePage() {
   );
 
   // Dynamic page title
+  // Prefill from ?url= (the Dashboard's "Check a URL" box hands off here).
+  // Prefill only — starting a scan stays a deliberate click.
+  useEffect(() => {
+    const fromQuery = new URLSearchParams(window.location.search).get("url");
+    if (fromQuery) setUrl((current) => current || fromQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (scanning) {
       document.title = "Scanning… | LinkSpy";

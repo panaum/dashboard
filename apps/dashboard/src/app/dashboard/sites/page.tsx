@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Globe, Radar } from "lucide-react";
+import { Globe, Radar, ScanSearch } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card } from "@/components/ui/card";
@@ -42,6 +42,25 @@ export default async function SitesPage() {
       <PageHeader
         title="Sites"
         subtitle="Live monitoring from LinkSpy, inside the dashboard. A site appears here once a LinkSpy operator assigns it to a client."
+        action={
+          /* A hop into LinkSpy's checker, URL prefilled — the scan itself runs
+             there (long-lived, session-driven), so this opens a new tab. */
+          <form action="/dashboard/linkspy" method="GET" target="_blank" className="flex items-center gap-2">
+            <input
+              type="text"
+              name="url"
+              required
+              placeholder="Check a URL…"
+              className="w-56 rounded-lg border border-border-soft bg-card px-3 py-2 text-sm text-text-primary shadow-xs placeholder:text-text-muted focus:border-accent/50 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white shadow-xs transition-opacity hover:opacity-90"
+            >
+              <ScanSearch className="size-4" strokeWidth={1.75} /> Scan
+            </button>
+          </form>
+        }
       />
 
       {items.length === 0 ? (
