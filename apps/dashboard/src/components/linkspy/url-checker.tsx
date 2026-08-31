@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, ExternalLink, Loader2, ScanSearch } from "lucide-react";
+import { CheckCircle2, Loader2, ScanSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   buildScanView,
@@ -136,14 +136,6 @@ export function UrlChecker() {
               {view.totals.links} links checked · {view.totals.ok} ok · {view.totals.broken} broken
               · {view.totals.dead_cta} dead CTAs · {view.totals.unverifiable} unverifiable
             </span>
-            <a
-              href={`/dashboard/linkspy?url=${encodeURIComponent(url)}`}
-              target="_blank"
-              rel="noopener"
-              className="inline-flex items-center gap-1 text-text-muted transition-colors hover:text-text-primary"
-            >
-              Full checker in LinkSpy <ExternalLink className="size-3" strokeWidth={1.5} />
-            </a>
           </p>
           {view.state === "clean" ? (
             <p className="flex items-center gap-2 text-sm text-text-primary">
