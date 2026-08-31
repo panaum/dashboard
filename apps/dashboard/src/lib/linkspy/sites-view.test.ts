@@ -123,3 +123,20 @@ test("sites health rollup buckets worst states honestly", async () => {
   ]);
   assert.deepEqual(h, { total: 6, attention: 2, healthy: 1, quiet: 3 });
 });
+
+test("vitals: unavailable on null/empty, cards otherwise; every escalation has a tone", async () => {
+  const { buildVitalsView, ESCALATION_TONE } = await import("./sites-view");
+  assert.deepEqual(buildVitalsView(null), { state: "unavailable" });
+  assert.deepEqual(buildVitalsView({ cards: [] }), { state: "unavailable" });
+  const v = buildVitalsView({
+    cards: [{ key: "ssl", label: "SSL", escalation: "warn", fact: "12 days" }],
+    all_clear: false,
+    last_checked: "t",
+  });
+  assert.equal(v.state, "cards");
+  if (v.state === "cards") assert.equal(v.cards[0].fact, "12 days");
+  for (const e of ["critical", "warn", "notice", "unknown", "ok"] as const) {
+    assert.ok(ESCALATION_TONE[e], `tone for ${e}`);
+  }
+  assert.notEqual(ESCALATION_TONE.unknown, "success");
+});

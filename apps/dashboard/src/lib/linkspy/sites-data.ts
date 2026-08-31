@@ -120,3 +120,10 @@ export async function fetchSiteIncidents(siteId: string) {
     `/api/qa-bridge/site-incidents?registry_site_id=${encodeURIComponent(siteId)}`,
   );
 }
+
+export async function fetchSiteVitals(siteId: string) {
+  if (!configured()) return null;
+  return getJson<import("./sites-view").VitalsPayload>(
+    `/api/qa-bridge/site-vitals?registry_site_id=${encodeURIComponent(siteId)}`,
+  );
+}

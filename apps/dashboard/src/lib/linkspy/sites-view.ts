@@ -212,3 +212,47 @@ export function summarizeSitesHealth(items: Pick<SiteListItem, "worst">[]): Site
   }
   return out;
 }
+
+// ── Site vitals (GET /api/qa-bridge/site-vitals) ────────────────────────────
+// The wire shape is LinkSpy's own summarize_sentinel output, passed through.
+
+export type VitalEscalation = "critical" | "warn" | "notice" | "unknown" | "ok";
+
+export type VitalCard = {
+  key: string;
+  label: string;
+  escalation: VitalEscalation;
+  fact: string;
+  detail?: string | null;
+};
+
+export type VitalsPayload = {
+  cards?: VitalCard[];
+  worst?: VitalEscalation;
+  all_clear?: boolean;
+  last_checked?: string | null;
+};
+
+export type VitalsView =
+  | { state: "unavailable" }
+  | { state: "cards"; cards: VitalCard[]; allClear: boolean; lastChecked: string | null };
+
+export function buildVitalsView(payload: VitalsPayload | null | undefined): VitalsView {
+  if (!payload || !Array.isArray(payload.cards) || !payload.cards.length) {
+    return { state: "unavailable" };
+  }
+  return {
+    state: "cards",
+    cards: payload.cards,
+    allClear: payload.all_clear === true,
+    lastChecked: payload.last_checked ?? null,
+  };
+}
+
+export const ESCALATION_TONE: Record<VitalEscalation, "error" | "warning" | "info" | "neutral" | "success"> = {
+  critical: "error",
+  warn: "warning",
+  notice: "info",
+  unknown: "neutral",
+  ok: "success",
+};
