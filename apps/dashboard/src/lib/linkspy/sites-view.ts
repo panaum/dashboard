@@ -274,7 +274,7 @@ export type HistoryPayload = { points?: HistoryPoint[] };
 export type HistoryView =
   | { state: "unavailable" }
   | { state: "none" }
-  | { state: "series"; points: Required<Pick<HistoryPoint, "at">>[] & HistoryPoint[] };
+  | { state: "series"; points: Array<HistoryPoint & { at: string }> };
 
 export function buildHistoryView(payload: HistoryPayload | null | undefined): HistoryView {
   if (!payload) return { state: "unavailable" };
