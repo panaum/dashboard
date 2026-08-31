@@ -61,3 +61,16 @@ export async function isAuthenticated(): Promise<boolean> {
 export async function requireAuth() {
   if (!(await isAuthenticated())) redirect("/login");
 }
+
+// Guard for internal API routes. `src/proxy.ts` only matches /dashboard/* and
+// only sniffs for the cookie's presence, so route handlers under /api that serve
+// team-only data must verify the signature themselves — a redirect is the wrong
+// answer for a fetch(), so this returns 401 JSON instead.
+//
+// Not for: the service-authed bridges (registry-bridge, spine/*) or the public
+// share-token routes (/api/living-certificate/[shareId]), which carry their own
+// credentials by design.
+export async function requireApiAuth(): Promise<Response | null> {
+  if (await isAuthenticated()) return null;
+  return Response.json({ error: "unauthorized" }, { status: 401 });
+}

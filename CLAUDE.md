@@ -91,15 +91,21 @@ npm run dev        # start dev server (localhost:3000)
 npm run build      # prisma generate && next build
 npm run lint       # eslint
 npm test           # node:test runner via tsx (no test framework dependency)
-npm run db:push    # apply schema changes to the DB
+npm run db:migrate # author + apply a migration in dev (prisma migrate dev)
+npm run db:deploy  # apply committed migrations in production (prisma migrate deploy)
 npm run db:seed    # seed team + sample Savvio website
-npm run db:reset   # wipe + re-seed
 npm run db:studio  # Prisma Studio (browse data)
 npm run e2e        # Playwright e2e (builds + serves prod, then runs e2e/*.spec.ts)
 npm run e2e:ui     # Playwright in interactive UI mode
 npm run e2e:report # open the last HTML report
 ```
 
+- **`prisma db push` and `db:reset` are banned** (ADR-001,
+  `docs/decisions/001-prisma-migrate-and-additive-ddl.md`): no migration history,
+  and `--force-reset` drops a no-PITR production database. Schema changes go
+  through Prisma Migrate only; `scripts/guard-no-db-push.mjs` fails the build if
+  either is reintroduced into `package.json`. Take a verified `pg_dump` before
+  any migration (see `docs/runbooks/backup.md`).
 - **Unit tests** are plain `node:test` files (`src/**/*.test.ts`) run through `tsx` —
   no Jest/Vitest. Run a single file: `node --import tsx --test src/lib/insights.test.ts`;
   a single case: add `--test-name-pattern "<substring>"`.
