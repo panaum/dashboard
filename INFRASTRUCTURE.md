@@ -217,6 +217,64 @@ Minor, but inconsistent with the rest of the codebase.
 Dashboard `/api/spine/health` has **no auth at all** by design, and exposes
 `SPINE_EMIT` state plus outbox counts.
 
+### D14 — `/api/*` was never covered by the proxy; four routes were open ✅ RESOLVED
+
+**Found and fixed 2026-08-27.**
+
+`src/proxy.ts` declares `matcher: ["/dashboard/:path*"]`. Nothing under `/api`
+has ever matched it, so the lightweight cookie-presence check never applied to
+any API route. (That check is also presence-only — it reads
+`req.cookies.has("session")` and never verifies the signature — so widening the
+matcher would not have been sufficient on its own.)
+
+Four internal routes carried no credential of their own and were therefore
+reachable without a session. Verified against production by unauthenticated
+`curl` on 2026-08-27:
+
+| Route | Observed | Exposed |
+|---|---|---|
+| `GET /api/registry/clients` | **200** | LinkSpy registry client ids + names (3 rows at the time) |
+| `GET /api/registry/clients/{id}/sites` | **200** | LinkSpy site ids + URLs (2 rows at the time) |
+| `GET /api/presence/clients` | **200** `{"enabled":false}` | nothing — `PRESENCE_CHIPS` is unset on the Dashboard |
+| `POST /api/registry/prefills/refresh` | *not invoked* | code path relays to LinkSpy's rate-limited battery using `LINKSPY_API_KEY` |
+
+Scope of what was actually shown:
+
+- The presence route was protected **only by its feature flag being off**. With
+  `PRESENCE_CHIPS=1` it would have returned per-client worst-state and tooltip
+  text to anonymous callers. Flag-off was doing the work auth should have done.
+- The prefills route is a **POST**; it was confirmed unguarded by reading the
+  handler, not by calling it, so no LinkSpy work was triggered during the audit.
+- `LINKSPY_API_KEY` itself was **not** exposed. All four are server-side proxies
+  and `src/lib/registry.ts` remains `import "server-only"`. What leaked was the
+  registry metadata those proxies return.
+- Logs were not reviewed, so whether any of this was ever reached by a third
+  party is **unknown, not ruled out**.
+
+The presence handler's comment previously read *"Session-guarded like every other
+Dashboard route (middleware)"*. That was false in two ways — the middleware did
+not cover the route, and it would not have verified the signature if it had. The
+comment has been corrected to state that the guard lives in the handler.
+
+**Fix.** `requireApiAuth()` (`src/lib/auth.ts`) does the real check — it calls
+the same timing-safe `isValid()` used by `requireAuth`, and returns `401` JSON
+rather than redirecting, since a redirect to an HTML login page is the wrong
+answer to a `fetch()`. All four handlers call it before touching
+`LINKSPY_API_KEY` or the database. The `proxy.ts` matcher was deliberately left
+unchanged: presence-checking middleware is not a substitute for signature
+verification, and the guard belongs where the data is served.
+
+**Regression cover.** `src/app/api/api-auth.isolation.test.ts` walks
+`src/app/api` and fails on any `route.ts` not listed in one of three buckets —
+session-guarded (`requireApiAuth`), service-guarded (`DASHBOARD_BRIDGE_KEY`,
+`SPINE_SECRET`, `CRON_SECRET`), or public-by-design
+(`/api/living-certificate/[shareId]`, `/api/spine/health`). A new API route now
+fails the suite until its auth is declared, so protection can no longer be
+assumed by inheritance. The test also asserts the guard precedes any use of
+`LINKSPY_API_KEY` / `db.`, that `requireApiAuth` returns 401 rather than
+redirecting, and that the `proxy.ts` matcher still does not claim to cover
+`/api`.
+
 ---
 
 ## 1. Per-surface variable tables
