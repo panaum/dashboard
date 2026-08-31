@@ -3395,6 +3395,31 @@ async def qa_bridge_site_scan(registry_site_id: str = Query(...),
             **summarize_scan(scan)}
 
 
+@app.get("/api/qa-bridge/site-incidents")
+async def qa_bridge_site_incidents(registry_site_id: str = Query(...),
+                                   authorization: str = Header(default=None),
+                                   x_api_key: str = Header(default=None)):
+    """Downtime windows for one site — service-key read for the Deliverables
+    site detail. Stored sentinel_incidents rows only (newest first, capped by
+    the storage read); an empty history is a valid answer, not an error."""
+    from datetime import datetime, timezone
+    from database import list_incidents
+    from qa_bridge import summarize_incidents
+    key = await _qa_authenticate(authorization, x_api_key)
+    if not key:
+        return JSONResponse({"error": "A valid QA-bridge service key is required."}, status_code=401)
+    if not _qa_rl.allow(key["id"], time.time()):
+        return JSONResponse({"error": "Rate limit exceeded. Try again shortly."}, status_code=429)
+    try:
+        rows = await list_incidents(registry_site_id, limit=50)
+    except Exception as e:
+        print(f"[site-incidents] read failed for {registry_site_id}: {e}")
+        return JSONResponse({"error": "incidents_unavailable"}, status_code=503)
+    return {"registry_site_id": registry_site_id,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            **summarize_incidents(rows)}
+
+
 @app.get("/api/registry-bridge/client-presence")
 async def registry_bridge_client_presence(registry_client_id: str = Query(...),
                                         authorization: str = Header(default=None),

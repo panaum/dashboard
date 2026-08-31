@@ -8,10 +8,11 @@ import {
   listRegistrySites,
   fetchSitePresence,
   fetchSiteScan,
+  fetchSiteIncidents,
   pagesForSite,
   linkspySiteHref,
 } from "@/lib/linkspy/sites-data";
-import { buildScanView, bucketTone } from "@/lib/linkspy/sites-view";
+import { buildScanView, buildIncidentsView, bucketTone } from "@/lib/linkspy/sites-view";
 import { hostOf } from "@/lib/linkspy/link-match";
 
 export const metadata = { title: "Site" };
@@ -27,12 +28,14 @@ export default async function SiteDetailPage({
   const site = sites?.find((s) => s.id === siteId);
   if (sites !== null && !site) notFound();
 
-  const [presence, scanPayload, pages] = await Promise.all([
+  const [presence, scanPayload, incidentsPayload, pages] = await Promise.all([
     fetchSitePresence(siteId),
     fetchSiteScan(siteId),
+    fetchSiteIncidents(siteId),
     pagesForSite(siteId),
   ]);
   const scan = buildScanView(scanPayload);
+  const incidents = buildIncidentsView(incidentsPayload);
   const openHref = linkspySiteHref(presence?.site_path ?? `/dashboard/${siteId}`);
   const host = hostOf(site?.url) ?? siteId;
 
@@ -158,6 +161,45 @@ export default async function SiteDetailPage({
                   </div>
                 )}
               </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Downtime history — stored sentinel windows, newest first. */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Downtime incidents</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {incidents.state === "unavailable" && (
+              <p className="text-[13px] text-text-secondary">
+                LinkSpy did not answer — incident history is unavailable right now.
+              </p>
+            )}
+            {incidents.state === "none" && (
+              <p className="flex items-center gap-2 text-[13px] text-text-secondary">
+                <CheckCircle2 className="size-4 text-success" strokeWidth={1.75} />
+                No downtime recorded
+              </p>
+            )}
+            {incidents.state === "list" && (
+              <ul className="flex flex-col gap-2">
+                {incidents.items.map((inc) => (
+                  <li key={inc.downAt} className="flex items-center gap-2.5 text-[13px]">
+                    {inc.ongoing ? (
+                      <Badge tone="error">Ongoing</Badge>
+                    ) : (
+                      <Badge tone="neutral">Restored</Badge>
+                    )}
+                    <span className="text-text-primary">
+                      Down {inc.downAt.slice(0, 16).replace("T", " ")}
+                    </span>
+                    {inc.duration && (
+                      <span className="text-text-muted">· {inc.duration}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
           </CardContent>
         </Card>
