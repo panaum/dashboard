@@ -1,9 +1,11 @@
-name: tests
+name: linkspy-api tests
 
 on:
   push:
     branches: [main]
+    paths: ["services/linkspy-api/**"]
   pull_request:
+    paths: ["services/linkspy-api/**"]
 
 jobs:
   pytest:
@@ -20,8 +22,8 @@ jobs:
         # every time a module grows an import. Browsers are NOT installed —
         # the crawler is stubbed in tests, only the `playwright` package is
         # needed to satisfy scraper.py's import.
-        working-directory: backend
+        working-directory: services/linkspy-api
         run: pip install -r requirements.txt pytest
       - name: Run tests
-        working-directory: backend
+        working-directory: services/linkspy-api
         run: pytest tests/ -v

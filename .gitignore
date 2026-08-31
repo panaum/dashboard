@@ -1,0 +1,35 @@
+# ── Node (all apps) ──────────────────────────────────────────
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Python (services/linkspy-api, scripts/linkspy) ───────────
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# ── Env & secrets — never commit ─────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Database dumps — contain all data, never commit ──────────
+*.dump
+*.sql.gz
+/backups/
+
+# ── Tooling & OS ─────────────────────────────────────────────
+.vercel
+.claude/
+*.log
+.DS_Store
+Thumbs.db
+
+# ── Test output ──────────────────────────────────────────────
+test-results/
+playwright-report/
+e2e/.auth/
