@@ -3789,8 +3789,12 @@ async def qa_monitor_delete_site(site_id: str,
         await delete_site(site_id)
         return {"status": "success"}
     except Exception as e:
-        print(f"[monitor] delete_site failed: {e}")
-        return JSONResponse({"error": "could not delete the site"}, status_code=500)
+        # Name the blocking constraint: "could not delete the site" gave a
+        # caller nothing to act on when a foreign key was the real reason.
+        print(f"[monitor] delete_site failed: {type(e).__name__}: {e}")
+        return JSONResponse({"error": "could not delete the site",
+                             "detail": f"{type(e).__name__}: {e}"[:300]},
+                            status_code=500)
 
 
 @app.get("/api/registry-bridge/client-presence")
