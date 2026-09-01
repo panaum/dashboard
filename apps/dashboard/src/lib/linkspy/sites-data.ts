@@ -134,3 +134,31 @@ export async function fetchSiteHistory(siteId: string) {
     `/api/qa-bridge/site-history?registry_site_id=${encodeURIComponent(siteId)}`,
   );
 }
+
+// ── Monitoring dashboard (spec Page 1) — server-side initial loads ──────────
+
+export async function fetchMonitorDashboard() {
+  if (!configured()) return null;
+  return getJson<{ sites: import("./monitor-metrics").DashboardSite[] }>(
+    "/api/qa-bridge/monitor/dashboard",
+  );
+}
+
+export async function fetchMonitorFragility() {
+  if (!configured()) return null;
+  return getJson<{ sites: Array<{ site_id?: string; band?: string; insufficient?: boolean }> }>(
+    "/api/qa-bridge/monitor/fragility",
+  );
+}
+
+export async function fetchMonitorWatchdog() {
+  if (!configured()) return null;
+  return getJson<{
+    hosts: Array<{
+      host: string; resource_type?: string | null; status?: string | null;
+      down: boolean; affected_sites: number;
+      sites: Array<{ site_id?: string; site_url?: string; client?: string | null }>;
+    }>;
+    outages?: number; total_hosts?: number;
+  }>("/api/qa-bridge/monitor/watchdog");
+}

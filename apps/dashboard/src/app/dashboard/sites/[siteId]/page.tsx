@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink, FileSearch, Globe } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,13 +29,17 @@ export const dynamic = "force-dynamic";
 
 export default async function SiteDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ siteId: string }>;
+  searchParams: Promise<{ u?: string }>;
 }) {
   const { siteId } = await params;
+  const { u } = await searchParams;
+  // The registry knows only client-annotated sites; the monitoring grid links
+  // every site here, passing ?u= so un-annotated ones still get a real header.
   const sites = await listRegistrySites();
   const site = sites?.find((s) => s.id === siteId);
-  if (sites !== null && !site) notFound();
 
   const [presence, scanPayload, incidentsPayload, vitalsPayload, historyPayload, pages] =
     await Promise.all([
@@ -52,7 +55,7 @@ export default async function SiteDetailPage({
   const vitals = buildVitalsView(vitalsPayload);
   const history = buildHistoryView(historyPayload);
   const openHref = linkspySiteHref(presence?.site_path ?? `/dashboard/${siteId}`);
-  const host = hostOf(site?.url) ?? siteId;
+  const host = hostOf(site?.url) ?? hostOf(u ?? null) ?? siteId;
 
   return (
     <div>

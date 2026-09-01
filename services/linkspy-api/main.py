@@ -3499,14 +3499,14 @@ def _qa_checks_gc(now: float):
         _qa_check_jobs.pop(cid, None)
 
 
-async def _run_qa_check(check_id: str, url: str):
+async def _run_qa_check(check_id: str, url: str, persist: bool = False, owner: str = ""):
     from datetime import datetime, timezone
     from qa_bridge import summarize_scan
     entry = _qa_check_jobs[check_id]
     try:
         async def drive():
-            async for kind, data in scan_events(url, email="qa-dashboard",
-                                                notify=False, persist=False):
+            async for kind, data in scan_events(url, email=(owner or "qa-dashboard"),
+                                                notify=False, persist=persist):
                 if kind == "progress":
                     entry["progress"] = {"message": data.get("message"),
                                          "percent": data.get("percent")}
@@ -3558,6 +3558,13 @@ async def qa_bridge_check_start(request: Request,
     parsed = urlparse(target)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return JSONResponse({"error": "a valid http(s) url is required"}, status_code=400)
+    # persist=True attributes the scan to an EXPLICIT existing owner (the site
+    # row's user_email) so history accrues on the real site — never a synthetic
+    # service identity (that minted duplicate rows; see fix in #26).
+    persist = bool(body.get("persist"))
+    owner = str(body.get("email") or "").strip()
+    if persist and not owner:
+        return JSONResponse({"error": "persist requires the site owner's email"}, status_code=400)
 
     now = time.time()
     _qa_checks_gc(now)
@@ -3570,7 +3577,8 @@ async def qa_bridge_check_start(request: Request,
     entry = {"status": "running", "url": target, "started_at": now,
              "progress": {"message": "Starting…", "percent": 0}}
     _qa_check_jobs[check_id] = entry
-    entry["task"] = asyncio.create_task(_run_qa_check(check_id, target))
+    entry["task"] = asyncio.create_task(
+        _run_qa_check(check_id, target, persist=persist, owner=owner))
     return {"check_id": check_id, "status": "running"}
 
 
@@ -3586,6 +3594,115 @@ async def qa_bridge_check_status(check_id: str = Query(...),
         return JSONResponse({"error": "Rate limit exceeded. Try again shortly."}, status_code=429)
     _qa_checks_gc(time.time())
     return check_snapshot(_qa_check_jobs.get(check_id))
+
+
+# ─── QA-bridge: monitoring dashboard delegates ───────────────────────────────
+# The Deliverables app rebuilds LinkSpy's monitoring dashboard in-house. These
+# wrap the EXISTING staff handlers behind service-key auth instead of the
+# portal dependency — never build a cross-app surface on the PORTAL_ENFORCE
+# bypass (INFRASTRUCTURE.md D4). Each delegate authenticates the key, then
+# calls the handler with an owner context; logic lives in one place.
+
+async def _qa_monitor_gate(authorization, x_api_key):
+    key = await _qa_authenticate(authorization, x_api_key)
+    if not key:
+        return None, JSONResponse({"error": "A valid QA-bridge service key is required."}, status_code=401)
+    if not _qa_rl.allow(key["id"], time.time()):
+        return None, JSONResponse({"error": "Rate limit exceeded. Try again shortly."}, status_code=429)
+    return key, None
+
+
+def _qa_owner_acc() -> dict:
+    from auth import _BYPASS
+    return dict(_BYPASS)
+
+
+@app.get("/api/qa-bridge/monitor/dashboard")
+async def qa_monitor_dashboard(authorization: str = Header(default=None),
+                               x_api_key: str = Header(default=None)):
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    return await dashboard_data(_acc=_qa_owner_acc())
+
+
+@app.get("/api/qa-bridge/monitor/history")
+async def qa_monitor_history(url: str = Query(...), email: str = Query(default="anonymous"),
+                             authorization: str = Header(default=None),
+                             x_api_key: str = Header(default=None)):
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    return await history(url=url, email=email, _acc=_qa_owner_acc())
+
+
+@app.get("/api/qa-bridge/monitor/issues")
+async def qa_monitor_issues(url: str = Query(...),
+                            authorization: str = Header(default=None),
+                            x_api_key: str = Header(default=None)):
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    return await uptime(url=url, _acc=_qa_owner_acc())
+
+
+@app.get("/api/qa-bridge/monitor/watchdog")
+async def qa_monitor_watchdog(authorization: str = Header(default=None),
+                              x_api_key: str = Header(default=None)):
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    return await watchdog_hosts(_acc=_qa_owner_acc())
+
+
+@app.get("/api/qa-bridge/monitor/fragility")
+async def qa_monitor_fragility(authorization: str = Header(default=None),
+                               x_api_key: str = Header(default=None)):
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    return await fragility_portfolio(_acc=_qa_owner_acc())
+
+
+@app.post("/api/qa-bridge/monitor/sites")
+async def qa_monitor_add_site(request: Request,
+                              authorization: str = Header(default=None),
+                              x_api_key: str = Header(default=None)):
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    url = str(body.get("url") or "").strip()
+    owner = str(body.get("user_email") or "").strip()
+    if not url or not owner:
+        return JSONResponse({"error": "url and user_email are required"}, status_code=400)
+    from database import add_site
+    try:
+        await add_site(url, str(body.get("name") or ""), str(body.get("client") or ""),
+                       str(body.get("freq") or "On Demand"), owner)
+        return {"status": "success"}
+    except Exception as e:
+        print(f"[monitor] add_site failed: {e}")
+        return JSONResponse({"error": "could not add the site"}, status_code=500)
+
+
+@app.delete("/api/qa-bridge/monitor/sites/{site_id}")
+async def qa_monitor_delete_site(site_id: str,
+                                 authorization: str = Header(default=None),
+                                 x_api_key: str = Header(default=None)):
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    from database import delete_site
+    try:
+        await delete_site(site_id)
+        return {"status": "success"}
+    except Exception as e:
+        print(f"[monitor] delete_site failed: {e}")
+        return JSONResponse({"error": "could not delete the site"}, status_code=500)
 
 
 @app.get("/api/registry-bridge/client-presence")
