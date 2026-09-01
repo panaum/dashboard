@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ChevronRight, Loader2, ScanSearch } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronRight, Loader2, ScanSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   filterLinks, groupByZone, latencyTone, bucketBadge, scoreTone, integrationTone,
@@ -40,12 +40,23 @@ const ACCENTS = [
   { dot: "bg-brand-yellow", tint: "bg-brand-yellow/25", hoverBorder: "hover:border-brand-yellow" },
 ] as const;
 
-export function UrlChecker() {
+export function UrlChecker({
+  onFocusChange,
+}: {
+  /** Fires when the scanner takes over the page (a scan is running or its
+   *  results are up) so the surrounding site list can step out of the way. */
+  onFocusChange?: (focused: boolean) => void;
+} = {}) {
   const [url, setUrl] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  // Step 2 is "running" or "done" — anything else returns to the list.
+  useEffect(() => {
+    onFocusChange?.(phase.kind === "running" || phase.kind === "done");
+  }, [phase.kind, onFocusChange]);
   useEffect(() => {
     const onPrefill = (e: Event) => {
       const detail = (e as CustomEvent<string>).detail;
@@ -95,8 +106,23 @@ export function UrlChecker() {
     }
   }
 
+  const focused = phase.kind === "running" || phase.kind === "done";
+
   return (
     <div className="mb-6 rounded-xl border border-border-soft bg-card p-4 shadow-xs">
+      {focused && (
+        <button
+          type="button"
+          onClick={() => {
+            if (timer.current) clearTimeout(timer.current);
+            setPhase({ kind: "idle" });
+          }}
+          className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-text-secondary transition-colors hover:text-text-primary"
+        >
+          <ArrowLeft className="size-3.5" strokeWidth={1.75} /> All sites
+        </button>
+      )}
+
       <form onSubmit={start} className="flex items-center gap-2">
         <input
           type="text"

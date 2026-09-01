@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/shared/page-header";
-import { UrlChecker } from "@/components/linkspy/url-checker";
+import { SitesWorkspace } from "@/components/linkspy/sites-workspace";
 import { MonitorGrid } from "@/components/linkspy/monitor-grid";
 import { SitesStatRail } from "@/components/linkspy/sites-stat-rail";
 import { WatchdogPanel } from "@/components/linkspy/watchdog-panel";
@@ -39,13 +39,15 @@ export default async function SitesPage() {
         subtitle="Every monitored property, live from LinkSpy — inside the dashboard."
       />
 
-      {sites.length > 0 && <SitesStatRail summary={monitorSummary(sites, Date.now())} />}
+      {/* Step 1 (the portfolio) lives inside the workspace, which hides it
+          while a scan is running or its results are up — see SitesWorkspace. */}
+      <SitesWorkspace>
+        {sites.length > 0 && <SitesStatRail summary={monitorSummary(sites, Date.now())} />}
 
-      <UrlChecker />
+        <MonitorGrid initialSites={sites} bands={bands} unavailable={dashboard === null} />
 
-      <MonitorGrid initialSites={sites} bands={bands} unavailable={dashboard === null} />
-
-      <WatchdogPanel data={watchdog?.hosts ? { ...watchdog, hosts: watchdog.hosts } : null} />
+        <WatchdogPanel data={watchdog?.hosts ? { ...watchdog, hosts: watchdog.hosts } : null} />
+      </SitesWorkspace>
     </div>
   );
 }
