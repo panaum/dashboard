@@ -83,11 +83,27 @@ export type ConsentSession = {
   id: string;
   page_url: string;
   regime?: string | null;
-  cmp?: string | null;
+  // The backend sends cmp as an object ({} or { name, ... }) — never render it raw.
+  cmp?: unknown;
   requests?: ConsentRequest[];
   verdicts?: unknown;
   created_at?: string | null;
 };
+
+/** A human label for the CMP field, which the backend sends as an object,
+ *  a string, or nothing. Returns null when there's nothing to show — so a
+ *  bare `{}` never reaches React as a child (that throws and blanks the page). */
+export function cmpLabel(cmp: unknown): string | null {
+  if (!cmp) return null;
+  if (typeof cmp === "string") return cmp.trim() || null;
+  if (typeof cmp === "object") {
+    const o = cmp as Record<string, unknown>;
+    const name = o.name ?? o.provider ?? o.vendor;
+    if (typeof name === "string" && name.trim()) return name.trim();
+    return null; // an empty/detail-only object has no display name
+  }
+  return null;
+}
 
 export type ConsentPayload = { scope_statement?: string; sessions?: ConsentSession[] };
 
