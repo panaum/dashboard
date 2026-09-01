@@ -46,6 +46,54 @@ SCAN_FLAG_FIELDS = ("url", "bucket", "label", "status_code", "reason",
 SCAN_FLAG_LIMIT = 200
 
 
+# ─── Full scan view (the in-dashboard scanner) ───────────────────────────────
+# Every link, whitelisted, plus placement/zone/timing and the breakdown panels
+# — enough to reproduce the LinkSpy scanner UI. Heavier than summarize_scan;
+# used only by the interactive scanner's final payload.
+
+FULL_LINK_FIELDS = ("url", "anchor_text", "bucket", "label", "status_code",
+                    "final_url", "response_ms", "resource_type", "category",
+                    "reason", "is_external", "occurrences", "priority")
+FULL_LINK_CAP = 1000
+
+
+def _primary_zone(row):
+    zones = row.get("zones")
+    if isinstance(zones, list) and zones:
+        return zones[0]
+    return "other"
+
+
+def summarize_full_scan(results, breakdowns=None, health_score=None,
+                        total_placements=None):
+    """All links (whitelisted) + zone + the four breakdown panels. `results`
+    is the list of LinkResult dicts; `breakdowns` is _breakdowns() output."""
+    rows = [r for r in (results or []) if isinstance(r, dict)]
+    links = []
+    counts = {"ok": 0, "broken": 0, "unverifiable": 0, "dead_cta": 0}
+    for r in rows[:FULL_LINK_CAP]:
+        bucket = r.get("bucket") or ("ok" if r.get("label") == "ok" else r.get("label")) or "ok"
+        if bucket in ("ok", "redirect"):
+            bucket = "ok"
+        counts[bucket] = counts.get(bucket, 0) + 1
+        item = {k: r.get(k) for k in FULL_LINK_FIELDS if k in r}
+        item["bucket"] = bucket
+        item["zone"] = _primary_zone(r)
+        links.append(item)
+    placements = total_placements
+    if placements is None:
+        placements = sum((r.get("occurrences") or 1) for r in rows)
+    return {
+        "health_score": health_score,
+        "links": links,
+        "unique_links": len(rows),
+        "placements": placements,
+        "totals": {"links": len(rows), **counts},
+        "breakdowns": breakdowns or {},
+        "truncated": len(rows) > FULL_LINK_CAP,
+    }
+
+
 def summarize_scan(scan):
     """None → no_scan marker; a scans row ({id, results_json, scanned_at}) →
     totals by bucket + the flagged (non-ok) rows, whitelisted and capped."""
@@ -108,7 +156,7 @@ def summarize_history(rows):
 
 # ─── Dashboard-run checks (async job snapshots) ──────────────────────────────
 
-CHECK_PUBLIC_FIELDS = ("status", "url", "progress", "summary", "error")
+CHECK_PUBLIC_FIELDS = ("status", "url", "progress", "summary", "full", "error")
 
 
 def check_snapshot(entry):

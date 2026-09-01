@@ -78,3 +78,43 @@ def test_done_snapshot_carries_summary_and_failed_carries_error():
     assert "summary" in done and "error" not in done
     failed = check_snapshot({"status": "failed", "url": "u", "error": "scan timed out"})
     assert failed["error"] == "scan timed out"
+
+
+# ─── summarize_full_scan (in-dashboard scanner) ──────────────────────────────
+from qa_bridge import summarize_full_scan, FULL_LINK_FIELDS
+
+
+def _link(bucket="ok", zones=None, **kw):
+    return {"url": f"https://x.test/{bucket}", "bucket": bucket, "label": bucket,
+            "anchor_text": "Link", "zones": zones if zones is not None else ["body"],
+            "occurrences": 1, "secret_internal": "nope", **kw}
+
+
+def test_full_scan_whitelists_link_fields_and_adds_zone():
+    out = summarize_full_scan([_link("broken", zones=["nav", "footer"])])
+    link = out["links"][0]
+    assert link["zone"] == "nav", "primary zone = first of the zones list"
+    assert "secret_internal" not in link
+    assert set(link) <= set(FULL_LINK_FIELDS) | {"zone"}
+
+
+def test_full_scan_counts_and_placements():
+    out = summarize_full_scan(
+        [_link("ok", occurrences=3), _link("broken"), _link("redirect")],
+        breakdowns={"link_types": {"anchor": 3}}, health_score=88, total_placements=5,
+    )
+    assert out["totals"] == {"links": 3, "ok": 2, "broken": 1, "unverifiable": 0, "dead_cta": 0}
+    assert out["unique_links"] == 3
+    assert out["placements"] == 5
+    assert out["health_score"] == 88
+    assert out["breakdowns"]["link_types"] == {"anchor": 3}
+
+
+def test_full_scan_placements_default_to_summed_occurrences():
+    out = summarize_full_scan([_link("ok", occurrences=4), _link("ok", occurrences=2)])
+    assert out["placements"] == 6
+
+
+def test_full_scan_ignores_non_dict_rows():
+    out = summarize_full_scan(["junk", None, _link("broken")])
+    assert out["totals"]["links"] == 1
