@@ -5,6 +5,7 @@ import {
   verdictTone,
   buildConsentView,
   cappedRequests,
+  cmpLabel,
   requestClassTone,
   CONSENT_REQUEST_CAP,
   type Promise_,
@@ -66,6 +67,16 @@ test("requests are capped at 8 and the overflow is reported", () => {
   assert.equal(hidden, 3);
   const few = cappedRequests(session(3));
   assert.equal(few.hidden, 0);
+});
+
+test("cmpLabel never returns a raw object — the backend sends cmp as {} (crashed the page)", () => {
+  assert.equal(cmpLabel({}), null, "empty object → null, never rendered as a React child");
+  assert.equal(cmpLabel({ name: "OneTrust" }), "OneTrust");
+  assert.equal(cmpLabel({ provider: "Cookiebot" }), "Cookiebot");
+  assert.equal(cmpLabel("Osano"), "Osano");
+  assert.equal(cmpLabel(null), null);
+  assert.equal(cmpLabel(undefined), null);
+  assert.equal(cmpLabel({ detail: "x" }), null, "an object with no name is null, not '[object Object]'");
 });
 
 test("request class tone: advertising red, analytics amber, essential neutral", () => {
