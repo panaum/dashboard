@@ -422,7 +422,12 @@ function Sparkline({ scores }: { scores: number[] }) {
     .map((s, i) => `${(i / (scores.length - 1)) * 60},${18 - ((s - min) / span) * 16}`)
     .join(" ");
   return (
-    <svg width="60" height="20" viewBox="0 0 60 20" className="shrink-0 text-accent" aria-hidden>
+    // Muted, not accent: the accent means "you can click this", and a trend
+    // line is data. Only drawn when the score actually moved (sparkScores).
+    <svg
+      width="60" height="20" viewBox="0 0 60 20" aria-hidden
+      className="shrink-0 text-text-muted"
+    >
       <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
   );

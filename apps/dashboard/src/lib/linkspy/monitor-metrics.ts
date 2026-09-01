@@ -162,11 +162,14 @@ export function relativeTime(iso: string | null | undefined, nowMs: number): str
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/** Last 6 health scores for the sparkline; empty unless ≥ 2 scans. */
+/** Last 6 health scores for the sparkline. Empty unless there are ≥ 2 scans
+ *  AND the score actually moved: a flat line drawn through six identical
+ *  values is a chart of nothing, and the card already says "No change". */
 export function sparkScores(site: DashboardSite): number[] {
   const scans = sortedScans(site);
   if (scans.length < 2) return [];
-  return scans.slice(-6).map((s) => s.health_score);
+  const scores = scans.slice(-6).map((s) => s.health_score);
+  return Math.min(...scores) === Math.max(...scores) ? [] : scores;
 }
 
 export type BandChip = { label: string; tone: "success" | "neutral" | "warning" };
