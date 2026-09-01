@@ -25,6 +25,12 @@ const VIEWS: Record<string, (p: URLSearchParams) => string | null> = {
     if (!url) return null;
     return `/api/qa-bridge/monitor/issues?url=${encodeURIComponent(url)}`;
   },
+  // The site's last stored scan, in the scanner's shape. Read-only.
+  storedscan: (p) => {
+    const id = p.get("id");
+    if (!id) return null;
+    return `/api/qa-bridge/monitor/stored-scan?registry_site_id=${encodeURIComponent(id)}`;
+  },
   // On-demand: its own headless capture, so it is never part of a scan.
   xray: (p) => {
     const url = p.get("url");

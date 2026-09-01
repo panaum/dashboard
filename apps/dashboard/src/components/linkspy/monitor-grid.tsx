@@ -387,7 +387,11 @@ function SiteCard({
                 type="button"
                 onClick={() => {
                   onMenu(false);
-                  window.dispatchEvent(new CustomEvent("checker:prefill", { detail: site.url }));
+                  // Carry the site id too: the scanner loads what was already
+                  // found rather than making the reader re-scan to see it.
+                  window.dispatchEvent(
+                    new CustomEvent("checker:prefill", { detail: { url: site.url, siteId: site.id } }),
+                  );
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary"

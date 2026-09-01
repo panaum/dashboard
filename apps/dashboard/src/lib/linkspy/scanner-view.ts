@@ -236,3 +236,13 @@ export function categoryAccent(category: string): 0 | 1 | 2 | 3 {
   for (let i = 0; i < category.length; i++) h = (h * 31 + category.charCodeAt(i)) >>> 0;
   return (h % 4) as 0 | 1 | 2 | 3;
 }
+
+/** "14 Jul 2026 at 05:41" — a readable stamp for a stored scan's date. */
+export function formatStamp(iso: string | null | undefined): string {
+  if (!iso) return "an earlier scan";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "an earlier scan";
+  const date = d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return `${date} at ${time}`;
+}

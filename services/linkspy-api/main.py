@@ -3708,6 +3708,47 @@ async def qa_monitor_fragility(authorization: str = Header(default=None),
     return await fragility_portfolio(_acc=_qa_owner_acc())
 
 
+@app.get("/api/qa-bridge/monitor/stored-scan")
+async def qa_monitor_stored_scan(registry_site_id: str = Query(...),
+                                 authorization: str = Header(default=None),
+                                 x_api_key: str = Header(default=None)):
+    """The site's LAST STORED scan in the scanner's own shape, so "open in
+    scanner" can show what was already found instead of making the reader
+    re-scan to see anything. Reads only; never triggers a scan."""
+    from database import latest_scan_for_site, _get_client
+    from qa_bridge import summarize_full_scan
+    import asyncio as _asyncio
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    try:
+        scan = await latest_scan_for_site(registry_site_id)
+    except Exception as e:
+        print(f"[monitor] stored-scan read failed for {registry_site_id}: {e}")
+        return JSONResponse({"error": "scan_unavailable"}, status_code=503)
+    if not scan:
+        return {"no_scan": True}
+
+    rows = [r for r in (scan.get("results_json") or []) if isinstance(r, dict)]
+
+    def _site_url():
+        r = (_get_client().table("sites").select("url").eq("id", registry_site_id)
+             .limit(1).execute().data or [])
+        return (r[0].get("url") if r else "") or ""
+
+    try:
+        url = await _asyncio.to_thread(_site_url)
+    except Exception:
+        url = ""
+
+    full = summarize_full_scan(rows, breakdowns=_breakdowns(rows, url),
+                               health_score=_calculate_health_score(rows))
+    full["scanned_at"] = scan.get("scanned_at")
+    full["url"] = url
+    full["stored"] = True
+    return full
+
+
 @app.get("/api/qa-bridge/monitor/xray")
 async def qa_monitor_xray(url: str = Query(...),
                           authorization: str = Header(default=None),
