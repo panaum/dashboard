@@ -4,10 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2, ScanSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
-  filterLinks, groupByZone, latencyTone, bucketBadge, scoreTone,
+  filterLinks, groupByZone, latencyTone, bucketBadge, scoreTone, integrationTone,
   type FullScan, type ScanFilter,
 } from "@/lib/linkspy/scanner-view";
 import { middleTruncate } from "@/lib/linkspy/monitor-metrics";
+import { ScannerXray } from "@/components/linkspy/scanner-xray";
 
 // IN-DASHBOARD SCANNER — the full LinkSpy scanner, no redirect: score ring,
 // stat strip, breakdown panels, and every link grouped by zone with filter +
@@ -117,7 +118,7 @@ export function UrlChecker() {
 
       {phase.kind === "failed" && <p className="mt-3 text-[13px] text-error">{phase.message}</p>}
 
-      {phase.kind === "done" && <ScanResult scan={phase.scan} />}
+      {phase.kind === "done" && <ScanResult scan={phase.scan} url={url} />}
     </div>
   );
 }
@@ -143,9 +144,10 @@ function ScoreRing({ score }: { score: number | null | undefined }) {
   );
 }
 
-function ScanResult({ scan }: { scan: FullScan }) {
+function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
   const [filter, setFilter] = useState<ScanFilter>("all");
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"results" | "integrations" | "xray">("results");
   const links = scan.links ?? [];
   const t = scan.totals ?? { links: 0, ok: 0, broken: 0, unverifiable: 0, dead_cta: 0 };
   const allClear = t.broken === 0 && t.dead_cta === 0;
@@ -182,8 +184,33 @@ function ScanResult({ scan }: { scan: FullScan }) {
       {/* Breakdown panels */}
       <Breakdowns scan={scan} />
 
+      {/* View tabs */}
+      <div className="mt-4 flex items-center gap-1 border-b border-border-soft">
+        {([
+          ["results", `Results (${t.links})`],
+          ["integrations", `Integrations (${scan.integrations?.total ?? 0})`],
+          ["xray", "X-ray view"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-medium transition-colors ${
+              tab === key
+                ? "border-accent text-accent"
+                : "border-transparent text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "integrations" && <IntegrationsPanel scan={scan} />}
+      {tab === "xray" && <div className="mt-4"><ScannerXray url={url} /></div>}
+
       {/* Results table: filter tabs + search */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className={`mt-4 flex flex-wrap items-center gap-2 ${tab === "results" ? "" : "hidden"}`}>
         {([["all", "All"], ["working", "Working"], ["broken", "Broken"], ["unverifiable", "Unverifiable"]] as const).map(
           ([key, label]) => (
             <button
@@ -208,7 +235,7 @@ function ScanResult({ scan }: { scan: FullScan }) {
         <span className="text-[12px] text-text-muted tabular-nums">{shownCount} links</span>
       </div>
 
-      <div className="mt-2 overflow-x-auto">
+      <div className={`mt-2 overflow-x-auto ${tab === "results" ? "" : "hidden"}`}>
         <table className="w-full text-left text-[13px]">
           <thead>
             <tr className="border-b border-border-soft text-[11px] uppercase tracking-wide text-text-muted">
@@ -259,6 +286,44 @@ function FragmentZone({ label, links }: { label: string; links: FullScan["links"
         );
       })}
     </>
+  );
+}
+
+function IntegrationsPanel({ scan }: { scan: FullScan }) {
+  const ints = scan.integrations;
+  const items = ints?.items ?? [];
+  if (!items.length) {
+    return (
+      <p className="mt-4 text-[13px] text-text-secondary">
+        No third-party integrations detected on this page.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-4">
+      <p className="mb-2 text-[13px] text-text-secondary">
+        {ints?.total} third-party integration{ints?.total === 1 ? "" : "s"}
+        {(ints?.down ?? 0) > 0 && <span className="text-error"> · {ints?.down} down</span>}
+        {(ints?.unknown ?? 0) > 0 && <span className="text-text-muted"> · {ints?.unknown} unverified</span>}
+      </p>
+      <ul className="flex flex-col gap-1.5">
+        {items.map((it, i) => (
+          <li key={`${it.host}-${i}`} className="flex items-center gap-2.5 text-[13px]">
+            <Badge tone={integrationTone(it.health)}>{it.health ?? "unknown"}</Badge>
+            <span className="font-mono text-text-primary">{it.host}</span>
+            {it.category && <span className="text-text-muted">{it.category}</span>}
+            {it.detected_id && (
+              <span className="ml-auto truncate font-mono text-[12px] text-text-muted" title={it.detected_id}>
+                {it.detected_id}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[12px] text-text-muted">
+        A provider outage never counts against this page&apos;s health score.
+      </p>
+    </div>
   );
 }
 

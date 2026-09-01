@@ -25,6 +25,26 @@ export type Breakdowns = {
   redirects?: { permanent?: number; temporary?: number; total?: number; collapsible_rules?: number };
 };
 
+export type Integration = {
+  host?: string;
+  resource_url?: string;
+  category?: string;
+  type?: string;
+  detected_id?: string;
+  health?: string;
+};
+
+export type Integrations = { items?: Integration[]; total?: number; down?: number; unknown?: number };
+
+/** Integration health → tone. Anything unrecognised is neutral, never green —
+ *  an unknown state must not read as "verified healthy". */
+export function integrationTone(health: string | null | undefined): "success" | "error" | "neutral" {
+  const h = (health ?? "").toLowerCase();
+  if (h === "down" || h === "broken" || h === "error") return "error";
+  if (h === "healthy" || h === "ok" || h === "up") return "success";
+  return "neutral";
+}
+
 export type FullScan = {
   health_score?: number | null;
   links?: FullLink[];
@@ -33,6 +53,7 @@ export type FullScan = {
   totals?: { links: number; ok: number; broken: number; unverifiable: number; dead_cta: number };
   breakdowns?: Breakdowns;
   detected_builders?: string[];
+  integrations?: Integrations;
   truncated?: boolean;
 };
 

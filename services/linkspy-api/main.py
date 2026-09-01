@@ -977,6 +977,10 @@ async def scan_events(url: str, email: str = "anonymous", notify: bool = True,
                    "total_placements": total_placements,
                    "diff": diff_payload, "site_id": effective_site_id,
                    "scan_id": saved.get("scan_id"), "scanned_url": url,
+                   # Per-page third-party integrations, already collected above.
+                   # Carried on the payload so a persist-free consumer (the
+                   # Deliverables scanner) can show them without a scan_id.
+                   "integrations": page_integrations or [],
                    **_breakdowns(results, url)}
         yield ("result", ScanOutcome(
             url=url, results=results, health_score=health_score, diff=diff,
@@ -3501,7 +3505,7 @@ def _qa_checks_gc(now: float):
 
 async def _run_qa_check(check_id: str, url: str, persist: bool = False, owner: str = ""):
     from datetime import datetime, timezone
-    from qa_bridge import summarize_scan, summarize_full_scan
+    from qa_bridge import summarize_scan, summarize_full_scan, summarize_integrations
     entry = _qa_check_jobs[check_id]
     try:
         async def drive():
@@ -3528,6 +3532,7 @@ async def _run_qa_check(check_id: str, url: str, persist: bool = False, owner: s
                         total_placements=payload.get("total_placements"),
                     )
                     entry["full"]["detected_builders"] = getattr(data, "detected_builders", []) or []
+                    entry["full"]["integrations"] = summarize_integrations(payload.get("integrations"))
                     entry["status"] = "done"
                 elif kind == "error":
                     entry["status"] = "failed"
@@ -3701,6 +3706,20 @@ async def qa_monitor_fragility(authorization: str = Header(default=None),
     if err:
         return err
     return await fragility_portfolio(_acc=_qa_owner_acc())
+
+
+@app.get("/api/qa-bridge/monitor/xray")
+async def qa_monitor_xray(url: str = Query(...),
+                          authorization: str = Header(default=None),
+                          x_api_key: str = Header(default=None)):
+    """Full-page screenshot + clickable-element boxes for the X-ray overlay.
+    On-demand only: this is its own headless capture (seconds), so it is never
+    part of a scan. Best-effort — {available: false} rather than an error, so
+    the scanner degrades to its plain results list."""
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    return await xray(url=url)
 
 
 @app.get("/api/qa-bridge/monitor/intent-map")

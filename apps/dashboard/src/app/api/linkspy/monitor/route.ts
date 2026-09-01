@@ -9,6 +9,7 @@ import { requireApiAuth } from "@/lib/auth";
 // requireApiAuth() call precedes any key/env use in source order.
 
 const TIMEOUT_MS = 20000;
+const XRAY_TIMEOUT_MS = 60000;
 
 const VIEWS: Record<string, (p: URLSearchParams) => string | null> = {
   dashboard: () => "/api/qa-bridge/monitor/dashboard",
@@ -24,16 +25,25 @@ const VIEWS: Record<string, (p: URLSearchParams) => string | null> = {
     if (!url) return null;
     return `/api/qa-bridge/monitor/issues?url=${encodeURIComponent(url)}`;
   },
+  // On-demand: its own headless capture, so it is never part of a scan.
+  xray: (p) => {
+    const url = p.get("url");
+    if (!url) return null;
+    return `/api/qa-bridge/monitor/xray?url=${encodeURIComponent(url)}`;
+  },
 };
 
 export async function GET(req: NextRequest) {
   const denied = await requireApiAuth();
   if (denied) return denied;
   if (!configured()) return NextResponse.json({ unavailable: true });
-  const view = VIEWS[req.nextUrl.searchParams.get("view") ?? ""];
+  const name = req.nextUrl.searchParams.get("view") ?? "";
+  const view = VIEWS[name];
   const path = view?.(req.nextUrl.searchParams);
   if (!path) return NextResponse.json({ error: "unknown view" }, { status: 400 });
-  return forward(path);
+  // X-ray runs a fresh headless capture + full-page screenshot — seconds, not
+  // milliseconds — so it gets its own budget rather than the read timeout.
+  return forward(path, {}, name === "xray" ? XRAY_TIMEOUT_MS : TIMEOUT_MS);
 }
 
 export async function POST(req: NextRequest) {
@@ -57,7 +67,11 @@ export async function DELETE(req: NextRequest) {
   return forward(`/api/qa-bridge/monitor/sites/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-async function forward(path: string, init: RequestInit = {}): Promise<NextResponse> {
+async function forward(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs: number = TIMEOUT_MS,
+): Promise<NextResponse> {
   const base = (process.env.LINKSPY_API_URL || "").replace(/\/$/, "");
   try {
     const res = await fetch(`${base}${path}`, {
@@ -66,7 +80,7 @@ async function forward(path: string, init: RequestInit = {}): Promise<NextRespon
         Authorization: `Bearer ${process.env.LINKSPY_API_KEY || ""}`,
         ...(init.headers ?? {}),
       },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     });
     return NextResponse.json(await res.json(), { status: res.status });
