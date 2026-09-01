@@ -135,3 +135,40 @@ export function scoreTone(score: number | null | undefined): "success" | "warnin
   if (score >= 70) return "warning";
   return "error";
 }
+
+/** Per-zone rollup for the collapsible results list. */
+export type ZoneSummary = {
+  total: number;
+  broken: number;
+  deadCta: number;
+  unverifiable: number;
+  ok: number;
+  /** Nothing provably wrong — the zone can stay collapsed. */
+  allClear: boolean;
+};
+
+export function zoneSummary(links: FullLink[]): ZoneSummary {
+  let broken = 0, deadCta = 0, unverifiable = 0, ok = 0;
+  for (const l of links) {
+    if (l.bucket === "broken") broken++;
+    else if (l.bucket === "dead_cta") deadCta++;
+    else if (l.bucket === "unverifiable") unverifiable++;
+    else ok++;
+  }
+  return {
+    total: links.length, broken, deadCta, unverifiable, ok,
+    // Unverifiable is not "wrong" — it must not force a zone open, and it
+    // must not read as a failure (honesty rule).
+    allClear: broken === 0 && deadCta === 0,
+  };
+}
+
+/** One-line status for a collapsed zone header. */
+export function zoneStatusLine(s: ZoneSummary): string {
+  const parts: string[] = [];
+  if (s.broken) parts.push(`${s.broken} broken`);
+  if (s.deadCta) parts.push(`${s.deadCta} dead CTA${s.deadCta === 1 ? "" : "s"}`);
+  if (parts.length) return parts.join(" · ");
+  if (s.unverifiable) return `${s.unverifiable} unverifiable`;
+  return "All working";
+}

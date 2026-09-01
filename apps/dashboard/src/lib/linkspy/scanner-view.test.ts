@@ -69,3 +69,19 @@ test("integration tone: down red, healthy green, unknown NEVER green", async () 
   assert.equal(integrationTone(undefined), "neutral");
   assert.notEqual(integrationTone("unresponsive"), "success");
 });
+
+test("zone summary counts buckets; unverifiable never forces a zone open", async () => {
+  const { zoneSummary, zoneStatusLine } = await import("./scanner-view");
+  const clean = zoneSummary([link("ok", "nav"), link("ok", "nav")]);
+  assert.equal(clean.allClear, true);
+  assert.equal(zoneStatusLine(clean), "All working");
+
+  const unver = zoneSummary([link("ok", "nav"), link("unverifiable", "nav")]);
+  assert.equal(unver.allClear, true, "unverifiable is not a failure");
+  assert.equal(zoneStatusLine(unver), "1 unverifiable");
+
+  const bad = zoneSummary([link("broken", "cta"), link("dead_cta", "cta"), link("ok", "cta")]);
+  assert.equal(bad.allClear, false);
+  assert.equal(bad.broken, 1);
+  assert.equal(zoneStatusLine(bad), "1 broken · 1 dead CTA");
+});

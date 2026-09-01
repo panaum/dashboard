@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Loader2, ScanSearch } from "lucide-react";
+import { CheckCircle2, ChevronRight, Loader2, ScanSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   filterLinks, groupByZone, latencyTone, bucketBadge, scoreTone, integrationTone,
-  type FullScan, type ScanFilter,
+  zoneSummary, zoneStatusLine,
+  type FullScan, type FullLink, type ScanFilter,
 } from "@/lib/linkspy/scanner-view";
 import { middleTruncate } from "@/lib/linkspy/monitor-metrics";
 import { ScannerXray } from "@/components/linkspy/scanner-xray";
@@ -235,57 +236,114 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
         <span className="text-[12px] text-text-muted tabular-nums">{shownCount} links</span>
       </div>
 
-      <div className={`mt-2 overflow-x-auto ${tab === "results" ? "" : "hidden"}`}>
-        <table className="w-full text-left text-[13px]">
-          <thead>
-            <tr className="border-b border-border-soft text-[11px] uppercase tracking-wide text-text-muted">
-              <th className="py-2 pr-4 font-semibold">Status</th>
-              <th className="py-2 pr-4 font-semibold">Link text</th>
-              <th className="py-2 pr-4 font-semibold">URL</th>
-              <th className="py-2 font-semibold">Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((g) => (
-              <FragmentZone key={g.zone} label={g.label} links={g.links} />
-            ))}
-            {shownCount === 0 && (
-              <tr><td colSpan={4} className="py-6 text-center text-text-muted">No links match.</td></tr>
-            )}
-          </tbody>
-        </table>
+      <div className={`mt-3 flex flex-col gap-2 ${tab === "results" ? "" : "hidden"}`}>
+        {groups.map((g) => (
+          <ZoneSection key={g.zone} label={g.label} links={g.links} searching={query.trim().length > 0} />
+        ))}
+        {shownCount === 0 && (
+          <p className="py-8 text-center text-[13px] text-text-muted">No links match.</p>
+        )}
       </div>
     </div>
   );
 }
 
-function FragmentZone({ label, links }: { label: string; links: FullScan["links"] }) {
+const PAGE_SIZE = 25;
+
+/** One zone as a collapsible section. Zones with something provably wrong open
+ *  themselves; clean zones stay shut so a 61-link footer never buries an
+ *  8-link CTA block. A search opens everything — you asked to see matches. */
+function ZoneSection({
+  label, links, searching,
+}: {
+  label: string; links: FullLink[]; searching: boolean;
+}) {
+  const summary = zoneSummary(links);
+  const [open, setOpen] = useState(!summary.allClear);
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const expanded = open || searching;
+  const shown = links.slice(0, limit);
+
   return (
-    <>
-      <tr>
-        <td colSpan={4} className="bg-card-soft/60 px-1 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-          {label} · {links?.length ?? 0}
-        </td>
-      </tr>
-      {(links ?? []).map((l, i) => {
-        const badge = bucketBadge(l.bucket);
-        const lat = latencyTone(l.response_ms);
-        return (
-          <tr key={`${l.url}-${i}`} className="border-b border-border-soft/60">
-            <td className="py-2 pr-4"><Badge tone={badge.tone}>{badge.label}</Badge></td>
-            <td className="max-w-56 truncate py-2 pr-4 text-text-primary" title={l.anchor_text ?? ""}>
-              {l.anchor_text || <span className="text-text-muted">—</span>}
-            </td>
-            <td className="max-w-80 truncate py-2 pr-4 font-mono text-[12px] text-text-secondary" title={l.url}>
-              {middleTruncate(l.url, 52)}
-            </td>
-            <td className={`py-2 tabular-nums ${TONE_CLASS[lat]}`}>
-              {typeof l.response_ms === "number" ? `${l.response_ms}ms` : "—"}
-            </td>
-          </tr>
-        );
-      })}
-    </>
+    <section className="overflow-hidden rounded-lg border border-border-soft">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-3 bg-card-soft/50 px-3 py-2.5 text-left transition-colors hover:bg-card-soft"
+      >
+        <ChevronRight
+          className={`size-4 shrink-0 text-text-muted transition-transform ${expanded ? "rotate-90" : ""}`}
+          strokeWidth={1.75}
+        />
+        <span className="text-[13px] font-semibold text-text-primary">{label}</span>
+        <span className="text-[12px] tabular-nums text-text-muted">
+          {summary.total} link{summary.total === 1 ? "" : "s"}
+        </span>
+        <span className="ml-auto flex items-center gap-1.5">
+          {summary.allClear ? (
+            <span className="flex items-center gap-1.5 text-[12px] text-text-muted">
+              <CheckCircle2 className="size-3.5 text-success" strokeWidth={1.75} />
+              {zoneStatusLine(summary)}
+            </span>
+          ) : (
+            <Badge tone={summary.broken ? "error" : "warning"}>{zoneStatusLine(summary)}</Badge>
+          )}
+        </span>
+      </button>
+
+      {expanded && (
+        <ul className="divide-y divide-border-soft/70">
+          {shown.map((l, i) => {
+            const badge = bucketBadge(l.bucket);
+            const lat = latencyTone(l.response_ms);
+            return (
+              <li
+                key={`${l.url}-${i}`}
+                className={`flex items-center gap-3 px-3 py-2.5 ${
+                  l.bucket === "broken" ? "bg-error/5" : l.bucket === "dead_cta" ? "bg-warning/5" : ""
+                }`}
+              >
+                {/* A dot, not a badge, for the common "ok" case: 100 identical
+                    green pills is noise; a dot lets the eye skip to the reds. */}
+                {l.bucket === "ok" ? (
+                  <span className="size-1.5 shrink-0 rounded-full bg-success" title="OK" />
+                ) : (
+                  <Badge tone={badge.tone}>{badge.label}</Badge>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] text-text-primary" title={l.anchor_text ?? ""}>
+                    {l.anchor_text || <span className="text-text-muted">(no link text)</span>}
+                  </p>
+                  <p className="truncate font-mono text-[11px] text-text-muted" title={l.url}>
+                    {middleTruncate(l.url, 64)}
+                  </p>
+                </div>
+                {l.reason && (
+                  <span className="hidden max-w-48 truncate text-[12px] text-error lg:inline" title={l.reason}>
+                    {l.reason}
+                  </span>
+                )}
+                <span className={`shrink-0 text-[12px] tabular-nums ${TONE_CLASS[lat]}`}>
+                  {typeof l.response_ms === "number" ? `${l.response_ms}ms` : "—"}
+                </span>
+              </li>
+            );
+          })}
+          {links.length > limit && (
+            <li className="px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setLimit((n) => n + PAGE_SIZE * 2)}
+                className="text-[13px] font-medium text-accent transition-opacity hover:opacity-80"
+              >
+                Show {Math.min(links.length - limit, PAGE_SIZE * 2)} more of {links.length}
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
+    </section>
   );
 }
 
