@@ -79,14 +79,27 @@ export function MonitorGrid({ initialSites, bands, unavailable }: Props) {
         markScanning(site.id, false);
         return;
       }
+      const deadline = Date.now() + 16 * 60 * 1000; // hard cap ≥ backend's own
       await new Promise<void>((resolve) => {
         const poll = async () => {
+          if (Date.now() > deadline) {
+            setActionError("The scan is taking too long — check back shortly.");
+            return resolve();
+          }
           try {
             const snap = await (await fetch(`/api/linkspy/check?id=${body.check_id}`)).json();
             if (snap.status === "running") return void setTimeout(poll, POLL_MS);
             if (snap.status === "failed") setActionError(snap.error ?? "The scan failed.");
-          } catch { /* transient */ }
-          resolve();
+            // A backend redeploy drops the in-memory job → "not_found": say so,
+            // rather than silently stopping. The scan may still have persisted.
+            if (snap.status === "not_found") {
+              setActionError("The scan was interrupted — its result may still have saved. Reloading…");
+            }
+            return resolve();
+          } catch {
+            // Transient network error — retry until the deadline, don't abandon.
+            return void setTimeout(poll, POLL_MS * 2);
+          }
         };
         setTimeout(poll, POLL_MS);
       });
