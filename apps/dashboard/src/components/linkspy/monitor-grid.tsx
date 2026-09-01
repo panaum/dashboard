@@ -10,10 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import {
-  bandChip, cleanStreakDays, displayName, fixedThisMonth, issueLine, latestScan,
+  bandChip, cleanStreakDays, displayName, issueLine, latestScan,
   middleTruncate, relativeTime, scoreDelta, sortSites, sparkScores, statusChip,
   type DashboardSite,
 } from "@/lib/linkspy/monitor-metrics";
+import { healthTone } from "@/lib/linkspy/sites-view";
 
 // MONITORING GRID (spec §2) — every monitored LinkSpy site as a card:
 // status, health score + delta, sparkline, streaks, re-scan / settings /
@@ -139,17 +140,13 @@ export function MonitorGrid({ initialSites, bands, unavailable }: Props) {
   };
 
   const ordered = sortSites(sites);
-  const fixed = fixedThisMonth(sites, now);
   const commonEmail = modalEmail(sites);
 
   return (
     <div>
-      {/* Header strip: count · fixed-this-month · actions */}
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <p className="text-sm text-text-secondary">
-          {sites.length} monitored {sites.length === 1 ? "property" : "properties"}
-        </p>
-        {fixed > 0 && <Badge tone="success">{fixed} fixed this month</Badge>}
+      {/* Action strip — the counts live in the stat rail above. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-semibold text-text-primary">All sites</h2>
         <span className="flex-1" />
         <button
           type="button"
@@ -255,51 +252,50 @@ function SiteCard({
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuOpen, onMenu]);
 
+  // Status colour lives on a hairline rail down the card's left edge — a
+  // health signal you can scan down the grid without reading a single word.
+  const rail = {
+    error: "bg-error", warning: "bg-warning", success: "bg-success", neutral: "bg-border-soft",
+  }[chip.tone];
+  const scoreColor = last
+    ? { success: "text-success", warning: "text-warning", error: "text-error", neutral: "text-text-primary" }[
+        healthTone(last.health_score)
+      ]
+    : "text-text-muted";
+
   return (
-    <Card className={`relative flex flex-col gap-3 p-4 ${menuOpen ? "z-20" : ""}`}>
+    <Card
+      hover
+      className={`group relative flex flex-col gap-3 overflow-hidden p-4 pl-5 ${menuOpen ? "z-20" : ""}`}
+    >
+      <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${rail}`} />
+
       <div className="flex items-start gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-card-soft text-sm font-semibold text-text-secondary">
           {displayName(site).charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-text-primary">{displayName(site)}</p>
+          <p className="truncate text-sm font-semibold text-text-primary">{displayName(site)}</p>
           <p className="truncate font-mono text-[12px] text-text-muted" title={site.url}>
             {middleTruncate(site.url)}
           </p>
         </div>
         <Link
           href={`/dashboard/sites/${site.id}?u=${encodeURIComponent(site.url)}`}
-          className="mt-1 text-text-muted transition-colors hover:text-accent"
+          className="mt-1 text-text-muted transition-colors group-hover:text-accent"
           aria-label={`Open ${displayName(site)}`}
         >
           <ChevronRight className="size-4" />
         </Link>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Badge tone={chip.tone}>{chip.label}</Badge>
-        {stability && (
-          <Badge tone={stability.tone} title="Stability band — how often this site breaks over time">
-            {stability.label}
-          </Badge>
-        )}
-        {streak !== null && streak > 0 && (
-          <span
-            className="font-mono text-[12px] font-medium text-accent"
-            title="Days since the last provable issue"
-          >
-            {streak}d clean
-          </span>
-        )}
-      </div>
-
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="font-mono text-[34px] font-semibold leading-none text-text-primary tabular-nums">
+          <p className={`font-mono text-[34px] font-semibold leading-none tabular-nums ${scoreColor}`}>
             {last ? last.health_score : "—"}
             <span className="text-sm font-normal text-text-muted"> / 100</span>
           </p>
-          <p className="mt-1 text-[12px] tabular-nums">
+          <p className="mt-1.5 text-[12px] tabular-nums">
             {delta.kind === "delta" && (
               <span className={delta.value > 0 ? "text-success" : "text-error"}>
                 {delta.value > 0 ? "▲ +" : "▼ "}{delta.value} vs last
@@ -311,6 +307,23 @@ function SiteCard({
           </p>
         </div>
         {spark.length >= 2 && <Sparkline scores={spark} />}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge tone={chip.tone}>{chip.label}</Badge>
+        {stability && (
+          <Badge tone={stability.tone} title="Stability band — how often this site breaks over time">
+            {stability.label}
+          </Badge>
+        )}
+        {streak !== null && streak > 0 && (
+          <span
+            className="ml-auto font-mono text-[12px] font-medium text-accent"
+            title="Days since the last provable issue"
+          >
+            {streak}d clean
+          </span>
+        )}
       </div>
 
       <p className="text-[13px] text-text-secondary">{issueLine(site)}</p>

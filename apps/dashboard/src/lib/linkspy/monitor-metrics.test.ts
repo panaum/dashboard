@@ -134,3 +134,19 @@ test("band chips: sturdy green, normal neutral 'Steady', brittle amber, unknown 
   assert.deepEqual(bandChip("brittle"), { label: "Brittle", tone: "warning" });
   assert.equal(bandChip(undefined), null);
 });
+
+test("monitor summary buckets health, counts fixed and averages score", async () => {
+  const { monitorSummary } = await import("./monitor-metrics");
+  const s = [
+    site([scan("2026-08-30T00:00:00Z", 0, 0, 100)], { id: "a", url: "https://a.test" }),
+    site([scan("2026-08-01T00:00:00Z", 3, 0, 60), scan("2026-08-30T00:00:00Z", 1, 0, 80)], { id: "b", url: "https://b.test" }),
+    site([], { id: "c", url: "https://c.test" }),
+  ];
+  const sum = monitorSummary(s, NOW);
+  assert.equal(sum.monitored, 3);
+  assert.equal(sum.healthy, 1);
+  assert.equal(sum.attention, 1);
+  assert.equal(sum.neverScanned, 1);
+  assert.equal(sum.fixed, 2, "b dropped 3→1 broken this month");
+  assert.equal(sum.avgHealth, 90, "mean of 100 and 80");
+});
