@@ -5,7 +5,7 @@ import { CheckCircle2, ChevronRight, Loader2, ScanSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   filterLinks, groupByZone, latencyTone, bucketBadge, scoreTone, integrationTone,
-  zoneSummary, zoneStatusLine, groupIntegrations,
+  zoneSummary, zoneStatusLine, groupIntegrations, categoryAccent,
   type FullScan, type FullLink, type ScanFilter,
 } from "@/lib/linkspy/scanner-view";
 import { middleTruncate } from "@/lib/linkspy/monitor-metrics";
@@ -28,6 +28,17 @@ const TONE_CLASS: Record<string, string> = {
 const TONE_STROKE: Record<string, string> = {
   success: "stroke-success", warning: "stroke-warning", error: "stroke-error", neutral: "stroke-text-muted",
 };
+
+// Four decorative slots from the brand palette. Deliberately pastel and
+// distinct from the health colours (success/warning/error), so a category's
+// colour is never mistaken for a status. Full class strings — Tailwind can't
+// see interpolated names.
+const ACCENTS = [
+  { dot: "bg-brand-purple", tint: "bg-brand-purple/15", hoverBorder: "hover:border-brand-purple" },
+  { dot: "bg-brand-blue", tint: "bg-brand-blue/15", hoverBorder: "hover:border-brand-blue" },
+  { dot: "bg-brand-peach", tint: "bg-brand-peach/15", hoverBorder: "hover:border-brand-peach" },
+  { dot: "bg-brand-yellow", tint: "bg-brand-yellow/25", hoverBorder: "hover:border-brand-yellow" },
+] as const;
 
 export function UrlChecker() {
   const [url, setUrl] = useState("");
@@ -377,15 +388,22 @@ function IntegrationsPanel({ scan }: { scan: FullScan }) {
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        {groups.map((g) => (
-          <div key={g.category} className="rounded-lg border border-border-soft p-3">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+        {groups.map((g) => {
+          const accent = ACCENTS[categoryAccent(g.category)];
+          return (
+          <div
+            key={g.category}
+            className={`overflow-hidden rounded-lg border border-border-soft transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${accent.hoverBorder}`}
+          >
+            <div className={`flex items-center gap-2 border-b border-border-soft/70 px-3 py-2 ${accent.tint}`}>
+              <span aria-hidden className={`size-2 shrink-0 rounded-full ${accent.dot}`} />
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
                 {g.category}
               </span>
               <span className="text-[11px] tabular-nums text-text-muted">{g.hosts.length}</span>
               {g.problems > 0 && <Badge tone="error">{g.problems} to check</Badge>}
             </div>
+            <div className="p-3">
             <ul className="flex flex-col gap-1.5">
               {g.hosts.map((h) => (
                 <li key={h.host} className="flex items-center gap-2 text-[13px]">
@@ -411,8 +429,10 @@ function IntegrationsPanel({ scan }: { scan: FullScan }) {
                 </li>
               ))}
             </ul>
+            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <p className="mt-3 text-[12px] text-text-muted">
@@ -432,11 +452,12 @@ function Breakdowns({ scan }: { scan: FullScan }) {
 
   return (
     <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Panel title="Link types" rows={linkTypes.map(([k, v]) => [k, v])} />
-      <Panel title="Top hosts" rows={hosts.map((h) => [h.host, h.count])} />
-      <Panel title="Link schemes" rows={schemes.map(([k, v]) => [k, v])} />
+      <Panel title="Link types" slot={0} rows={linkTypes.map(([k, v]) => [k, v])} />
+      <Panel title="Top hosts" slot={1} rows={hosts.map((h) => [h.host, h.count])} />
+      <Panel title="Link schemes" slot={2} rows={schemes.map(([k, v]) => [k, v])} />
       <Panel
         title="Redirects"
+        slot={3}
         rows={[
           ["Permanent (301/308)", rd.permanent ?? 0],
           ["Temporary (302/307)", rd.temporary ?? 0],
@@ -447,10 +468,16 @@ function Breakdowns({ scan }: { scan: FullScan }) {
   );
 }
 
-function Panel({ title, rows }: { title: string; rows: Array<[string, number]> }) {
+function Panel({ title, rows, slot }: { title: string; rows: Array<[string, number]>; slot: 0 | 1 | 2 | 3 }) {
+  const accent = ACCENTS[slot];
   return (
-    <div className="rounded-lg border border-border-soft bg-card-soft/40 p-3">
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">{title}</p>
+    <div
+      className={`rounded-lg border border-border-soft bg-card p-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${accent.hoverBorder}`}
+    >
+      <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+        <span aria-hidden className={`size-2 rounded-full ${accent.dot}`} />
+        {title}
+      </p>
       {rows.length === 0 ? (
         <p className="text-[12px] text-text-muted">—</p>
       ) : (
