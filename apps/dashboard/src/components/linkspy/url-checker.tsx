@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, ChevronRight, Loader2, ScanSearch } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronRight, History, Loader2, ScanSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   filterLinks, groupByZone, latencyTone, bucketBadge, scoreTone, integrationTone,
-  zoneSummary, zoneStatusLine, groupIntegrations, categoryAccent,
+  zoneSummary, zoneStatusLine, groupIntegrations, categoryAccent, formatStamp,
   type FullScan, type FullLink, type ScanFilter,
 } from "@/lib/linkspy/scanner-view";
 import { middleTruncate } from "@/lib/linkspy/monitor-metrics";
@@ -17,8 +17,10 @@ import { ScannerXray } from "@/components/linkspy/scanner-xray";
 
 type Phase =
   | { kind: "idle" }
+  | { kind: "loading" }
   | { kind: "running"; id: string; message: string; percent: number }
-  | { kind: "done"; scan: FullScan }
+  /** `storedAt` set = these are results from a previous scan, not a fresh one. */
+  | { kind: "done"; scan: FullScan; storedAt?: string | null }
   | { kind: "failed"; message: string };
 
 const POLL_MS = 2500;
@@ -55,12 +57,31 @@ export function UrlChecker({
 
   // Step 2 is "running" or "done" — anything else returns to the list.
   useEffect(() => {
-    onFocusChange?.(phase.kind === "running" || phase.kind === "done");
+    onFocusChange?.(
+      phase.kind === "running" || phase.kind === "done" || phase.kind === "loading",
+    );
   }, [phase.kind, onFocusChange]);
+  // "Open in scanner" from a site card: fill the URL and show what the last
+  // scan already found, rather than an empty box the reader must re-run.
   useEffect(() => {
     const onPrefill = (e: Event) => {
-      const detail = (e as CustomEvent<string>).detail;
-      if (typeof detail === "string") setUrl(detail);
+      const d = (e as CustomEvent<string | { url: string; siteId?: string }>).detail;
+      const url = typeof d === "string" ? d : d?.url;
+      const siteId = typeof d === "string" ? undefined : d?.siteId;
+      if (!url) return;
+      setUrl(url);
+      if (!siteId) return;
+      setPhase({ kind: "loading" });
+      fetch(`/api/linkspy/monitor?view=storedscan&id=${encodeURIComponent(siteId)}`)
+        .then((r) => r.json())
+        .then((body) => {
+          if (body?.no_scan || !body?.links) {
+            setPhase({ kind: "idle" });
+          } else {
+            setPhase({ kind: "done", scan: body, storedAt: body.scanned_at ?? null });
+          }
+        })
+        .catch(() => setPhase({ kind: "idle" }));
     };
     window.addEventListener("checker:prefill", onPrefill);
     return () => window.removeEventListener("checker:prefill", onPrefill);
@@ -106,7 +127,7 @@ export function UrlChecker({
     }
   }
 
-  const focused = phase.kind === "running" || phase.kind === "done";
+  const focused = phase.kind === "running" || phase.kind === "done" || phase.kind === "loading";
 
   return (
     <div className="mb-6 rounded-xl border border-border-soft bg-card p-4 shadow-xs">
@@ -154,7 +175,30 @@ export function UrlChecker({
         </div>
       )}
 
+      {phase.kind === "loading" && (
+        <p className="mt-3 flex items-center gap-2 text-[13px] text-text-secondary">
+          <Loader2 className="size-4 animate-spin" /> Loading the last scan…
+        </p>
+      )}
+
       {phase.kind === "failed" && <p className="mt-3 text-[13px] text-error">{phase.message}</p>}
+
+      {phase.kind === "done" && phase.storedAt && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-border-soft bg-card-soft/60 px-3 py-2.5">
+          <History className="size-4 shrink-0 text-text-muted" strokeWidth={1.75} />
+          <p className="text-[13px] text-text-secondary">
+            These are the <span className="font-medium text-text-primary">last scan results</span>, from{" "}
+            {formatStamp(phase.storedAt)}. Nothing has been re-checked since.
+          </p>
+          <button
+            type="button"
+            onClick={start}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white shadow-xs transition-opacity hover:opacity-90"
+          >
+            <ScanSearch className="size-3.5" strokeWidth={1.75} /> Scan now
+          </button>
+        </div>
+      )}
 
       {phase.kind === "done" && <ScanResult scan={phase.scan} url={url} />}
     </div>

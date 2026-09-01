@@ -119,3 +119,10 @@ test("category accent is stable per name and always within the 4 slots", async (
     assert.equal(categoryAccent(c), v, "same name must keep the same colour");
   }
 });
+
+test("stored-scan stamp is readable and degrades on bad input", async () => {
+  const { formatStamp } = await import("./scanner-view");
+  assert.match(formatStamp("2026-07-14T05:41:29Z"), /2026/);
+  assert.equal(formatStamp(null), "an earlier scan");
+  assert.equal(formatStamp("nonsense"), "an earlier scan");
+});
