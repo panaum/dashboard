@@ -150,3 +150,19 @@ test("monitor summary buckets health, counts fixed and averages score", async ()
   assert.equal(sum.fixed, 2, "b dropped 3→1 broken this month");
   assert.equal(sum.avgHealth, 90, "mean of 100 and 80");
 });
+
+test("sparkline is empty when the score never moved — a flat line charts nothing", async () => {
+  const { sparkScores } = await import("./monitor-metrics");
+  const flat = site([
+    scan("2026-08-01T00:00:00Z", 0, 0, 99),
+    scan("2026-08-02T00:00:00Z", 0, 0, 99),
+    scan("2026-08-03T00:00:00Z", 0, 0, 99),
+  ]);
+  assert.deepEqual(sparkScores(flat), [], "identical scores draw no line");
+
+  const moved = site([
+    scan("2026-08-01T00:00:00Z", 0, 0, 99),
+    scan("2026-08-02T00:00:00Z", 0, 0, 92),
+  ]);
+  assert.deepEqual(sparkScores(moved), [99, 92]);
+});
