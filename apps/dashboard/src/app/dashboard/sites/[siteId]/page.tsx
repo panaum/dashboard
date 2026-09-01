@@ -1,28 +1,24 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink, FileSearch, Globe } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   listRegistrySites,
   fetchSitePresence,
-  fetchSiteScan,
   fetchSiteIncidents,
   fetchSiteVitals,
   fetchSiteHistory,
   fetchIntentMap,
   fetchConsent,
-  pagesForSite,
   linkspySiteHref,
 } from "@/lib/linkspy/sites-data";
 import { PromiseMap } from "@/components/linkspy/promise-map";
 import { ConsentPanel } from "@/components/linkspy/consent-panel";
 import {
-  buildScanView,
   buildIncidentsView,
   buildVitalsView,
   buildHistoryView,
-  bucketTone,
   healthTone,
   ESCALATION_TONE,
 } from "@/lib/linkspy/sites-view";
@@ -45,19 +41,16 @@ export default async function SiteDetailPage({
   const sites = await listRegistrySites();
   const site = sites?.find((s) => s.id === siteId);
 
-  const [presence, scanPayload, incidentsPayload, vitalsPayload, historyPayload,
-         intentPayload, consentPayload, pages] =
+  const [presence, incidentsPayload, vitalsPayload, historyPayload,
+         intentPayload, consentPayload] =
     await Promise.all([
       fetchSitePresence(siteId),
-      fetchSiteScan(siteId),
       fetchSiteIncidents(siteId),
       fetchSiteVitals(siteId),
       fetchSiteHistory(siteId),
       fetchIntentMap(siteId),
       fetchConsent(siteId),
-      pagesForSite(siteId),
     ]);
-  const scan = buildScanView(scanPayload);
   const incidents = buildIncidentsView(incidentsPayload);
   const vitals = buildVitalsView(vitalsPayload);
   const history = buildHistoryView(historyPayload);
@@ -156,71 +149,6 @@ export default async function SiteDetailPage({
         {/* Consent behavior — cookie/tracking observation ledger. */}
         <ConsentPanel payload={consentPayload} />
 
-        {/* Latest scan — stored results only; nothing here triggers a scan. */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Latest link scan</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {scan.state === "unavailable" && (
-              <p className="text-[13px] text-text-secondary">
-                LinkSpy did not answer — the latest scan is unavailable right now.
-              </p>
-            )}
-            {scan.state === "no_scan" && (
-              <p className="flex items-center gap-2 text-[13px] text-text-secondary">
-                <FileSearch className="size-4" strokeWidth={1.75} />
-                No scan stored yet — run one from LinkSpy to see results here.
-              </p>
-            )}
-            {(scan.state === "clean" || scan.state === "issues") && (
-              <>
-                <p className="mb-3 text-[13px] text-text-secondary">
-                  {scan.totals.links} links checked · {scan.totals.ok} ok ·{" "}
-                  {scan.totals.broken} broken · {scan.totals.dead_cta} dead CTAs ·{" "}
-                  {scan.totals.unverifiable} unverifiable
-                  {scan.scannedAt && ` · scanned ${scan.scannedAt.slice(0, 10)}`}
-                </p>
-                {scan.state === "clean" ? (
-                  <p className="flex items-center gap-2 text-sm text-text-primary">
-                    <CheckCircle2 className="size-4 text-success" strokeWidth={1.75} />
-                    All links passed
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-[13px]">
-                      <thead>
-                        <tr className="border-b border-border-soft text-[11px] uppercase tracking-wide text-text-muted">
-                          <th className="py-2 pr-4 font-semibold">Link</th>
-                          <th className="py-2 pr-4 font-semibold">State</th>
-                          <th className="py-2 font-semibold">Why</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {scan.flagged.map((f, i) => (
-                          <tr key={`${f.url}-${i}`} className="border-b border-border-soft/60">
-                            <td className="max-w-90 truncate py-2 pr-4 text-text-primary" title={f.url}>
-                              {f.url}
-                            </td>
-                            <td className="py-2 pr-4">
-                              <Badge tone={bucketTone(f.bucket)}>
-                                {f.bucket === "dead_cta" ? "dead CTA" : (f.bucket ?? "flagged")}
-                              </Badge>
-                            </td>
-                            <td className="py-2 text-text-secondary">
-                              {f.reason ?? f.label ?? (f.status_code ? `HTTP ${f.status_code}` : "—")}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-
         {/* Scan history — per-scan trend from stored snapshots, newest first. */}
         {history.state === "series" && (
           <Card>
@@ -280,34 +208,6 @@ export default async function SiteDetailPage({
                     {inc.duration && (
                       <span className="text-text-muted">· {inc.duration}</span>
                     )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* The other half of the bridge: which QA pages point here. */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Linked QA pages</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {pages.length === 0 ? (
-              <p className="text-[13px] text-text-secondary">
-                No dashboard pages link to this site yet — use “Link to LinkSpy” on a page detail.
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-1.5">
-                {pages.map((p) => (
-                  <li key={p.id}>
-                    <Link
-                      href={`/dashboard/clients/${p.project.clientId}/${p.project.id}/${p.id}`}
-                      className="inline-flex items-center gap-2 text-sm font-medium text-text-primary transition-colors hover:text-accent"
-                    >
-                      <Globe className="size-3.5 text-text-muted" strokeWidth={1.5} />
-                      {p.project.client.name} › {p.name}
-                    </Link>
                   </li>
                 ))}
               </ul>
