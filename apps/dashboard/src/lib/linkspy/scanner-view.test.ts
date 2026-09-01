@@ -85,3 +85,28 @@ test("zone summary counts buckets; unverifiable never forces a zone open", async
   assert.equal(bad.broken, 1);
   assert.equal(zoneStatusLine(bad), "1 broken · 1 dead CTA");
 });
+
+test("integrations group by category, dedupe hosts with counts, worst health wins", async () => {
+  const { groupIntegrations } = await import("./scanner-view");
+  const groups = groupIntegrations([
+    { host: "gtm.com", category: "Tag Management", health: "healthy", detected_id: "GTM-1" },
+    { host: "gtm.com", category: "Tag Management", health: "healthy" },
+    { host: "gtm.com", category: "Tag Management", health: "down" },
+    { host: "fb.net", category: "Advertising/Pixels", health: "healthy" },
+    { host: "cdn.test", category: "Fonts/CDN", health: "healthy" },
+    { host: "cdn.test", category: "Fonts/CDN", health: "healthy" },
+  ]);
+  const tag = groups.find((g) => g.category === "Tag Management")!;
+  assert.equal(tag.hosts.length, 1, "six rows for one host collapse to one");
+  assert.equal(tag.hosts[0].count, 3);
+  assert.deepEqual(tag.hosts[0].ids, ["GTM-1"]);
+  assert.equal(tag.hosts[0].tone, "error", "one down resource makes the host worth looking at");
+  assert.equal(groups[0].category, "Tag Management", "categories with problems sort first");
+});
+
+test("integrations grouping handles empty and missing categories", async () => {
+  const { groupIntegrations } = await import("./scanner-view");
+  assert.deepEqual(groupIntegrations(undefined), []);
+  const g = groupIntegrations([{ host: "x.test", health: "healthy" }]);
+  assert.equal(g[0].category, "Other");
+});
