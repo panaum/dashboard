@@ -183,6 +183,10 @@ def test_vendor_mentions_do_not_detect_builders():
     ("Hugo", "<p>Our founder Hugo wrote this.</p>"),
     ("Duda", "<p>No hay duda: it works.</p>"),
     ("Carrd", "<p>We support Carrd imports.</p>"),
+    # Found live on https://www.apexure.com/: an agency that offers GHL funnels
+    # says so in its copy; the page itself is HubSpot, not GoHighLevel.
+    ("GoHighLevel", "<p>We build done-for-you gohighlevel funnels and automation.</p>"),
+    ("GoHighLevel", '<a href="/gohighlevel-landing-pages/">GoHighLevel Landing Pages</a>'),
 ])
 def test_single_vendor_mention_does_not_detect(name, markup):
     soup = BeautifulSoup(_wrap(markup), "lxml")
