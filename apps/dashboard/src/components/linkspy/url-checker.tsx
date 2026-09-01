@@ -5,7 +5,7 @@ import { CheckCircle2, ChevronRight, Loader2, ScanSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   filterLinks, groupByZone, latencyTone, bucketBadge, scoreTone, integrationTone,
-  zoneSummary, zoneStatusLine,
+  zoneSummary, zoneStatusLine, groupIntegrations,
   type FullScan, type FullLink, type ScanFilter,
 } from "@/lib/linkspy/scanner-view";
 import { middleTruncate } from "@/lib/linkspy/monitor-metrics";
@@ -357,28 +357,65 @@ function IntegrationsPanel({ scan }: { scan: FullScan }) {
       </p>
     );
   }
+  const groups = groupIntegrations(items);
+  const uniqueHosts = groups.reduce((n, g) => n + g.hosts.length, 0);
+  const problems = (ints?.down ?? 0) + (ints?.unknown ?? 0);
+
   return (
     <div className="mt-4">
-      <p className="mb-2 text-[13px] text-text-secondary">
-        {ints?.total} third-party integration{ints?.total === 1 ? "" : "s"}
-        {(ints?.down ?? 0) > 0 && <span className="text-error"> · {ints?.down} down</span>}
-        {(ints?.unknown ?? 0) > 0 && <span className="text-text-muted"> · {ints?.unknown} unverified</span>}
+      <p className="mb-3 text-[13px] text-text-secondary">
+        <span className="font-medium text-text-primary">{uniqueHosts} third parties</span> on this page
+        {" "}across {groups.length} categor{groups.length === 1 ? "y" : "ies"}
+        {problems === 0 ? (
+          <span className="text-text-muted"> · all responding</span>
+        ) : (
+          <>
+            {(ints?.down ?? 0) > 0 && <span className="text-error"> · {ints?.down} down</span>}
+            {(ints?.unknown ?? 0) > 0 && <span className="text-text-muted"> · {ints?.unknown} unverified</span>}
+          </>
+        )}
       </p>
-      <ul className="flex flex-col gap-1.5">
-        {items.map((it, i) => (
-          <li key={`${it.host}-${i}`} className="flex items-center gap-2.5 text-[13px]">
-            <Badge tone={integrationTone(it.health)}>{it.health ?? "unknown"}</Badge>
-            <span className="font-mono text-text-primary">{it.host}</span>
-            {it.category && <span className="text-text-muted">{it.category}</span>}
-            {it.detected_id && (
-              <span className="ml-auto truncate font-mono text-[12px] text-text-muted" title={it.detected_id}>
-                {it.detected_id}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {groups.map((g) => (
+          <div key={g.category} className="rounded-lg border border-border-soft p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+                {g.category}
               </span>
-            )}
-          </li>
+              <span className="text-[11px] tabular-nums text-text-muted">{g.hosts.length}</span>
+              {g.problems > 0 && <Badge tone="error">{g.problems} to check</Badge>}
+            </div>
+            <ul className="flex flex-col gap-1.5">
+              {g.hosts.map((h) => (
+                <li key={h.host} className="flex items-center gap-2 text-[13px]">
+                  {/* Healthy is a quiet dot — 35 identical green pills was the
+                      noise that hid anything worth seeing. */}
+                  {h.tone === "success" ? (
+                    <span className="size-1.5 shrink-0 rounded-full bg-success" title="Responding" />
+                  ) : (
+                    <Badge tone={h.tone}>{h.health}</Badge>
+                  )}
+                  <span className="truncate font-mono text-text-primary" title={h.host}>{h.host}</span>
+                  {h.count > 1 && (
+                    <span className="shrink-0 text-[11px] tabular-nums text-text-muted">×{h.count}</span>
+                  )}
+                  {h.ids.length > 0 && (
+                    <span
+                      className="ml-auto shrink-0 truncate font-mono text-[11px] text-text-muted"
+                      title={h.ids.join(", ")}
+                    >
+                      {h.ids[0]}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
-      <p className="mt-2 text-[12px] text-text-muted">
+      </div>
+
+      <p className="mt-3 text-[12px] text-text-muted">
         A provider outage never counts against this page&apos;s health score.
       </p>
     </div>

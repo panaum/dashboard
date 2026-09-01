@@ -172,3 +172,58 @@ export function zoneStatusLine(s: ZoneSummary): string {
   if (s.unverifiable) return `${s.unverifiable} unverifiable`;
   return "All working";
 }
+
+// ── Integrations grouping ────────────────────────────────────────────────────
+// The raw list repeats a host once per resource it loaded (googletagmanager
+// six times, facebook three). Readers care about "which third parties are on
+// this page, and is any of them broken" — so group by category, dedupe by
+// host, and carry the count + any detected ids.
+
+export type HostRow = {
+  host: string;
+  count: number;
+  ids: string[];
+  tone: "success" | "error" | "neutral";
+  health: string;
+};
+
+export type IntegrationGroup = { category: string; hosts: HostRow[]; problems: number };
+
+const TONE_RANK = { error: 0, neutral: 1, success: 2 } as const;
+
+export function groupIntegrations(items: Integration[] | undefined): IntegrationGroup[] {
+  const byCategory = new Map<string, Map<string, HostRow>>();
+  for (const it of items ?? []) {
+    const host = it.host ?? "unknown";
+    const category = it.category || "Other";
+    const tone = integrationTone(it.health);
+    const hosts = byCategory.get(category) ?? byCategory.set(category, new Map()).get(category)!;
+    const row = hosts.get(host);
+    if (!row) {
+      hosts.set(host, {
+        host, count: 1, ids: it.detected_id ? [it.detected_id] : [],
+        tone, health: it.health ?? "unknown",
+      });
+    } else {
+      row.count++;
+      if (it.detected_id && !row.ids.includes(it.detected_id)) row.ids.push(it.detected_id);
+      // Worst health wins: one broken resource makes the host worth looking at.
+      if (TONE_RANK[tone] < TONE_RANK[row.tone]) {
+        row.tone = tone;
+        row.health = it.health ?? "unknown";
+      }
+    }
+  }
+
+  return [...byCategory.entries()]
+    .map(([category, hosts]) => {
+      const rows = [...hosts.values()].sort(
+        (a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone] || b.count - a.count || a.host.localeCompare(b.host),
+      );
+      return { category, hosts: rows, problems: rows.filter((r) => r.tone !== "success").length };
+    })
+    // Categories with something to look at first, then largest, then A–Z.
+    .sort((a, b) => (b.problems > 0 ? 1 : 0) - (a.problems > 0 ? 1 : 0) ||
+                    b.hosts.length - a.hosts.length ||
+                    a.category.localeCompare(b.category));
+}
