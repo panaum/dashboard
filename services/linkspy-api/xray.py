@@ -42,7 +42,8 @@ _COLLECT_BOXES_JS = r"""
 """
 
 
-def capture_xray_sync(url: str, viewport_width: int = 1280) -> dict:
+def capture_xray_sync(url: str, viewport_width: int = 1280,
+                      image_format: str = "png", quality: int | None = None) -> dict:
     """Launch a headless page, screenshot it full-page, and collect element
     boxes. Returns a dict; on any failure returns {available: False, error}.
     Never raises."""
@@ -79,12 +80,22 @@ def capture_xray_sync(url: str, viewport_width: int = 1280) -> dict:
                 elements = page.evaluate(_COLLECT_BOXES_JS)
             except Exception:
                 elements = []
-            shot = page.screenshot(type="png", full_page=True)
+            # PNG by default (lossless, unchanged for LinkSpy's own view). A
+            # caller that must cross a response-size limit — the Deliverables
+            # bridge, through a serverless proxy — asks for jpeg, which turns a
+            # ~7MB full-page capture into a few hundred KB.
+            if image_format == "jpeg":
+                shot = page.screenshot(type="jpeg", quality=quality or 60, full_page=True)
+            else:
+                shot = page.screenshot(type="png", full_page=True)
             browser.close()
 
         return {
             "available": True,
             "screenshot": base64.b64encode(shot).decode("utf-8"),
+            # Consumers build a data: URI from this, so the type must travel
+            # with the bytes rather than being assumed.
+            "mime": "image/jpeg" if image_format == "jpeg" else "image/png",
             "viewport_width": viewport_width,
             "page_width": int(dims.get("w") or viewport_width),
             "page_height": int(dims.get("h") or 0),

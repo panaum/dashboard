@@ -10,7 +10,10 @@ import { Loader2, ScanEye } from "lucide-react";
 
 type XrayElement = { x: number; y: number; w: number; h: number; kind?: string | null; href?: string | null };
 type Xray =
-  | { available: true; screenshot: string; page_width: number; page_height: number; elements?: XrayElement[] }
+  | {
+      available: true; screenshot: string; mime?: string;
+      page_width: number; page_height: number; elements?: XrayElement[];
+    }
   | { available: false; error?: string };
 
 export function ScannerXray({ url }: { url: string }) {
@@ -77,7 +80,7 @@ export function ScannerXray({ url }: { url: string }) {
         <div className="relative" style={{ width: "100%" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`data:image/png;base64,${xray.screenshot}`}
+            src={`data:${xray.mime ?? "image/png"};base64,${xray.screenshot}`}
             alt="Full-page capture of the scanned page"
             className="block w-full"
           />

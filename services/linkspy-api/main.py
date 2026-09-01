@@ -3719,7 +3719,12 @@ async def qa_monitor_xray(url: str = Query(...),
     _key, err = await _qa_monitor_gate(authorization, x_api_key)
     if err:
         return err
-    return await xray(url=url)
+    # JPEG, not the shared PNG path: a full-page PNG runs ~7MB, over the
+    # response ceiling of the serverless proxy this answers through. Its own
+    # capture (not _xray_cache, which is keyed by URL alone and holds PNGs).
+    from xray import capture_xray_sync
+    data = await asyncio.to_thread(capture_xray_sync, url, 1280, "jpeg", 60)
+    return JSONResponse(data, status_code=200 if data.get("available") else 502)
 
 
 @app.get("/api/qa-bridge/monitor/intent-map")
