@@ -227,3 +227,12 @@ export function groupIntegrations(items: Integration[] | undefined): Integration
                     b.hosts.length - a.hosts.length ||
                     a.category.localeCompare(b.category));
 }
+
+/** Stable decorative colour slot (0–3) for a category card. Deterministic by
+ *  name so a category keeps its colour between scans. Purely decorative —
+ *  health colours (green/amber/red) stay reserved for status, never this. */
+export function categoryAccent(category: string): 0 | 1 | 2 | 3 {
+  let h = 0;
+  for (let i = 0; i < category.length; i++) h = (h * 31 + category.charCodeAt(i)) >>> 0;
+  return (h % 4) as 0 | 1 | 2 | 3;
+}

@@ -110,3 +110,12 @@ test("integrations grouping handles empty and missing categories", async () => {
   const g = groupIntegrations([{ host: "x.test", health: "healthy" }]);
   assert.equal(g[0].category, "Other");
 });
+
+test("category accent is stable per name and always within the 4 slots", async () => {
+  const { categoryAccent } = await import("./scanner-view");
+  for (const c of ["Analytics", "Fonts/CDN", "Tag Management", "CRM/Forms", "Other", ""]) {
+    const v = categoryAccent(c);
+    assert.ok(v >= 0 && v <= 3, `${c} → ${v}`);
+    assert.equal(categoryAccent(c), v, "same name must keep the same colour");
+  }
+});
