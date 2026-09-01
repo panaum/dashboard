@@ -3617,13 +3617,42 @@ def _qa_owner_acc() -> dict:
     return dict(_BYPASS)
 
 
+_MONITOR_SCAN_CAP = 200  # newest N scans per site — enough for every derived
+                         # metric (sparkline, delta, streak, fixed-this-month);
+                         # deterministic, unlike the default arbitrary embed cap.
+
+
+def _monitor_dashboard_sync():
+    """Dedicated monitor listing: scans embedded NEWEST-FIRST and capped, so
+    the derived metrics are computed over the real recent history — not the
+    arbitrary 1000-row slice PostgREST returns by default (two sites are
+    already at that cap). Isolated from dashboard_data so LinkSpy's own UI is
+    untouched."""
+    from database import _get_client
+    client = _get_client()
+    rows = (client.table("sites")
+            .select("*, scans(id, scanned_at, total_links, broken_count, "
+                    "dead_cta_count, health_score)")
+            .order("last_scanned_at", desc=True)
+            .order("scanned_at", desc=True, foreign_table="scans")
+            .limit(_MONITOR_SCAN_CAP, foreign_table="scans")
+            .execute())
+    return rows.data or []
+
+
 @app.get("/api/qa-bridge/monitor/dashboard")
 async def qa_monitor_dashboard(authorization: str = Header(default=None),
                                x_api_key: str = Header(default=None)):
+    import asyncio as _asyncio
     _key, err = await _qa_monitor_gate(authorization, x_api_key)
     if err:
         return err
-    return await dashboard_data(_acc=_qa_owner_acc())
+    try:
+        sites = await _asyncio.to_thread(_monitor_dashboard_sync)
+    except Exception as e:
+        print(f"[monitor] dashboard read failed: {e}")
+        return JSONResponse({"error": "dashboard_unavailable"}, status_code=503)
+    return {"sites": sites}
 
 
 @app.get("/api/qa-bridge/monitor/history")
