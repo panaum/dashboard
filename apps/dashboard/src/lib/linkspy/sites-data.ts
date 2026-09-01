@@ -162,3 +162,17 @@ export async function fetchMonitorWatchdog() {
     outages?: number; total_hosts?: number;
   }>("/api/qa-bridge/monitor/watchdog");
 }
+
+export async function fetchIntentMap(siteId: string) {
+  if (!configured()) return null;
+  return getJson<import("./intent-consent-view").IntentMapPayload>(
+    `/api/qa-bridge/monitor/intent-map?registry_site_id=${encodeURIComponent(siteId)}`,
+  );
+}
+
+export async function fetchConsent(siteId: string) {
+  if (!configured()) return null;
+  return getJson<import("./intent-consent-view").ConsentPayload>(
+    `/api/qa-bridge/monitor/consent?registry_site_id=${encodeURIComponent(siteId)}`,
+  );
+}

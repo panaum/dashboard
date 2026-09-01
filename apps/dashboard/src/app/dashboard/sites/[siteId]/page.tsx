@@ -10,9 +10,13 @@ import {
   fetchSiteIncidents,
   fetchSiteVitals,
   fetchSiteHistory,
+  fetchIntentMap,
+  fetchConsent,
   pagesForSite,
   linkspySiteHref,
 } from "@/lib/linkspy/sites-data";
+import { PromiseMap } from "@/components/linkspy/promise-map";
+import { ConsentPanel } from "@/components/linkspy/consent-panel";
 import {
   buildScanView,
   buildIncidentsView,
@@ -41,13 +45,16 @@ export default async function SiteDetailPage({
   const sites = await listRegistrySites();
   const site = sites?.find((s) => s.id === siteId);
 
-  const [presence, scanPayload, incidentsPayload, vitalsPayload, historyPayload, pages] =
+  const [presence, scanPayload, incidentsPayload, vitalsPayload, historyPayload,
+         intentPayload, consentPayload, pages] =
     await Promise.all([
       fetchSitePresence(siteId),
       fetchSiteScan(siteId),
       fetchSiteIncidents(siteId),
       fetchSiteVitals(siteId),
       fetchSiteHistory(siteId),
+      fetchIntentMap(siteId),
+      fetchConsent(siteId),
       pagesForSite(siteId),
     ]);
   const scan = buildScanView(scanPayload);
@@ -142,6 +149,12 @@ export default async function SiteDetailPage({
             )}
           </CardContent>
         </Card>
+
+        {/* Promise map — conversion promises and whether they're honored. */}
+        <PromiseMap payload={intentPayload} />
+
+        {/* Consent behavior — cookie/tracking observation ledger. */}
+        <ConsentPanel payload={consentPayload} />
 
         {/* Latest scan — stored results only; nothing here triggers a scan. */}
         <Card>

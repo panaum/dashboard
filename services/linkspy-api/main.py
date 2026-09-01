@@ -3693,6 +3693,31 @@ async def qa_monitor_fragility(authorization: str = Header(default=None),
     return await fragility_portfolio(_acc=_qa_owner_acc())
 
 
+@app.get("/api/qa-bridge/monitor/intent-map")
+async def qa_monitor_intent_map(registry_site_id: str = Query(...),
+                                authorization: str = Header(default=None),
+                                x_api_key: str = Header(default=None)):
+    """Conversion promises for one site and whether the destinations honor
+    them (spec §3.2). Read-only join over the latest scan; no scan yet is a
+    typed no_scan answer, not an error."""
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    return await intent_map_endpoint(site_id=registry_site_id, _acc=_qa_owner_acc())
+
+
+@app.get("/api/qa-bridge/monitor/consent")
+async def qa_monitor_consent(registry_site_id: str = Query(...),
+                             authorization: str = Header(default=None),
+                             x_api_key: str = Header(default=None)):
+    """Consent/cookie observation ledger for one site (spec §3.5). Carries the
+    verbatim scope_statement; observation only, never a legal conclusion."""
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    return await consent_sessions_list(site_id=registry_site_id, _acc=_qa_owner_acc())
+
+
 @app.post("/api/qa-bridge/monitor/sites")
 async def qa_monitor_add_site(request: Request,
                               authorization: str = Header(default=None),
