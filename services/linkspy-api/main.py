@@ -3501,7 +3501,7 @@ def _qa_checks_gc(now: float):
 
 async def _run_qa_check(check_id: str, url: str, persist: bool = False, owner: str = ""):
     from datetime import datetime, timezone
-    from qa_bridge import summarize_scan
+    from qa_bridge import summarize_scan, summarize_full_scan
     entry = _qa_check_jobs[check_id]
     try:
         async def drive():
@@ -3518,6 +3518,16 @@ async def _run_qa_check(check_id: str, url: str, persist: bool = False, owner: s
                     })
                     summary["health_score"] = data.health_score
                     entry["summary"] = summary
+                    # Rich view for the in-dashboard scanner: all links + the
+                    # four breakdown panels + placement count.
+                    payload = getattr(data, "payload", None) or {}
+                    entry["full"] = summarize_full_scan(
+                        rows,
+                        breakdowns=_breakdowns(data.results or [], url),
+                        health_score=data.health_score,
+                        total_placements=payload.get("total_placements"),
+                    )
+                    entry["full"]["detected_builders"] = getattr(data, "detected_builders", []) or []
                     entry["status"] = "done"
                 elif kind == "error":
                     entry["status"] = "failed"
