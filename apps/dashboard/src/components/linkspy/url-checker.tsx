@@ -30,6 +30,16 @@ export function UrlChecker() {
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
+  // The grid's "Open in scanner" prefills this box (spec §2 overflow menu).
+  useEffect(() => {
+    const onPrefill = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (typeof detail === "string") setUrl(detail);
+    };
+    window.addEventListener("checker:prefill", onPrefill);
+    return () => window.removeEventListener("checker:prefill", onPrefill);
+  }, []);
+
   async function poll(id: string) {
     try {
       const res = await fetch(`/api/linkspy/check?id=${encodeURIComponent(id)}`);

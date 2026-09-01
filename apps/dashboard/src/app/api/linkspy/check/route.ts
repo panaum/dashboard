@@ -14,12 +14,13 @@ export async function POST(req: NextRequest) {
   const denied = await requireApiAuth();
   if (denied) return denied;
   if (!configured()) return NextResponse.json({ unavailable: true });
-  const body = await req.json().catch(() => ({}) as { url?: string });
+  const body = await req.json().catch(() => ({}) as { url?: string; persist?: boolean; email?: string });
   try {
     const res = await fetch(`${base()}/api/qa-bridge/check`, {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ url: body.url ?? "" }),
+      // persist re-scans attribute to the site's real owner (see qa-bridge).
+      body: JSON.stringify({ url: body.url ?? "", persist: body.persist === true, email: body.email ?? "" }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
       cache: "no-store",
     });
