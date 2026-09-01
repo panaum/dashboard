@@ -1,7 +1,9 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { UrlChecker } from "@/components/linkspy/url-checker";
 import { MonitorGrid } from "@/components/linkspy/monitor-grid";
+import { SitesStatRail } from "@/components/linkspy/sites-stat-rail";
 import { WatchdogPanel } from "@/components/linkspy/watchdog-panel";
+import { monitorSummary } from "@/lib/linkspy/monitor-metrics";
 import {
   fetchMonitorDashboard,
   fetchMonitorFragility,
@@ -36,6 +38,8 @@ export default async function SitesPage() {
         title="Sites"
         subtitle="Every monitored property, live from LinkSpy — inside the dashboard."
       />
+
+      {sites.length > 0 && <SitesStatRail summary={monitorSummary(sites, Date.now())} />}
 
       <UrlChecker />
 

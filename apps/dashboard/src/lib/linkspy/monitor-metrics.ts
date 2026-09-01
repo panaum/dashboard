@@ -178,3 +178,33 @@ export function bandChip(band: string | null | undefined): BandChip | null {
   if (band === "brittle") return { label: "Brittle", tone: "warning" };
   return null;
 }
+
+/** Portfolio summary for the Sites stat rail. */
+export type MonitorSummary = {
+  monitored: number;
+  healthy: number;
+  attention: number; // broken OR dead-CTA on the latest scan
+  neverScanned: number;
+  fixed: number; // fixed this month
+  avgHealth: number | null; // mean latest health across scanned sites
+};
+
+export function monitorSummary(sites: DashboardSite[], nowMs: number): MonitorSummary {
+  let healthy = 0, attention = 0, never = 0, healthSum = 0, scanned = 0;
+  for (const s of sites) {
+    const last = latestScan(s);
+    if (!last) { never++; continue; }
+    scanned++;
+    healthSum += last.health_score;
+    if (last.broken_count > 0 || last.dead_cta_count > 0) attention++;
+    else healthy++;
+  }
+  return {
+    monitored: sites.length,
+    healthy,
+    attention,
+    neverScanned: never,
+    fixed: fixedThisMonth(sites, nowMs),
+    avgHealth: scanned ? Math.round(healthSum / scanned) : null,
+  };
+}
