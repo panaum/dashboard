@@ -217,7 +217,12 @@ BUILDER_PROFILES = [
              data_prefixes=["data-show-", "data-de-", "data-page-element"],
              functional_fragments=["submit-form", "open-popup", "next-step",
                                    "show-hide", "back-step", "order-bump"]),
-    _profile("GoHighLevel", ["leadconnectorhq", "highlevel", "msgsndr", "gohighlevel"],
+    # NOT the bare words "gohighlevel"/"highlevel": a landing-page agency that
+    # BUILDS GoHighLevel funnels says so in its copy ("we build done-for-you
+    # gohighlevel funnels"), and its own site is HubSpot/Webflow/whatever — not
+    # GHL. Match only GHL's real infrastructure hosts, which never appear in
+    # prose. (Same lesson as Unbounce and Framer above.)
+    _profile("GoHighLevel", ["leadconnectorhq", "msgsndr", "app.gohighlevel.com"],
              widget_hints=["hl_", "c-modal", "c-timer"],
              data_prefixes=["data-hl"], functional_fragments=["popup"]),
     _profile("Leadpages", ["leadpages", "lpages.co"], data_prefixes=["data-leadbox"]),
