@@ -118,3 +118,29 @@ def test_full_scan_placements_default_to_summed_occurrences():
 def test_full_scan_ignores_non_dict_rows():
     out = summarize_full_scan(["junk", None, _link("broken")])
     assert out["totals"]["links"] == 1
+
+
+# ─── summarize_integrations ──────────────────────────────────────────────────
+from qa_bridge import summarize_integrations, INTEGRATION_FIELDS, INTEGRATION_CAP
+
+
+def test_integrations_whitelist_and_rollup():
+    out = summarize_integrations([
+        {"host": "gtm.test", "category": "Tag manager", "health": "healthy", "secret": "x"},
+        {"host": "down.test", "category": "Chat", "health": "down"},
+        {"host": "odd.test", "category": "Other", "health": "weird"},
+    ])
+    assert out["total"] == 3 and out["down"] == 1 and out["unknown"] == 1
+    assert "secret" not in out["items"][0]
+    assert set(out["items"][0]) <= set(INTEGRATION_FIELDS)
+
+
+def test_integrations_empty_and_junk_safe():
+    assert summarize_integrations(None) == {"items": [], "total": 0, "down": 0, "unknown": 0}
+    out = summarize_integrations(["junk", None, {"host": "a.test", "health": "healthy"}])
+    assert out["total"] == 1
+
+
+def test_integrations_capped():
+    out = summarize_integrations([{"host": f"h{i}.test", "health": "healthy"} for i in range(INTEGRATION_CAP + 20)])
+    assert out["total"] == INTEGRATION_CAP

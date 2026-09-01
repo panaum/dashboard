@@ -60,3 +60,12 @@ test("score ring tone by threshold", () => {
   assert.equal(scoreTone(50), "error");
   assert.equal(scoreTone(undefined), "neutral");
 });
+
+test("integration tone: down red, healthy green, unknown NEVER green", async () => {
+  const { integrationTone } = await import("./scanner-view");
+  assert.equal(integrationTone("down"), "error");
+  assert.equal(integrationTone("healthy"), "success");
+  assert.equal(integrationTone("weird"), "neutral");
+  assert.equal(integrationTone(undefined), "neutral");
+  assert.notEqual(integrationTone("unresponsive"), "success");
+});

@@ -165,3 +165,31 @@ def check_snapshot(entry):
     if not entry:
         return {"status": "not_found"}
     return {k: entry.get(k) for k in CHECK_PUBLIC_FIELDS if entry.get(k) is not None}
+
+
+# ─── Third-party integrations (scanner "Integrations" panel) ─────────────────
+
+INTEGRATION_FIELDS = ("host", "resource_url", "category", "type", "detected_id", "health")
+INTEGRATION_CAP = 100
+
+# Health values the collector emits. Anything unknown renders neutral, never
+# green — an unrecognised state must not read as "verified healthy".
+INTEGRATION_HEALTHY = ("healthy", "ok", "up")
+
+
+def summarize_integrations(rows):
+    """Whitelisted third-party integration records + a health rollup."""
+    items = []
+    down = 0
+    unknown = 0
+    for r in (rows or [])[:INTEGRATION_CAP]:
+        if not isinstance(r, dict):
+            continue
+        item = {k: r.get(k) for k in INTEGRATION_FIELDS if r.get(k) is not None}
+        h = (item.get("health") or "").lower()
+        if h in ("down", "broken", "error"):
+            down += 1
+        elif h not in INTEGRATION_HEALTHY:
+            unknown += 1
+        items.append(item)
+    return {"items": items, "total": len(items), "down": down, "unknown": unknown}
