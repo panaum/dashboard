@@ -242,6 +242,7 @@ function SiteCard({
   const streak = cleanStreakDays(site, now);
   const spark = sparkScores(site);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [dropUp, setDropUp] = useState(false);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -266,9 +267,11 @@ function SiteCard({
   return (
     <Card
       hover
-      className={`group relative flex flex-col gap-3 overflow-hidden p-4 pl-5 ${menuOpen ? "z-20" : ""}`}
+      className={`group relative flex flex-col gap-3 p-4 pl-5 ${menuOpen ? "z-20" : ""}`}
     >
-      <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${rail}`} />
+      {/* The rail rounds itself rather than the card clipping it — a card with
+          overflow-hidden also clips the overflow menu (it was cut off). */}
+      <span aria-hidden className={`absolute inset-y-0 left-0 w-1 rounded-l-xl ${rail}`} />
 
       <div className="flex items-start gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-card-soft text-sm font-semibold text-text-secondary">
@@ -346,7 +349,13 @@ function SiteCard({
             type="button"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            onClick={() => onMenu(!menuOpen)}
+            onClick={(e) => {
+              // Flip upward when there isn't room below — the last row's menu
+              // would otherwise open past the end of the page.
+              const box = e.currentTarget.getBoundingClientRect();
+              setDropUp(window.innerHeight - box.bottom < 160);
+              onMenu(!menuOpen);
+            }}
             className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-card-soft hover:text-text-primary"
           >
             <MoreHorizontal className="size-4" />
@@ -354,7 +363,9 @@ function SiteCard({
           {menuOpen && (
             <div
               role="menu"
-              className="absolute right-0 top-8 z-30 w-44 overflow-hidden rounded-lg border border-border-soft bg-card py-1 shadow-md"
+              className={`absolute right-0 z-30 w-44 overflow-hidden rounded-lg border border-border-soft bg-card py-1 shadow-md ${
+                dropUp ? "bottom-8" : "top-8"
+              }`}
             >
               <Link
                 role="menuitem"
