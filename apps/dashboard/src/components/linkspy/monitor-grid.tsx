@@ -135,8 +135,16 @@ export function MonitorGrid({ initialSites, bands, unavailable }: Props) {
     const res = await fetch(`/api/linkspy/monitor?id=${encodeURIComponent(site.id)}`, {
       method: "DELETE",
     });
-    if (res.ok) setSites((prev) => prev.filter((s) => s.id !== site.id));
-    else setActionError("Could not delete the site.");
+    if (res.ok) {
+      setSites((prev) => prev.filter((s) => s.id !== site.id));
+      return;
+    }
+    // Say WHY: a silent "could not delete" left the operator pressing the
+    // button repeatedly with nothing to act on.
+    const body = await res.json().catch(() => ({}));
+    setActionError(
+      body.detail ? `Could not delete ${displayName(site)} — ${body.detail}` : `Could not delete ${displayName(site)}.`,
+    );
   };
 
   const ordered = sortSites(sites);

@@ -736,16 +736,38 @@ async def snapshot_write_probe(site_url: str, user_email: str) -> dict:
     return await asyncio.to_thread(_snapshot_write_probe_sync, site_url, user_email)
 
 
+# Every table that points at a site, children before parents. Cleaning only a
+# subset left the site undeletable: a foreign key elsewhere (a registry
+# `deliverables` row, in the case that surfaced this) rejects the final delete,
+# so the UI's Delete silently 500s no matter how many times it is pressed.
+# `scans` is last of the site-keyed tables because snapshots/findings/issues
+# reference it.
+_SITE_CHILD_TABLES = (
+    "findings", "scan_snapshots", "link_issues",
+    "tracer_runs", "tracer_enrollments",
+    "consent_sessions", "consent_enrollments",
+    "ad_destinations", "form_contracts", "active_form_optin", "crm_connections",
+    "perf_snapshots", "fragility_scores", "fragility_prefs",
+    "sentinel_incidents", "sentinel_status", "uptime_pings",
+    "vigilance_reports", "deliverables",
+    "scans",
+)
+
+
 def _delete_site_sync(site_id: str):
     client = _get_client()
-    # Remove dependent rows first in case the schema has no ON DELETE CASCADE.
-    # findings reference scan_snapshots, so they go before it.
-    for table in ("findings", "scan_snapshots", "link_issues", "scans"):
+    for table in _SITE_CHILD_TABLES:
         try:
             client.table(table).delete().eq("site_id", site_id).execute()
         except Exception as e:
-            # A project that has not run migrations/001 has no findings table.
+            # A project that has not run every migration lacks some of these;
+            # a missing table is not a failure.
             print(f"[DB] delete from {table} skipped: {e}")
+    # The QA bridge names the column differently.
+    try:
+        client.table("qa_bridge_map").delete().eq("linkspy_site_id", site_id).execute()
+    except Exception as e:
+        print(f"[DB] delete from qa_bridge_map skipped: {e}")
     resp = client.table("sites").delete().eq("id", site_id).execute()
     return resp.data
 
