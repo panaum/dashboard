@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2, ScanEye } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 // X-RAY VIEW — a full-page screenshot of the scanned page with every
 // clickable element boxed on top. Its own headless capture (seconds), so it
@@ -20,6 +20,16 @@ export function ScannerXray({ url }: { url: string }) {
   const [state, setState] = useState<"idle" | "loading" | "done" | "failed">("idle");
   const [xray, setXray] = useState<Xray | null>(null);
   const [showBoxes, setShowBoxes] = useState(true);
+  const started = useRef(false);
+
+  // Opening the tab IS the request. The parent mounts this on first open and
+  // keeps it mounted, so the capture runs once, not on every tab switch.
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function load() {
     setState("loading");
@@ -37,19 +47,7 @@ export function ScannerXray({ url }: { url: string }) {
     }
   }
 
-  if (state === "idle") {
-    return (
-      <button
-        type="button"
-        onClick={load}
-        className="inline-flex items-center gap-2 rounded-lg border border-border-soft bg-card px-3 py-2 text-[13px] font-medium text-text-secondary shadow-xs transition-colors hover:border-accent/40 hover:text-text-primary"
-      >
-        <ScanEye className="size-4" strokeWidth={1.5} /> Load X-ray view
-      </button>
-    );
-  }
-
-  if (state === "loading") {
+  if (state === "idle" || state === "loading") {
     return (
       <p className="flex items-center gap-2 text-[13px] text-text-secondary">
         <Loader2 className="size-4 animate-spin" /> Capturing the page…
