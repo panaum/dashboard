@@ -293,7 +293,7 @@ function SiteCard({
         </div>
         <Link
           href={`/dashboard/sites/${site.id}?u=${encodeURIComponent(site.url)}`}
-          className="mt-1 text-text-muted transition-colors group-hover:text-accent"
+          className="mt-1 text-text-muted transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-accent motion-reduce:transition-none motion-reduce:group-hover:translate-x-0"
           aria-label={`Open ${displayName(site)}`}
         >
           <ChevronRight className="size-4" />

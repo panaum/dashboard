@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ArrowLeft, CheckCircle2, ChevronRight, History, Loader2, ScanSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -9,6 +10,7 @@ import {
   type FullScan, type FullLink, type ScanFilter,
 } from "@/lib/linkspy/scanner-view";
 import { middleTruncate } from "@/lib/linkspy/monitor-metrics";
+import { AnimatedNumber } from "@/components/shared/animated-number";
 import { ScannerXray } from "@/components/linkspy/scanner-xray";
 import { AttributionPanel } from "@/components/linkspy/attribution-panel";
 
@@ -209,21 +211,25 @@ export function UrlChecker({
 function ScoreRing({ score }: { score: number | null | undefined }) {
   const tone = scoreTone(score);
   const pct = typeof score === "number" ? score : 0;
+  const reduce = useReducedMotion();
   const r = 34;
   const c = 2 * Math.PI * r;
   return (
     <svg width="80" height="80" viewBox="0 0 80 80" className="shrink-0" role="img"
          aria-label={typeof score === "number" ? `Health score ${score} of 100` : "No health score"}>
       <circle cx="40" cy="40" r={r} className="stroke-border-soft" strokeWidth="6" fill="none" />
-      <circle
+      <motion.circle
         cx="40" cy="40" r={r} strokeWidth="6" fill="none" strokeLinecap="round"
         className={TONE_STROKE[tone]}
-        strokeDasharray={c} strokeDashoffset={c - (pct / 100) * c}
+        strokeDasharray={c}
+        initial={{ strokeDashoffset: reduce ? c - (pct / 100) * c : c }}
+        animate={{ strokeDashoffset: c - (pct / 100) * c }}
+        transition={{ duration: reduce ? 0 : 0.9, ease: [0.22, 1, 0.36, 1] }}
         transform="rotate(-90 40 40)"
       />
       <text x="40" y="47" textAnchor="middle"
             className={`fill-current font-mono text-[22px] font-semibold tabular-nums ${TONE_CLASS[tone]}`}>
-        {typeof score === "number" ? score : "—"}
+        {typeof score === "number" ? <AnimatedNumber value={score} duration={0.9} /> : "—"}
       </text>
     </svg>
   );
@@ -244,13 +250,19 @@ function Figure({ label, value, tone = "plain" }: {
     <div>
       <div className="text-[10px] font-semibold uppercase tracking-[0.09em] text-text-muted">{label}</div>
       <div className={`mt-1 font-mono text-[19px] font-semibold leading-none tabular-nums ${colour}`}>
-        {value}
+        <AnimatedNumber value={value} duration={0.7} />
       </div>
     </div>
   );
 }
 
+const RISE = {
+  hidden: { opacity: 0, y: 8 },
+  show: { opacity: 1, y: 0 },
+};
+
 function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
+  const reduce = useReducedMotion();
   const [filter, setFilter] = useState<ScanFilter>("all");
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"results" | "integrations" | "attribution" | "xray">("results");
@@ -268,11 +280,17 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
   const shownCount = groups.reduce((n, g) => n + g.links.length, 0);
 
   return (
-    <div className="mt-4">
+    <motion.div
+      className="mt-4"
+      initial={reduce ? false : "hidden"}
+      animate="show"
+      transition={{ staggerChildren: 0.06, delayChildren: 0.02 }}
+    >
       {/* Verdict. The one thing the reader came for, set like it: the score,
           then a headline that answers yes-or-no, then the counts as figures —
           not five numbers buried in a dot-separated sentence. */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-4 border-b border-border-soft pb-5">
+      <motion.div variants={RISE} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        className="flex flex-wrap items-center gap-x-6 gap-y-4 border-b border-border-soft pb-5">
         <ScoreRing score={scan.health_score} />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2 text-lg font-semibold leading-tight text-text-primary">
@@ -302,10 +320,11 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
           <Figure label="Dead CTAs" value={t.dead_cta} tone="warning" />
           <Figure label="Unverifiable" value={t.unverifiable} tone="neutral" />
         </div>
-      </div>
+      </motion.div>
 
       {/* View tabs */}
-      <div className="mt-4 flex items-center gap-1 border-b border-border-soft">
+      <motion.div variants={RISE} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        className="sticky top-0 z-10 mt-4 flex items-center gap-1 border-b border-border-soft bg-card">
         {([
           ["results", `Results (${t.links})`],
           ["integrations", `Integrations (${scan.integrations?.total ?? 0})`],
@@ -316,16 +335,21 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
             key={key}
             type="button"
             onClick={() => openTab(key)}
-            className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-medium transition-colors ${
-              tab === key
-                ? "border-accent text-accent"
-                : "border-transparent text-text-secondary hover:text-text-primary"
+            className={`relative -mb-px px-3 py-2 text-[13px] font-medium transition-colors ${
+              tab === key ? "text-accent" : "text-text-secondary hover:text-text-primary"
             }`}
           >
+            {tab === key && (
+              <motion.span
+                layoutId="scanner-tab-underline"
+                className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent"
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+              />
+            )}
             {label}
           </button>
         ))}
-      </div>
+      </motion.div>
 
       {tab === "integrations" && <IntegrationsPanel scan={scan} />}
       {opened.has("attribution") && (
@@ -376,7 +400,7 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
           <p className="py-8 text-center text-[13px] text-text-muted">No links match.</p>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -385,6 +409,26 @@ const PAGE_SIZE = 25;
 /** One zone as a collapsible section. Zones with something provably wrong open
  *  themselves; clean zones stay shut so a 61-link footer never buries an
  *  8-link CTA block. A search opens everything — you asked to see matches. */
+function CopyableUrl({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      title={`${url}\n(click to copy)`}
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard?.writeText(url).then(
+          () => { setCopied(true); setTimeout(() => setCopied(false), 900); },
+          () => {},
+        );
+      }}
+      className="block max-w-full truncate text-left font-mono text-[11px] text-text-muted transition-colors hover:text-accent"
+    >
+      {copied ? "copied" : middleTruncate(url, 64)}
+    </button>
+  );
+}
+
 function ZoneSection({
   label, links, searching,
 }: {
@@ -424,8 +468,15 @@ function ZoneSection({
         </span>
       </button>
 
+      <AnimatePresence initial={false}>
       {expanded && (
-        <ul className="divide-y divide-border-soft/70">
+        <motion.ul
+          key="rows"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          className="overflow-hidden divide-y divide-border-soft/70">
           {shown.map((l, i) => {
             const badge = bucketBadge(l.bucket);
             const lat = latencyTone(l.response_ms);
@@ -447,9 +498,7 @@ function ZoneSection({
                   <p className="truncate text-[13px] text-text-primary" title={l.anchor_text ?? ""}>
                     {l.anchor_text || <span className="text-text-muted">(no link text)</span>}
                   </p>
-                  <p className="truncate font-mono text-[11px] text-text-muted" title={l.url}>
-                    {middleTruncate(l.url, 64)}
-                  </p>
+                  <CopyableUrl url={l.url} />
                 </div>
                 {l.reason && (
                   <span className="hidden max-w-48 truncate text-[12px] text-error lg:inline" title={l.reason}>
@@ -473,8 +522,9 @@ function ZoneSection({
               </button>
             </li>
           )}
-        </ul>
+        </motion.ul>
       )}
+      </AnimatePresence>
     </section>
   );
 }
