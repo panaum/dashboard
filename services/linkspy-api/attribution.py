@@ -190,6 +190,7 @@ class UrlReport:
     forms: list[dict[str, Any]] = dc_field(default_factory=list)
     tracking: dict[str, list[str]] = dc_field(default_factory=dict)
     storage_hits: list[str] = dc_field(default_factory=list)
+    cookie_attribution: list[str] = dc_field(default_factory=list)
     error: str = ""
 
     def add(self, name: str, status: str, detail: str) -> None:
@@ -291,6 +292,28 @@ def attribution_map(forms: list[dict[str, Any]]) -> dict[str, list[dict[str, Any
     return found
 
 
+# Platforms that attribute a lead WITHOUT a hidden form field: they identify
+# the visitor with their own cookie and resolve the source server-side. Missing
+# UTM fields on such a page is a caveat, not a broken funnel — reporting it as
+# a failure cries wolf, and the reader stops believing the tool.
+COOKIE_ATTRIBUTION: dict[str, tuple[str, ...]] = {
+    "HubSpot": ("hubspotutk", "__hstc"),
+    "Google Ads": ("_gcl_aw", "gcl_aw_p", "_gac_"),
+    "Meta": ("_fbc",),
+    "Google Analytics": ("_ga",),
+}
+
+
+def detect_cookie_attribution(cookies: list[dict[str, Any]]) -> list[str]:
+    """Which platforms are identifying this visitor by cookie."""
+    names = [str(c.get("name", "")).lower() for c in cookies or []]
+    found = []
+    for platform, markers in COOKIE_ATTRIBUTION.items():
+        if any(any(m in n for n in names) for m in markers):
+            found.append(platform)
+    return found
+
+
 def search_storage(storage: dict[str, Any], cookies: list[dict[str, Any]]) -> list[str]:
     """Where a sentinel value turned up outside the form fields."""
     hits: list[str] = []
@@ -369,6 +392,7 @@ def check_url(pw, url: str, timeout_ms: int, delay_s: float) -> UrlReport:
             cookies = []
 
         rep.storage_hits = search_storage(storage, cookies)
+        rep.cookie_attribution = detect_cookie_attribution(cookies)
         rep.forms = second or first
 
         _evaluate(rep, first, second, storage)
@@ -434,9 +458,17 @@ def _evaluate(rep: UrlReport, first: list[dict], second: list[dict],
     missing = [c for c in CANONICAL if c not in second_map]
 
     if not present:
-        rep.add("Attribution fields", FAIL,
-                "no attribution field exists on any form — nothing on this page is "
-                "positioned to carry UTM or click IDs")
+        by_cookie = rep.cookie_attribution
+        if by_cookie:
+            rep.add("Attribution fields", WARN,
+                    "no attribution field on any form — but " + ", ".join(by_cookie) +
+                    " identify the visitor by cookie and resolve the source their own way, "
+                    "so a lead reaching those tools is still attributed. A lead sent anywhere "
+                    "else carries nothing.")
+        else:
+            rep.add("Attribution fields", FAIL,
+                    "no attribution field exists on any form, and no ad platform is tracking "
+                    "the visit either — nothing anywhere is recording where this lead came from")
     else:
         detail = f"{len(present)} of {len(CANONICAL)} present: {', '.join(present)}"
         if missing:

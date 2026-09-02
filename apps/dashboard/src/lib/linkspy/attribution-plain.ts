@@ -16,6 +16,9 @@ export type RawReport = {
   platform_note?: string;
   checks?: RawCheck[];
   storage_hits?: string[];
+  /** Platforms identifying the visitor by cookie, which attribute a lead
+   *  without needing a hidden field. Their presence changes the verdict. */
+  cookie_attribution?: string[];
   forms?: Array<{ frame?: string; fields?: Array<{ name?: string; value?: string; hidden?: boolean }> }>;
 };
 
@@ -32,6 +35,12 @@ export type PlainVerdict = {
 };
 
 const UTM_FIELDS = "utm_source, utm_medium, utm_campaign, gclid";
+
+/** "a, b and c" — a list a person would say out loud. */
+function listWords(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
 
 function check(report: RawReport, name: string): RawCheck | undefined {
   return (report.checks ?? []).find((c) => c.name === name);
@@ -92,45 +101,53 @@ export function plainAttribution(report: RawReport | null | undefined): PlainVer
   const trackers = trackersPresent(report);
   const inBrowser = browserGotIt(report);
 
+  // One line, not a briefing. Anything more precise lives under Technical
+  // detail — nobody reads four bullets in a scanner tab.
   const findings: string[] = [];
   if (forms || embedded) {
     const parts: string[] = [];
-    if (forms) parts.push(`${forms} form${forms === 1 ? "" : "s"} on the page`);
-    if (embedded) parts.push(`${embedded} inside an embedded widget`);
-    findings.push(`We found ${parts.join(", and ")}.`);
+    if (forms) parts.push(`${forms} form${forms === 1 ? "" : "s"}`);
+    if (embedded) parts.push(`${embedded} in an embedded widget`);
+    findings.push(`Checked ${parts.join(", ")}.`);
   }
+  const trackerLine = trackers.length ? `${listWords(trackers)} are installed.` : null;
+  if (trackerLine) findings.push(trackerLine);
 
-  // Case 1 — nothing on the page can hold the campaign information.
-  if (fieldsCheck?.status === "FAIL") {
-    findings.push("None of them has anywhere to record which campaign the visitor came from.");
-    if (trackers.length) {
-      findings.push(
-        `${trackers.join(", ")} did tag the visit, so your reports will still show the traffic — ` +
-        "but the lead itself arrives with nothing attached.");
+  // Case 1 — no field on the page holds the campaign information. Whether
+  // that is a problem depends entirely on whether something else is tracking
+  // the visitor, so the two cases are answered differently.
+  // "Attribution fields" warns for two different reasons: no field at all
+  // (with cookies covering it), or some fields present and a couple missing.
+  // Only the first belongs here — the engine omits "Attribution captured"
+  // entirely when it found no fields, which is the reliable signal.
+  const noFieldsAtAll = !capturedCheck;
+  if (noFieldsAtAll && (fieldsCheck?.status === "FAIL" || fieldsCheck?.status === "WARN")) {
+    const byCookie = report.cookie_attribution ?? [];
+
+    if (byCookie.length) {
+      return {
+        tone: "warning",
+        headline: "The form itself records no campaign data",
+        meaning:
+          `${listWords(byCookie)} track this visitor separately, so a lead that reaches ` +
+          `those tools will still show a source. A lead sent anywhere else — an email ` +
+          `notification, a webhook, a different CRM — arrives with nothing attached.`,
+        findings,
+        fix: [
+          `Only needed if leads go somewhere those tools don't reach: add hidden fields ` +
+          `named ${UTM_FIELDS} and have the page fill them from the page address.`,
+        ],
+      };
     }
-    if (inBrowser) {
-      findings.push(
-        "The campaign details did reach the browser and were stored there, so the information " +
-        "exists — it just never gets attached to the lead. Some setups attach it at the moment " +
-        "of submitting, which we can't confirm without actually submitting the form.");
-    }
+
     return {
       tone: "error",
-      headline: "Leads from this page won't say where they came from",
+      headline: "Nothing is recording where these leads come from",
       meaning:
-        "We visited as someone arriving from an ad. When a visitor fills in this form, the " +
-        "campaign that brought them is not saved with their details — so every lead looks the " +
-        "same no matter which ad, email or post produced it.",
+        "The form has nowhere to store the campaign, and no ad or analytics tool is " +
+        "tracking the visit either — so every lead looks the same whatever produced it.",
       findings,
-      fix: [
-        `Add hidden fields to the form named ${UTM_FIELDS}.`,
-        "Have the page copy those values out of the page address when it loads.",
-        inBrowser
-          ? "If your form tool already stores them (we found them saved in the browser), it may " +
-            "just need connecting to these fields."
-          : "Most page builders have a setting for this — it is usually called hidden fields or " +
-            "URL parameters.",
-      ],
+      fix: [`Add hidden fields named ${UTM_FIELDS} and have the page fill them from the page address.`],
     };
   }
 
