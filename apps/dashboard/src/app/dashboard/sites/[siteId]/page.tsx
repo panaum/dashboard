@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { SiteTabs } from "@/components/linkspy/site-tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -83,7 +84,9 @@ export default async function SiteDetailPage({
         }
       />
 
-      <div className="flex flex-col gap-4">
+      <SiteTabs
+        overview={
+          <>
         {/* Vitals — LinkSpy's own guard cards (SSL / domain / indexability /
             uptime), most urgent first, exactly as its site view sorts them. */}
         {vitals.state === "cards" && (
@@ -143,12 +146,29 @@ export default async function SiteDetailPage({
           </CardContent>
         </Card>
 
-        {/* Promise map — conversion promises and whether they're honored. */}
-        <PromiseMap payload={intentPayload} />
-
-        {/* Consent behavior — cookie/tracking observation ledger. */}
-        <ConsentPanel payload={consentPayload} />
-
+        {presence && presence.open_incidents > 0 && (
+          <p className="flex items-center gap-2 text-[13px] text-text-secondary">
+            <AlertTriangle className="size-4 text-warning" strokeWidth={1.75} />
+            {presence.open_incidents} open incident{presence.open_incidents === 1 ? "" : "s"} in
+            LinkSpy — the “Open in LinkSpy” button above lands on the site’s timeline.
+          </p>
+        )}
+          </>
+        }
+        promises={
+          <>
+            {/* Conversion promises and whether the destinations honor them. */}
+            <PromiseMap payload={intentPayload} />
+          </>
+        }
+        privacy={
+          <>
+            {/* Cookie / tracking observation ledger. */}
+            <ConsentPanel payload={consentPayload} />
+          </>
+        }
+        history={
+          <>
         {/* Scan history — per-scan trend from stored snapshots, newest first. */}
         {history.state === "series" && (
           <Card>
@@ -214,15 +234,9 @@ export default async function SiteDetailPage({
             )}
           </CardContent>
         </Card>
-
-        {presence && presence.open_incidents > 0 && (
-          <p className="flex items-center gap-2 text-[13px] text-text-secondary">
-            <AlertTriangle className="size-4 text-warning" strokeWidth={1.75} />
-            {presence.open_incidents} open incident{presence.open_incidents === 1 ? "" : "s"} in
-            LinkSpy — the “Open in LinkSpy” button above lands on the site’s timeline.
-          </p>
-        )}
-      </div>
+          </>
+        }
+      />
     </div>
   );
 }
