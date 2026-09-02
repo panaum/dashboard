@@ -209,21 +209,44 @@ export function UrlChecker({
 function ScoreRing({ score }: { score: number | null | undefined }) {
   const tone = scoreTone(score);
   const pct = typeof score === "number" ? score : 0;
-  const r = 26;
+  const r = 34;
   const c = 2 * Math.PI * r;
   return (
-    <svg width="64" height="64" viewBox="0 0 64 64" className="shrink-0">
-      <circle cx="32" cy="32" r={r} className="stroke-border-soft" strokeWidth="5" fill="none" />
+    <svg width="80" height="80" viewBox="0 0 80 80" className="shrink-0" role="img"
+         aria-label={typeof score === "number" ? `Health score ${score} of 100` : "No health score"}>
+      <circle cx="40" cy="40" r={r} className="stroke-border-soft" strokeWidth="6" fill="none" />
       <circle
-        cx="32" cy="32" r={r} strokeWidth="5" fill="none" strokeLinecap="round"
+        cx="40" cy="40" r={r} strokeWidth="6" fill="none" strokeLinecap="round"
         className={TONE_STROKE[tone]}
         strokeDasharray={c} strokeDashoffset={c - (pct / 100) * c}
-        transform="rotate(-90 32 32)"
+        transform="rotate(-90 40 40)"
       />
-      <text x="32" y="37" textAnchor="middle" className={`fill-current font-mono text-[16px] font-semibold ${TONE_CLASS[tone]}`}>
+      <text x="40" y="47" textAnchor="middle"
+            className={`fill-current font-mono text-[22px] font-semibold tabular-nums ${TONE_CLASS[tone]}`}>
         {typeof score === "number" ? score : "—"}
       </text>
     </svg>
+  );
+}
+
+/** A labelled figure. Zero recedes to muted; a real count takes its semantic
+ *  colour, so a page with one broken link reads at a glance. */
+function Figure({ label, value, tone = "plain" }: {
+  label: string; value: number; tone?: "error" | "warning" | "neutral" | "plain";
+}) {
+  const colour =
+    tone === "plain" ? "text-text-primary"
+      : value === 0 ? "text-text-muted"
+      : tone === "error" ? "text-error"
+      : tone === "warning" ? "text-warning"
+      : "text-text-secondary";
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.09em] text-text-muted">{label}</div>
+      <div className={`mt-1 font-mono text-[19px] font-semibold leading-none tabular-nums ${colour}`}>
+        {value}
+      </div>
+    </div>
   );
 }
 
@@ -246,33 +269,40 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
 
   return (
     <div className="mt-4">
-      {/* Hero: score ring + verdict + stat line */}
-      <div className="flex items-start gap-4 border-b border-border-soft pb-4">
+      {/* Verdict. The one thing the reader came for, set like it: the score,
+          then a headline that answers yes-or-no, then the counts as figures —
+          not five numbers buried in a dot-separated sentence. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-4 border-b border-border-soft pb-5">
         <ScoreRing score={scan.health_score} />
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 text-sm font-medium text-text-primary">
+          <p className="flex items-center gap-2 text-lg font-semibold leading-tight text-text-primary">
             {allClear ? (
-              <><CheckCircle2 className="size-4 text-success" strokeWidth={1.75} /> All clear — no broken links on watch.</>
+              <><CheckCircle2 className="size-[18px] text-success" strokeWidth={2} /> All clear</>
             ) : (
-              <>{t.broken + t.dead_cta} issue{t.broken + t.dead_cta === 1 ? "" : "s"} found across this page.</>
+              <>{t.broken + t.dead_cta} issue{t.broken + t.dead_cta === 1 ? "" : "s"} found</>
             )}
           </p>
           <p className="mt-1 text-[13px] text-text-secondary">
-            {scan.unique_links ?? t.links} unique links across {scan.placements ?? t.links} placements ·{" "}
-            <span className={t.broken ? "text-error" : "text-text-muted"}>{t.broken} broken</span> ·{" "}
-            <span className={t.dead_cta ? "text-warning" : "text-text-muted"}>{t.dead_cta} dead CTAs</span> ·{" "}
-            <span className="text-text-muted">{t.unverifiable} unverifiable</span>
+            {allClear
+              ? "Every link on this page resolves."
+              : "Broken links and dead CTAs are listed under Results."}
           </p>
           {scan.detected_builders && scan.detected_builders.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {scan.detected_builders.map((b) => <Badge key={b} tone="neutral">{b}</Badge>)}
             </div>
           )}
         </div>
+        {/* Figures, not prose. A zero recedes; a real number carries its
+            semantic colour, so the eye lands on what's wrong. */}
+        <div className="flex flex-wrap items-start gap-x-7 gap-y-3">
+          <Figure label="Links" value={scan.unique_links ?? t.links} />
+          <Figure label="Placements" value={scan.placements ?? t.links} />
+          <Figure label="Broken" value={t.broken} tone="error" />
+          <Figure label="Dead CTAs" value={t.dead_cta} tone="warning" />
+          <Figure label="Unverifiable" value={t.unverifiable} tone="neutral" />
+        </div>
       </div>
-
-      {/* Breakdown panels */}
-      <Breakdowns scan={scan} />
 
       {/* View tabs */}
       <div className="mt-4 flex items-center gap-1 border-b border-border-soft">
@@ -309,7 +339,10 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
         </div>
       )}
 
-      {/* Results table: filter tabs + search */}
+      {/* Results: what the links are, then which ones they are. */}
+      <div className={tab === "results" ? "" : "hidden"}><Breakdowns scan={scan} /></div>
+
+      {/* Filter + search. One row, lighter than the tabs above it. */}
       <div className={`mt-4 flex flex-wrap items-center gap-2 ${tab === "results" ? "" : "hidden"}`}>
         {([["all", "All"], ["working", "Working"], ["broken", "Broken"], ["unverifiable", "Unverifiable"]] as const).map(
           ([key, label]) => (
