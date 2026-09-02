@@ -112,15 +112,15 @@ export default async function SiteDetailPage({
           </div>
         )}
 
-        {/* Production signals — same wire read as the checklist strip. */}
+        {/* Needs attention — live problems only; empty when nothing is wrong. */}
         <Card>
           <CardHeader>
-            <CardTitle>Production signals</CardTitle>
+            <CardTitle>Needs attention</CardTitle>
           </CardHeader>
           <CardContent>
             {!presence ? (
               <p className="text-[13px] text-text-secondary">
-                LinkSpy did not answer — signals are unavailable right now.
+                LinkSpy did not answer — this check is unavailable right now.
               </p>
             ) : presence.signals.length === 0 ? (
               <p className="flex items-center gap-2 text-[13px] text-text-secondary">
