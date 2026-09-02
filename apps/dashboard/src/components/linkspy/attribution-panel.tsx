@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, Loader2, Target } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 // ATTRIBUTION CHECK — will this page's forms carry UTM and click ids into the
@@ -36,6 +36,17 @@ const OUTCOME_COPY: Record<string, string> = {
 export function AttributionPanel({ url }: { url: string }) {
   const [state, setState] = useState<"idle" | "loading" | "done" | "failed">("idle");
   const [report, setReport] = useState<Report | null>(null);
+  const started = useRef(false);
+
+  // Opening the tab IS the request — don't make the reader ask twice. The
+  // parent mounts this only on first open and keeps it mounted afterwards,
+  // so switching tabs never re-runs the check.
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function run() {
     setState("loading");
@@ -54,31 +65,19 @@ export function AttributionPanel({ url }: { url: string }) {
     }
   }
 
-  if (state === "idle") {
+  if (state === "idle" || state === "loading") {
     return (
       <div className="mt-4">
-        <p className="mb-3 max-w-2xl text-[13px] text-text-secondary">
-          Loads this page as a visitor arriving from a campaign and checks whether the forms
-          actually carry the UTM and click ids into the lead. A hidden field that exists but
-          stays empty is the failure — the form works, leads arrive, and nobody can tell where
-          they came from.
+        <p className="mb-3 flex items-center gap-2 text-[13px] text-text-secondary">
+          <Loader2 className="size-4 animate-spin" />
+          Opening the page as a visitor arriving from a campaign…
         </p>
-        <button
-          type="button"
-          onClick={run}
-          className="inline-flex items-center gap-2 rounded-lg border border-border-soft bg-card px-3 py-2 text-[13px] font-medium text-text-secondary shadow-xs transition-colors hover:border-accent/40 hover:text-text-primary"
-        >
-          <Target className="size-4" strokeWidth={1.5} /> Run attribution check
-        </button>
+        <p className="max-w-2xl text-[12px] text-text-muted">
+          We attach test UTM and click-id parameters and read the form&apos;s hidden fields back.
+          A field that exists but stays empty is the failure — the form works, leads arrive, and
+          nobody can tell where they came from.
+        </p>
       </div>
-    );
-  }
-
-  if (state === "loading") {
-    return (
-      <p className="mt-4 flex items-center gap-2 text-[13px] text-text-secondary">
-        <Loader2 className="size-4 animate-spin" /> Loading the page with test parameters…
-      </p>
     );
   }
 

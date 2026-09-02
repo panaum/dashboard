@@ -231,6 +231,13 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
   const [filter, setFilter] = useState<ScanFilter>("all");
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"results" | "integrations" | "attribution" | "xray">("results");
+  // Attribution and X-ray each cost a fresh headless page load, so they mount
+  // on FIRST open and stay mounted — switching tabs must not re-run them.
+  const [opened, setOpened] = useState<Set<string>>(() => new Set(["results"]));
+  const openTab = (key: "results" | "integrations" | "attribution" | "xray") => {
+    setTab(key);
+    setOpened((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  };
   const links = scan.links ?? [];
   const t = scan.totals ?? { links: 0, ok: 0, broken: 0, unverifiable: 0, dead_cta: 0 };
   const allClear = t.broken === 0 && t.dead_cta === 0;
@@ -278,7 +285,7 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
           <button
             key={key}
             type="button"
-            onClick={() => setTab(key)}
+            onClick={() => openTab(key)}
             className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-medium transition-colors ${
               tab === key
                 ? "border-accent text-accent"
@@ -291,8 +298,16 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
       </div>
 
       {tab === "integrations" && <IntegrationsPanel scan={scan} />}
-      {tab === "attribution" && <AttributionPanel url={url} />}
-      {tab === "xray" && <div className="mt-4"><ScannerXray url={url} /></div>}
+      {opened.has("attribution") && (
+        <div className={tab === "attribution" ? "" : "hidden"}>
+          <AttributionPanel url={url} />
+        </div>
+      )}
+      {opened.has("xray") && (
+        <div className={`mt-4 ${tab === "xray" ? "" : "hidden"}`}>
+          <ScannerXray url={url} />
+        </div>
+      )}
 
       {/* Results table: filter tabs + search */}
       <div className={`mt-4 flex flex-wrap items-center gap-2 ${tab === "results" ? "" : "hidden"}`}>
