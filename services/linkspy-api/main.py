@@ -3708,6 +3708,28 @@ async def qa_monitor_fragility(authorization: str = Header(default=None),
     return await fragility_portfolio(_acc=_qa_owner_acc())
 
 
+@app.get("/api/qa-bridge/monitor/attribution")
+async def qa_monitor_attribution(url: str = Query(...),
+                                 authorization: str = Header(default=None),
+                                 x_api_key: str = Header(default=None)):
+    """Will this page's forms actually carry UTM and click ids into the lead?
+
+    Loads the page with test attribution parameters attached and reads the
+    hidden field values back — twice, because "empty on load, filled later"
+    is its own finding. Its own headless load (seconds), so it is on-demand
+    and never part of a scan. Read-only: it never submits a form."""
+    import asyncio as _asyncio
+    from attribution import check_attribution
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    try:
+        return await _asyncio.to_thread(check_attribution, url)
+    except Exception as e:
+        print(f"[monitor] attribution check failed for {url}: {e}")
+        return JSONResponse({"error": "attribution_unavailable"}, status_code=503)
+
+
 @app.get("/api/qa-bridge/monitor/stored-scan")
 async def qa_monitor_stored_scan(registry_site_id: str = Query(...),
                                  authorization: str = Header(default=None),
