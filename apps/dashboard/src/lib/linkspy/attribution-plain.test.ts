@@ -8,6 +8,7 @@ const REAL_FAIL: RawReport = {
   platform: "WordPress",
   platform_note: "no form plugin recognised — hidden field naming is unknown; also present: HubSpot",
   storage_hits: ["cookie[_gcl_aw]", "cookie[_fbc]", "localStorage[__storejs_convertbox_query_strings]"],
+  cookie_attribution: ["HubSpot", "Google Ads", "Meta"],
   checks: [
     { name: "Platform", status: "INFO", detail: "WordPress (…)" },
     { name: "Forms found", status: "PASS", detail: "1 form(s), 2 inside an iframe, 2 input(s) outside any <form>" },
@@ -16,11 +17,28 @@ const REAL_FAIL: RawReport = {
   ],
 };
 
-test("the failing case leads with what it means for the reader", () => {
+test("no form fields, but a platform tracks by cookie: a caveat, not a failure", () => {
+  // Verified on apexure.com: hubspotutk, _gcl_aw and _fbc are all set, so
+  // HubSpot and Google Ads DO attribute the lead. Calling that broken cries
+  // wolf, and the reader stops believing the tool.
   const v = plainAttribution(REAL_FAIL);
+  assert.equal(v.tone, "warning", "must not be reported as a failure");
+  assert.equal(v.headline, "The form itself records no campaign data");
+  assert.match(v.meaning, /HubSpot, Google Ads and Meta track this visitor separately/);
+  assert.match(v.meaning, /sent anywhere else/, "the real risk is named");
+});
+
+test("no fields AND no tracking anywhere is the genuine failure", () => {
+  const v = plainAttribution({
+    outcome: "ok",
+    cookie_attribution: [],
+    checks: [
+      { name: "Forms found", status: "PASS", detail: "1 form(s)" },
+      { name: "Attribution fields", status: "FAIL", detail: "no attribution field exists" },
+    ],
+  });
   assert.equal(v.tone, "error");
-  assert.equal(v.headline, "Leads from this page won't say where they came from");
-  assert.match(v.meaning, /campaign that brought them is not saved/);
+  assert.match(v.headline, /Nothing is recording where these leads come from/);
 });
 
 test("no jargon survives into the reader-facing copy", () => {
@@ -33,24 +51,27 @@ test("no jargon survives into the reader-facing copy", () => {
 
 test("form counts are pluralised properly, not '1 form(s)'", () => {
   const v = plainAttribution(REAL_FAIL);
-  assert.ok(v.findings.some((f) => f.includes("1 form on the page")), v.findings.join(" | "));
+  assert.ok(v.findings.some((f) => f.includes("1 form")), v.findings.join(" | "));
   assert.ok(!v.findings.join(" ").includes("form(s)"));
 });
 
-test("trackers are named as products, and the nuance is explained", () => {
+test("the reader is not handed an essay", () => {
   const v = plainAttribution(REAL_FAIL);
-  const prose = v.findings.join(" ");
-  assert.match(prose, /Google Tag Manager/);
-  assert.match(prose, /Google Analytics/);
-  assert.match(prose, /Meta pixel/);
-  assert.match(prose, /reports will still show the traffic/);
-  assert.match(prose, /did reach the browser/, "storage hits become a sentence, not a cookie dump");
+  assert.ok(v.findings.length <= 2, `too many bullets: ${v.findings.length}`);
+  assert.ok(v.fix.length <= 2, `too many steps: ${v.fix.length}`);
+  assert.ok(v.meaning.length < 260, "the explanation must stay a couple of sentences");
 });
 
-test("the failing case tells the reader what to do", () => {
+test("trackers are named as products, never as variables", () => {
+  const prose = plainAttribution(REAL_FAIL).findings.join(" ");
+  assert.match(prose, /Google Tag Manager/);
+  assert.match(prose, /Meta pixel/);
+});
+
+test("the fix names the actual fields, and says when it is even needed", () => {
   const v = plainAttribution(REAL_FAIL);
-  assert.ok(v.fix.length > 0);
-  assert.match(v.fix[0], /utm_source/, "the fix names the actual fields to add");
+  assert.match(v.fix[0], /utm_source/);
+  assert.match(v.fix[0], /Only needed if/, "don't demand work that isn't required");
 });
 
 test("fields present but empty is its own, nastier verdict", () => {
