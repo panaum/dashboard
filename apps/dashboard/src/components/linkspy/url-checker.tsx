@@ -10,6 +10,7 @@ import {
 } from "@/lib/linkspy/scanner-view";
 import { middleTruncate } from "@/lib/linkspy/monitor-metrics";
 import { ScannerXray } from "@/components/linkspy/scanner-xray";
+import { AttributionPanel } from "@/components/linkspy/attribution-panel";
 
 // IN-DASHBOARD SCANNER — the full LinkSpy scanner, no redirect: score ring,
 // stat strip, breakdown panels, and every link grouped by zone with filter +
@@ -229,7 +230,7 @@ function ScoreRing({ score }: { score: number | null | undefined }) {
 function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
   const [filter, setFilter] = useState<ScanFilter>("all");
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"results" | "integrations" | "xray">("results");
+  const [tab, setTab] = useState<"results" | "integrations" | "attribution" | "xray">("results");
   const links = scan.links ?? [];
   const t = scan.totals ?? { links: 0, ok: 0, broken: 0, unverifiable: 0, dead_cta: 0 };
   const allClear = t.broken === 0 && t.dead_cta === 0;
@@ -271,6 +272,7 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
         {([
           ["results", `Results (${t.links})`],
           ["integrations", `Integrations (${scan.integrations?.total ?? 0})`],
+          ["attribution", "Attribution"],
           ["xray", "X-ray view"],
         ] as const).map(([key, label]) => (
           <button
@@ -289,6 +291,7 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
       </div>
 
       {tab === "integrations" && <IntegrationsPanel scan={scan} />}
+      {tab === "attribution" && <AttributionPanel url={url} />}
       {tab === "xray" && <div className="mt-4"><ScannerXray url={url} /></div>}
 
       {/* Results table: filter tabs + search */}

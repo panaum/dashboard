@@ -31,6 +31,12 @@ const VIEWS: Record<string, (p: URLSearchParams) => string | null> = {
     if (!id) return null;
     return `/api/qa-bridge/monitor/stored-scan?registry_site_id=${encodeURIComponent(id)}`;
   },
+  // On-demand: its own headless load with test params attached.
+  attribution: (p) => {
+    const url = p.get("url");
+    if (!url) return null;
+    return `/api/qa-bridge/monitor/attribution?url=${encodeURIComponent(url)}`;
+  },
   // On-demand: its own headless capture, so it is never part of a scan.
   xray: (p) => {
     const url = p.get("url");
@@ -49,7 +55,10 @@ export async function GET(req: NextRequest) {
   if (!path) return NextResponse.json({ error: "unknown view" }, { status: 400 });
   // X-ray runs a fresh headless capture + full-page screenshot — seconds, not
   // milliseconds — so it gets its own budget rather than the read timeout.
-  return forward(path, {}, name === "xray" ? XRAY_TIMEOUT_MS : TIMEOUT_MS);
+  // X-ray and the attribution check each load the page in a real browser —
+  // seconds, not milliseconds — so they get their own budget.
+  const slow = name === "xray" || name === "attribution";
+  return forward(path, {}, slow ? XRAY_TIMEOUT_MS : TIMEOUT_MS);
 }
 
 export async function POST(req: NextRequest) {
