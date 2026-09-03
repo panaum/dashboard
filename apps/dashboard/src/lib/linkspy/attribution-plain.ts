@@ -42,8 +42,21 @@ function listWords(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+/** Check names differ between the two engines that have fed this panel
+ *  ("Attribution fields" vs "Attribution capture", "Tracking present" vs
+ *  "Tracking tags"). Match on any known alias so a rename cannot silently
+ *  turn a real failure into a clean bill of health. */
+const ALIASES: Record<string, string[]> = {
+  "Attribution fields": ["Attribution fields", "Attribution capture"],
+  "Attribution captured": ["Attribution captured", "Attribution capture"],
+  "Forms found": ["Forms found"],
+  "Tracking present": ["Tracking present", "Tracking tags"],
+  "Population timing": ["Population timing"],
+};
+
 function check(report: RawReport, name: string): RawCheck | undefined {
-  return (report.checks ?? []).find((c) => c.name === name);
+  const names = ALIASES[name] ?? [name];
+  return (report.checks ?? []).find((c) => names.includes(c.name));
 }
 
 /** Count the forms the engine found, from its own summary line. */
@@ -120,7 +133,13 @@ export function plainAttribution(report: RawReport | null | undefined): PlainVer
   // (with cookies covering it), or some fields present and a couple missing.
   // Only the first belongs here — the engine omits "Attribution captured"
   // entirely when it found no fields, which is the reliable signal.
-  const noFieldsAtAll = !capturedCheck;
+  const detail = (fieldsCheck?.detail ?? "").toLowerCase();
+  const saysEmpty = detail.includes("stayed empty") || detail.includes("but they arrived empty");
+  const saysNoField = detail.includes("no attribution field");
+  // One engine emits a separate "Attribution captured" check; the other folds
+  // both into one line. Trust an explicit "no attribution field" over the
+  // absence of a second check.
+  const noFieldsAtAll = saysNoField || (!capturedCheck && !saysEmpty && !detail.includes("captured"));
   if (noFieldsAtAll && (fieldsCheck?.status === "FAIL" || fieldsCheck?.status === "WARN")) {
     const byCookie = report.cookie_attribution ?? [];
 
@@ -152,7 +171,7 @@ export function plainAttribution(report: RawReport | null | undefined): PlainVer
   }
 
   // Case 2 — the boxes exist, and they arrive empty. The nastiest one.
-  if (capturedCheck?.status === "FAIL") {
+  if (capturedCheck?.status === "FAIL" || (saysEmpty && fieldsCheck?.status === "FAIL")) {
     findings.push("The form has the right boxes, but they arrived empty.");
     if (inBrowser) {
       findings.push("The campaign details did reach the browser, so the information is available — " +
@@ -190,7 +209,8 @@ export function plainAttribution(report: RawReport | null | undefined): PlainVer
 
   // Case 4 — working.
   if (fieldsCheck?.status === "WARN") {
-    const missing = /missing:\s*([a-z_, ]+)/i.exec(fieldsCheck.detail)?.[1]?.trim();
+    // Two engines, two wordings: "missing: x, y" and "not present: x, y".
+    const missing = /(?:missing|not present):\s*([a-z_, ]+)/i.exec(fieldsCheck.detail)?.[1]?.trim();
     findings.push("The campaign details were recorded correctly.");
     if (missing) {
       findings.push(`Not recorded: ${missing}. ` +

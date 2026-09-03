@@ -135,3 +135,58 @@ test("platform drops the parenthetical apparatus, and unknown shows nothing", ()
   assert.equal(plainPlatform({ platform: "unknown" }), null);
   assert.equal(plainPlatform(null), null);
 });
+
+// ── Pagecheck's engine renames the checks; the verdict must survive that ────
+const PAGECHECK_NO_FIELDS: RawReport = {
+  outcome: "ok", platform: "WordPress", cookie_attribution: ["HubSpot", "Google Ads"],
+  checks: [
+    { name: "Forms found", status: "PASS", detail: "2 forms, 1 inside an embedded widget" },
+    { name: "Attribution capture", status: "WARN",
+      detail: "no attribution field on any form, but HubSpot, Google Ads identify the visitor by cookie" },
+    { name: "Tracking tags", status: "PASS", detail: "GTM: GTM-P593C44" },
+  ],
+};
+
+test("pagecheck naming still produces the cookie-attribution caveat", () => {
+  const v = plainAttribution(PAGECHECK_NO_FIELDS);
+  assert.equal(v.tone, "warning");
+  assert.equal(v.headline, "The form itself records no campaign data");
+});
+
+test("pagecheck naming still catches genuinely empty fields", () => {
+  const v = plainAttribution({
+    outcome: "ok",
+    checks: [
+      { name: "Forms found", status: "PASS", detail: "1 form" },
+      { name: "Attribution capture", status: "FAIL",
+        detail: "field(s) exist but stayed empty: utm_source, gclid — the form submits, leads arrive" },
+    ],
+  });
+  assert.equal(v.tone, "error");
+  assert.equal(v.headline, "The campaign details aren't reaching the form");
+});
+
+test("pagecheck naming still reports a working page as working", () => {
+  const v = plainAttribution({
+    outcome: "ok",
+    checks: [
+      { name: "Forms found", status: "PASS", detail: "1 form" },
+      { name: "Attribution capture", status: "WARN", detail: "captured; not present: gclid, fbclid" },
+    ],
+  });
+  assert.equal(v.tone, "success");
+  assert.match(v.findings.join(" "), /exact ad click/);
+});
+
+test("pagecheck naming: no fields anywhere and no tracking is still a failure", () => {
+  const v = plainAttribution({
+    outcome: "ok", cookie_attribution: [],
+    checks: [
+      { name: "Forms found", status: "PASS", detail: "5 forms" },
+      { name: "Attribution capture", status: "FAIL",
+        detail: "no attribution field on any form, and no ad or analytics platform is tracking the visit" },
+    ],
+  });
+  assert.equal(v.tone, "error");
+  assert.match(v.headline, /Nothing is recording/);
+});

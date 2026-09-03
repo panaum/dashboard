@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pagecheck</title>
+<style>
+  /* One red, one amber, one green. Everything else is neutral, and whitespace
+     does the grouping rather than borders. */
+  :root {
+    --bg:#ffffff; --ink:#12131a; --dim:#5b6070; --faint:#878d9c;
+    --rule:#e3e5ea; --sunk:#f6f7f9;
+    --red:#c8262f; --amber:#8a5d00; --green:#12703a;
+    --red-bg:#fdf1f1; --amber-bg:#fdf6e7; --green-bg:#eff8f2;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0e1014; --ink:#e8eaf0; --dim:#a2a9b8; --faint:#767d8d;
+      --rule:#23262e; --sunk:#161920;
+      --red:#ff7b72; --amber:#e3a72c; --green:#4ac97e;
+      --red-bg:#25161a; --amber-bg:#231d10; --green-bg:#12211a;
+    }
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 var(--sans);
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 20px 80px}
+
+  header{display:flex;align-items:baseline;gap:10px;margin-bottom:18px}
+  h1{font:600 15px/1 var(--sans);letter-spacing:.02em;margin:0}
+  header span{font:11px/1 var(--mono);color:var(--faint)}
+
+  /* Input: one field, one button, nothing competing. */
+  form{display:flex;gap:8px;align-items:flex-start}
+  textarea{flex:1;min-height:44px;max-height:180px;padding:11px 12px;resize:vertical;
+    font:13px/1.5 var(--mono);color:var(--ink);background:var(--bg);
+    border:1px solid var(--rule);border-radius:4px}
+  textarea:focus{outline:2px solid var(--ink);outline-offset:-1px;border-color:transparent}
+  button{font:600 13px/1 var(--sans);padding:13px 18px;border:0;border-radius:4px;
+    background:var(--ink);color:var(--bg);cursor:pointer}
+  button:disabled{opacity:.45;cursor:default}
+  .hint{margin:8px 0 0;font-size:12px;color:var(--faint)}
+
+  /* Live status: name the check and the pass, never a bare spinner. */
+  #log{margin-top:20px;font:12px/1.7 var(--mono);color:var(--dim);
+       border-left:2px solid var(--rule);padding-left:12px}
+  #log b{color:var(--ink);font-weight:500}
+
+  /* Verdict band — readable across a desk. */
+  .verdict{margin-top:22px;padding:16px 18px;border-radius:4px;display:flex;
+    align-items:baseline;gap:14px;flex-wrap:wrap}
+  .verdict.pass{background:var(--green-bg)} .verdict.fail{background:var(--red-bg)}
+  .verdict strong{font:700 26px/1 var(--sans);letter-spacing:-.01em}
+  .verdict.pass strong{color:var(--green)} .verdict.fail strong{color:var(--red)}
+  .verdict .u{font:12px/1.4 var(--mono);color:var(--dim);word-break:break-all;flex:1;min-width:200px}
+  .verdict .plat{font:11px/1 var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+
+  section{margin-top:26px}
+  h2{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.09em;
+     color:var(--faint);margin:0 0 10px}
+
+  .row{padding:11px 0;border-top:1px solid var(--rule)}
+  .row:first-of-type{border-top:0}
+  .row-head{display:flex;gap:12px;align-items:baseline}
+  .tag{font:600 10px/1.6 var(--mono);letter-spacing:.06em;padding:1px 6px;border-radius:3px;flex:none}
+  .t-FAIL{color:var(--red);background:var(--red-bg)}
+  .t-WARN{color:var(--amber);background:var(--amber-bg)}
+  .t-PASS{color:var(--green);background:var(--green-bg)}
+  .t-INFO{color:var(--faint);background:var(--sunk)}
+  .row-name{font-weight:600;flex:none;min-width:132px}
+  .row-detail{color:var(--dim);flex:1}
+  /* Evidence is the product, not a modal. */
+  .ev{margin:8px 0 0 calc(132px + 12px + 46px);font:12px/1.7 var(--mono);
+      color:var(--dim);word-break:break-all}
+  .ev div{padding:1px 0}
+  @media (max-width:640px){ .ev{margin-left:0} .row-name{min-width:0} }
+
+  details.passes summary{cursor:pointer;color:var(--dim);font-size:13px;
+    list-style:none;padding:11px 0;border-top:1px solid var(--rule)}
+  details.passes summary::-webkit-details-marker{display:none}
+  details.passes summary::before{content:"▸ ";color:var(--faint)}
+  details.passes[open] summary::before{content:"▾ "}
+
+  /* Consent divergence: the signature finding, given its own shape. */
+  .diff{width:100%;border-collapse:collapse;font:12px/1.6 var(--mono)}
+  .diff th{text-align:left;font:600 10px/1.6 var(--sans);text-transform:uppercase;
+    letter-spacing:.07em;color:var(--faint);padding:6px 10px 6px 0;border-bottom:1px solid var(--rule)}
+  .diff td{padding:7px 10px 7px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+  .diff tr.differs td{background:var(--amber-bg)}
+  .diff .empty{color:var(--red)}
+
+  /* Batch: one row per URL, expand inline, never navigate. */
+  .batch{border-top:1px solid var(--rule)}
+  .batch-row{display:flex;gap:12px;align-items:baseline;padding:11px 0;
+    border-bottom:1px solid var(--rule);cursor:pointer}
+  .batch-row .u{font:12px/1.5 var(--mono);flex:1;word-break:break-all}
+  .batch-row .meta{font:11px/1.5 var(--mono);color:var(--faint);flex:none}
+  .batch-detail{padding:4px 0 18px 0}
+
+  .copy{margin-top:22px;background:transparent;color:var(--dim);border:1px solid var(--rule);
+    font-weight:500;padding:8px 12px}
+  .copy:hover{color:var(--ink)}
+  .err{color:var(--red);font-size:13px;margin-top:14px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Pagecheck</h1>
+    <span>will this page capture leads and attribution?</span>
+  </header>
+
+  <form id="f">
+    <textarea id="urls" rows="1" spellcheck="false"
+      placeholder="https://example.com/landing-page &#10;one per line for several"></textarea>
+    <button id="go" type="submit">Check</button>
+  </form>
+  <p class="hint">Loads each page twice — accepting and ignoring the cookie banner — and reads
+     the form's hidden fields back. Never submits anything.</p>
+
+  <div id="log" hidden></div>
+  <div id="out"></div>
+  <p id="err" class="err" hidden></p>
+</div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const el = (tag, cls, text) => { const n = document.createElement(tag);
+  if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+
+const form = $("#f"), input = $("#urls"), go = $("#go");
+const logBox = $("#log"), out = $("#out"), errBox = $("#err");
+let reports = [];
+
+form.addEventListener("submit", (e) => { e.preventDefault(); run(); });
+
+function run() {
+  const urls = input.value.split("\n").map((s) => s.trim()).filter(Boolean);
+  if (!urls.length) return;
+  reports = []; out.innerHTML = ""; errBox.hidden = true;
+  logBox.hidden = false; logBox.innerHTML = "";
+  go.disabled = true; go.textContent = "Checking…";
+
+  const qs = urls.map((u) => "u=" + encodeURIComponent(u)).join("&");
+  const es = new EventSource("/check/stream?" + qs);
+
+  es.addEventListener("progress", (m) => {
+    const d = JSON.parse(m.data);
+    const line = el("div");
+    line.append(el("b", null, short(d.url) + " "), document.createTextNode(d.message));
+    logBox.append(line);
+    logBox.scrollTop = logBox.scrollHeight;
+  });
+  es.addEventListener("result", (m) => {
+    const d = JSON.parse(m.data);
+    reports.push(d.report);
+    render();
+  });
+  es.addEventListener("error", (m) => {
+    try { errBox.textContent = JSON.parse(m.data).message; errBox.hidden = false; } catch (_) {}
+  });
+  es.addEventListener("done", () => { finish(es); });
+  es.onerror = () => { if (!reports.length) { errBox.textContent =
+      "Lost the connection to the checker."; errBox.hidden = false; } finish(es); };
+}
+
+function finish(es) {
+  es.close(); go.disabled = false; go.textContent = "Check";
+  logBox.hidden = true;
+}
+
+const short = (u) => u.replace(/^https?:\/\//, "").slice(0, 46);
+const OUTCOME = { load_failed: "Page did not load", timeout: "Page timed out",
+                  no_form: "No form on this page" };
+
+function render() {
+  out.innerHTML = "";
+  if (reports.length > 1) { renderBatch(); } else if (reports.length === 1) {
+    out.append(renderOne(reports[0]));
+  }
+  const copy = el("button", "copy", "Copy report");
+  copy.type = "button";
+  copy.addEventListener("click", () => {
+    navigator.clipboard.writeText(plaintext()).then(() => {
+      copy.textContent = "Copied"; setTimeout(() => (copy.textContent = "Copy report"), 900);
+    }, () => {});
+  });
+  out.append(copy);
+}
+
+function renderBatch() {
+  const wrapper = el("div", "batch");
+  reports.forEach((r) => {
+    const row = el("div", "batch-row");
+    const bad = (r.counts && r.counts.FAIL) || 0, warn = (r.counts && r.counts.WARN) || 0;
+    row.append(el("span", "tag t-" + (r.failed ? "FAIL" : "PASS"), r.failed ? "FAIL" : "PASS"));
+    row.append(el("span", "u", short(r.url)));
+    row.append(el("span", "meta",
+      (r.platform && r.platform !== "unknown" ? r.platform + " · " : "") +
+      (bad ? bad + " failed" : "no failures") + (warn ? " · " + warn + " warn" : "")));
+    const detail = el("div", "batch-detail"); detail.hidden = true;
+    row.addEventListener("click", () => {
+      if (!detail.firstChild) detail.append(renderOne(r, true));
+      detail.hidden = !detail.hidden;
+    });
+    wrapper.append(row, detail);
+  });
+  out.append(wrapper);
+}
+
+function renderOne(r, compact) {
+  const box = el("div");
+  const checks = r.checks || [];
+  const fails = checks.filter((c) => c.status === "FAIL");
+  const warns = checks.filter((c) => c.status === "WARN");
+  const rest = checks.filter((c) => c.status === "PASS" || c.status === "INFO");
+
+  if (!compact) {
+    const v = el("div", "verdict " + (r.failed ? "fail" : "pass"));
+    v.append(el("strong", null, r.failed
+      ? (fails.length ? fails.length + (fails.length === 1 ? " issue" : " issues") : "Failed")
+      : "Pass"));
+    v.append(el("span", "u", r.url));
+    if (r.platform && r.platform !== "unknown") v.append(el("span", "plat", r.platform));
+    box.append(v);
+  }
+
+  if (r.outcome && r.outcome !== "ok" && OUTCOME[r.outcome]) {
+    const s = el("section");
+    s.append(el("h2", null, "Outcome"),
+             el("div", "row-detail", OUTCOME[r.outcome] + (r.error ? " — " + r.error : "")));
+    box.append(s);
+  }
+
+  if (fails.length) box.append(group("Failures", fails));
+  if (warns.length) box.append(group("Warnings", warns));
+
+  const diff = (r.consent_diff && r.consent_diff.fields_differ) || {};
+  if (Object.keys(diff).length) box.append(consentTable(diff));
+
+  if (rest.length) {
+    const s = el("section");
+    const d = el("details", "passes");
+    const sum = el("summary", null,
+      rest.length + " check" + (rest.length === 1 ? "" : "s") + " passed or informational");
+    d.append(sum);
+    rest.forEach((c) => d.append(row(c)));
+    s.append(d); box.append(s);
+  }
+  return box;
+}
+
+function group(title, list) {
+  const s = el("section");
+  s.append(el("h2", null, title));
+  list.forEach((c) => s.append(row(c)));
+  return s;
+}
+
+function row(c) {
+  const r = el("div", "row");
+  const head = el("div", "row-head");
+  head.append(el("span", "tag t-" + c.status, c.status));
+  head.append(el("span", "row-name", c.name));
+  head.append(el("span", "row-detail", c.detail));
+  r.append(head);
+  if (c.evidence && c.evidence.length) {
+    const ev = el("div", "ev");
+    c.evidence.forEach((line) => ev.append(el("div", null, line)));
+    r.append(ev);
+  }
+  return r;
+}
+
+function consentTable(diff) {
+  const s = el("section");
+  s.append(el("h2", null, "Consent divergence"));
+  s.append(Object.assign(el("p", "row-detail"), { textContent:
+    "These values change depending on whether the cookie banner is accepted. " +
+    "Every visitor who ignores the banner gets the second column." }));
+  const t = el("table", "diff");
+  const head = el("tr");
+  ["Field", "Banner accepted", "Banner ignored"].forEach((h) => head.append(el("th", null, h)));
+  t.append(head);
+  Object.entries(diff).forEach(([field, v]) => {
+    const tr = el("tr", "differs");
+    tr.append(el("td", null, field));
+    tr.append(cell(v.accepted));
+    tr.append(cell(v.ignored));
+    t.append(tr);
+  });
+  s.append(t);
+  return s;
+}
+
+function cell(value) {
+  const td = el("td");
+  if (value) td.textContent = value;
+  else { const e = el("span", "empty", "(empty)"); td.append(e); }
+  return td;
+}
+
+/* Plain text for Slack or a client email — how the tool actually gets used. */
+function plaintext() {
+  return reports.map((r) => {
+    const lines = [];
+    lines.push(r.url);
+    if (r.platform && r.platform !== "unknown") {
+      lines.push(r.platform + (r.platform_note ? " · " + r.platform_note : ""));
+    }
+    lines.push(r.failed ? "RESULT: FAIL" : "RESULT: PASS");
+    if (r.outcome && r.outcome !== "ok" && OUTCOME[r.outcome]) {
+      lines.push(OUTCOME[r.outcome] + (r.error ? " — " + r.error : ""));
+    }
+    lines.push("");
+    (r.checks || []).forEach((c) => {
+      lines.push(`[${c.status}] ${c.name} — ${c.detail}`);
+      (c.evidence || []).forEach((e) => lines.push("      " + e));
+    });
+    const diff = (r.consent_diff && r.consent_diff.fields_differ) || {};
+    if (Object.keys(diff).length) {
+      lines.push("", "Consent divergence (accepted → ignored):");
+      Object.entries(diff).forEach(([f, v]) =>
+        lines.push(`      ${f}: ${v.accepted || "(empty)"} → ${v.ignored || "(empty)"}`));
+    }
+    return lines.join("\n");
+  }).join("\n\n" + "-".repeat(60) + "\n\n");
+}
+</script>
+</body>
+</html>
