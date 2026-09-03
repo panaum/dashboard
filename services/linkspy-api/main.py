@@ -3708,6 +3708,77 @@ async def qa_monitor_fragility(authorization: str = Header(default=None),
     return await fragility_portfolio(_acc=_qa_owner_acc())
 
 
+@app.post("/api/qa-bridge/monitor/pagecheck")
+async def qa_monitor_pagecheck_start(request: Request,
+                                     authorization: str = Header(default=None),
+                                     x_api_key: str = Header(default=None)):
+    """Start a full Pagecheck run for one URL.
+
+    Twelve checks and TWO page loads (consent accepted / ignored), so it takes
+    30-40s — far past what a single request through a serverless proxy can
+    hold. Same start-and-poll shape as the scan jobs above."""
+    import uuid
+    from urllib.parse import urlparse
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    raw = str(body.get("url") or "").strip()
+    target = raw if "://" in raw else (f"https://{raw}" if raw else "")
+    parsed = urlparse(target)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return JSONResponse({"error": "a valid http(s) url is required"}, status_code=400)
+
+    now = time.time()
+    _qa_checks_gc(now)
+    running = sum(1 for e in _qa_check_jobs.values() if e.get("status") == "running")
+    if running >= _QA_CHECK_MAX_RUNNING:
+        return JSONResponse({"error": "check_capacity",
+                             "detail": "Two checks are already running — try again in a minute."},
+                            status_code=429)
+
+    check_id = uuid.uuid4().hex
+    entry = {"status": "running", "url": target, "started_at": now,
+             "progress": {"message": "Starting…", "percent": 0}}
+    _qa_check_jobs[check_id] = entry
+
+    async def run():
+        import asyncio as _asyncio
+        from pagecheck_engine import check_page
+        try:
+            def progress(msg):
+                entry["progress"] = {"message": msg, "percent": entry["progress"].get("percent", 0) + 30}
+            report = await _asyncio.to_thread(check_page, target, 25000, 3.0, progress)
+            entry["report"] = report
+            entry["status"] = "done"
+        except Exception as e:
+            entry["status"] = "failed"
+            entry["error"] = f"pagecheck failed ({type(e).__name__})"
+
+    entry["task"] = asyncio.create_task(run())
+    return {"check_id": check_id, "status": "running"}
+
+
+@app.get("/api/qa-bridge/monitor/pagecheck-status")
+async def qa_monitor_pagecheck_status(check_id: str = Query(...),
+                                      authorization: str = Header(default=None),
+                                      x_api_key: str = Header(default=None)):
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    _qa_checks_gc(time.time())
+    entry = _qa_check_jobs.get(check_id)
+    if not entry:
+        return {"status": "not_found"}
+    out = {k: entry.get(k) for k in ("status", "url", "progress", "error") if entry.get(k) is not None}
+    if entry.get("report"):
+        out["report"] = entry["report"]
+    return out
+
+
 @app.get("/api/qa-bridge/monitor/attribution")
 async def qa_monitor_attribution(url: str = Query(...),
                                  authorization: str = Header(default=None),

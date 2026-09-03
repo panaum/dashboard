@@ -32,6 +32,7 @@ const TONE: Record<Check["status"], "success" | "error" | "warning" | "neutral">
 export function AttributionPanel({ url }: { url: string }) {
   const [state, setState] = useState<"idle" | "loading" | "done" | "failed">("idle");
   const [report, setReport] = useState<Report | null>(null);
+  const [note, setNote] = useState("");
   const started = useRef(false);
 
   // Opening the tab IS the request — don't make the reader ask twice. The
@@ -44,19 +45,44 @@ export function AttributionPanel({ url }: { url: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Pagecheck loads the page twice (~35s), so it starts a job and we poll —
+  // one long request would outlive the serverless budget and 504.
   async function run() {
     setState("loading");
+    setNote("Starting the check…");
     try {
-      const res = await fetch(`/api/linkspy/monitor?view=attribution&url=${encodeURIComponent(url)}`);
-      const body = (await res.json()) as Report & { unavailable?: boolean; error?: string };
-      if (!res.ok || body.unavailable || !body.checks) {
+      const res = await fetch("/api/linkspy/monitor?action=pagecheck", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const body = await res.json();
+      if (!res.ok || !body.check_id) {
+        setNote(body.detail ?? body.error ?? "Could not start the check.");
         setState("failed");
-        setReport(body ?? null);
-      } else {
-        setReport(body);
-        setState("done");
+        return;
       }
+      const deadline = Date.now() + 3 * 60 * 1000;
+      const poll = async () => {
+        if (Date.now() > deadline) { setNote("The check took too long."); setState("failed"); return; }
+        try {
+          const snap = await (await fetch(
+            `/api/linkspy/monitor?view=pagecheck&id=${encodeURIComponent(body.check_id)}`)).json();
+          if (snap.status === "running") {
+            setNote(snap.progress?.message ?? "Checking…");
+            setTimeout(poll, 2500);
+            return;
+          }
+          if (snap.status === "done" && snap.report) { setReport(snap.report); setState("done"); return; }
+          setNote(snap.error ?? "The check did not complete.");
+          setState("failed");
+        } catch {
+          setTimeout(poll, 4000);
+        }
+      };
+      setTimeout(poll, 2500);
     } catch {
+      setNote("Could not reach the checker.");
       setState("failed");
     }
   }
@@ -66,7 +92,7 @@ export function AttributionPanel({ url }: { url: string }) {
       <div className="mt-4">
         <p className="mb-3 flex items-center gap-2 text-[13px] text-text-secondary">
           <Loader2 className="size-4 animate-spin" />
-          Opening the page as a visitor arriving from a campaign…
+          {note || "Opening the page as a visitor arriving from a campaign…"}
         </p>
         <p className="max-w-2xl text-[12px] text-text-muted">
           We attach test UTM and click-id parameters and read the form&apos;s hidden fields back.
@@ -80,7 +106,7 @@ export function AttributionPanel({ url }: { url: string }) {
   if (state === "failed" || !report) {
     return (
       <p className="mt-4 text-[13px] text-text-secondary">
-        The attribution check is unavailable right now — the rest of this scan is unaffected.
+        {note || "The attribution check is unavailable right now — the rest of this scan is unaffected."}
       </p>
     );
   }

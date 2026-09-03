@@ -31,6 +31,12 @@ const VIEWS: Record<string, (p: URLSearchParams) => string | null> = {
     if (!id) return null;
     return `/api/qa-bridge/monitor/stored-scan?registry_site_id=${encodeURIComponent(id)}`;
   },
+  // Poll a running Pagecheck job.
+  pagecheck: (p) => {
+    const id = p.get("id");
+    if (!id) return null;
+    return `/api/qa-bridge/monitor/pagecheck-status?check_id=${encodeURIComponent(id)}`;
+  },
   // On-demand: its own headless load with test params attached.
   attribution: (p) => {
     const url = p.get("url");
@@ -66,7 +72,12 @@ export async function POST(req: NextRequest) {
   if (denied) return denied;
   if (!configured()) return NextResponse.json({ unavailable: true });
   const body = await req.json().catch(() => ({}));
-  return forward("/api/qa-bridge/monitor/sites", {
+  // Pagecheck runs two page loads (~35s), so it starts a job and the client
+  // polls — a single request would outlive the serverless budget.
+  const path = req.nextUrl.searchParams.get("action") === "pagecheck"
+    ? "/api/qa-bridge/monitor/pagecheck"
+    : "/api/qa-bridge/monitor/sites";
+  return forward(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
