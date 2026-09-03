@@ -33,3 +33,6 @@ Thumbs.db
 test-results/
 playwright-report/
 e2e/.auth/
+
+# Python bytecode
+__pycache__/
