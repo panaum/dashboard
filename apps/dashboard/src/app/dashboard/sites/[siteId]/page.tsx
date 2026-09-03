@@ -20,6 +20,8 @@ import {
   buildIncidentsView,
   buildVitalsView,
   buildHistoryView,
+  collapseHistory,
+  linkRange,
   healthTone,
   ESCALATION_TONE,
 } from "@/lib/linkspy/sites-view";
@@ -169,26 +171,37 @@ export default async function SiteDetailPage({
         }
         history={
           <>
-        {/* Scan history — per-scan trend from stored snapshots, newest first. */}
+        {/* Scan history. Runs of unchanged scans collapse into one line —
+            thirty rows reading "99 health · 1 finding" tell the reader one
+            fact, not thirty, and hide the scan where something moved. */}
         {history.state === "series" && (
           <Card>
             <CardHeader>
               <CardTitle>Scan history</CardTitle>
             </CardHeader>
             <CardContent>
-              <ul className="flex flex-col gap-2">
-                {history.points.map((p) => (
-                  <li key={p.at} className="flex items-center gap-2.5 text-[13px]">
-                    <span className="w-24 shrink-0 text-text-muted">{p.at?.slice(0, 10)}</span>
-                    <Badge tone={healthTone(p.health_score)}>
-                      {typeof p.health_score === "number" ? `${p.health_score} health` : "no score"}
+              <ul className="flex flex-col gap-2.5">
+                {collapseHistory(history.points).map((run, i) => (
+                  <li key={`${run.to}-${i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px]">
+                    <Badge tone={healthTone(run.health)}>
+                      {typeof run.health === "number" ? `${run.health} health` : "no score"}
                     </Badge>
                     <span className="text-text-secondary">
-                      {p.total_links ?? "—"} links · {p.findings ?? 0} finding{(p.findings ?? 0) === 1 ? "" : "s"}
+                      {linkRange(run)} links · {run.findings ?? 0} finding{(run.findings ?? 0) === 1 ? "" : "s"}
+                      {(run.recurring ?? 0) > 0 && `, ${run.recurring} recurring`}
                     </span>
-                    {(p.new ?? 0) > 0 && <Badge tone="error">+{p.new} new</Badge>}
-                    {(p.fixed ?? 0) > 0 && <Badge tone="success">−{p.fixed} fixed</Badge>}
-                    {(p.recurring ?? 0) > 0 && <Badge tone="warning">{p.recurring} recurring</Badge>}
+                    {run.changed && (
+                      <>
+                        {run.changed.new > 0 && <Badge tone="error">+{run.changed.new} new</Badge>}
+                        {run.changed.fixed > 0 && <Badge tone="success">−{run.changed.fixed} fixed</Badge>}
+                      </>
+                    )}
+                    <span className="ml-auto text-[12px] text-text-muted">
+                      {run.scans > 1
+                        ? `${run.scans} scans · ${run.from.slice(0, 10)} → ${run.to.slice(0, 10)}`
+                        : run.to.slice(0, 10)}
+                      {run.scans > 1 && !run.changed && " · unchanged"}
+                    </span>
                   </li>
                 ))}
               </ul>

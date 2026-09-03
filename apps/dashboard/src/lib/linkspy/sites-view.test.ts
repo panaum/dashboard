@@ -159,3 +159,39 @@ test("health tones match LinkSpy's thresholds; missing scores stay neutral", asy
   assert.equal(healthTone(null), "neutral");
   assert.equal(healthTone(undefined), "neutral");
 });
+
+test("history collapses runs of unchanged scans — 30 identical rows become 1", async () => {
+  const { collapseHistory, linkRange } = await import("./sites-view");
+  // The real shape the operator saw: three days, nothing moving but the
+  // link count drifting 167/168/171.
+  const pts = Array.from({ length: 30 }, (_, i) => ({
+    at: `2026-09-0${i < 8 ? 3 : i < 29 ? 2 : 1}T0${i % 9}:00:00Z`,
+    health_score: 99, findings: 1, new: 0, fixed: 0, recurring: 1,
+    total_links: [167, 168, 171][i % 3],
+  }));
+  const runs = collapseHistory(pts);
+  assert.equal(runs.length, 1, "nothing changed, so it is one run");
+  assert.equal(runs[0].scans, 30);
+  assert.equal(linkRange(runs[0]), "167–171", "drift is shown as a range, not 30 rows");
+});
+
+test("history starts a new run when something actually changes", async () => {
+  const { collapseHistory } = await import("./sites-view");
+  const runs = collapseHistory([
+    { at: "2026-09-03T00:00:00Z", health_score: 99, findings: 1, new: 0, fixed: 0, recurring: 1 },
+    { at: "2026-09-02T00:00:00Z", health_score: 99, findings: 1, new: 0, fixed: 0, recurring: 1 },
+    { at: "2026-09-01T00:00:00Z", health_score: 92, findings: 4, new: 3, fixed: 0, recurring: 1 },
+  ]);
+  assert.equal(runs.length, 2);
+  assert.equal(runs[0].scans, 2);
+  assert.deepEqual(runs[1].changed, { new: 3, fixed: 0 }, "the scan that moved is flagged");
+});
+
+test("link drift alone does not split a run", async () => {
+  const { collapseHistory } = await import("./sites-view");
+  const runs = collapseHistory([
+    { at: "b", health_score: 99, findings: 1, new: 0, fixed: 0, recurring: 1, total_links: 167 },
+    { at: "a", health_score: 99, findings: 1, new: 0, fixed: 0, recurring: 1, total_links: 171 },
+  ]);
+  assert.equal(runs.length, 1, "a link or two between crawls is noise, not a change");
+});

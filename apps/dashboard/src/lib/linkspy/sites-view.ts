@@ -292,3 +292,63 @@ export function healthTone(score: number | null | undefined): "success" | "warni
   if (score >= 70) return "warning";
   return "error";
 }
+
+/** A run of consecutive scans where nothing meaningful changed. */
+export type HistoryRun = {
+  signature?: string;
+  from: string;           // oldest timestamp in the run
+  to: string;             // newest timestamp in the run
+  scans: number;
+  health: number | null;
+  findings: number | null;
+  linksLow: number | null;
+  linksHigh: number | null;
+  recurring: number | null;
+  changed: { new: number; fixed: number } | null;  // set only when something moved
+};
+
+/** Collapse consecutive unchanged scans into runs.
+ *
+ *  Thirty rows reading "99 health · 1 finding · 1 recurring" tell the reader
+ *  one fact, not thirty. Health, findings and new/fixed decide whether
+ *  anything actually happened; the link count is deliberately NOT part of that
+ *  test, because it drifts by a link or two between crawls and would split
+ *  every run on noise. The range is still shown so the drift is visible. */
+export function collapseHistory(points: HistoryPoint[]): HistoryRun[] {
+  const runs: HistoryRun[] = [];
+  const sig = (p: HistoryPoint) =>
+    `${p.health_score}|${p.findings}|${p.new}|${p.fixed}|${p.recurring}`;
+
+  for (const p of points) {
+    const at = p.at ?? "";
+    const last = runs[runs.length - 1];
+    const moved = (p.new ?? 0) > 0 || (p.fixed ?? 0) > 0;
+    if (last && last.signature === sig(p)) {
+      last.scans += 1;
+      last.from = at < last.from ? at : last.from;
+      last.to = at > last.to ? at : last.to;
+      if (typeof p.total_links === "number") {
+        last.linksLow = Math.min(last.linksLow ?? p.total_links, p.total_links);
+        last.linksHigh = Math.max(last.linksHigh ?? p.total_links, p.total_links);
+      }
+      continue;
+    }
+    runs.push({
+      from: at, to: at, scans: 1,
+      health: p.health_score ?? null,
+      findings: p.findings ?? null,
+      linksLow: p.total_links ?? null,
+      linksHigh: p.total_links ?? null,
+      recurring: p.recurring ?? null,
+      changed: moved ? { new: p.new ?? 0, fixed: p.fixed ?? 0 } : null,
+      signature: sig(p),
+    } as HistoryRun & { signature: string });
+  }
+  return runs.map(({ ...r }) => r);
+}
+
+/** "167" or "167–171" — one number unless the crawl actually drifted. */
+export function linkRange(run: HistoryRun): string {
+  if (run.linksLow == null) return "—";
+  return run.linksLow === run.linksHigh ? `${run.linksLow}` : `${run.linksLow}–${run.linksHigh}`;
+}
