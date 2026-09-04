@@ -263,12 +263,13 @@ RESPONSIVE_JS = """(vw) => {
     // action. A lesson-list item won on a course page purely by being large and
     // near the top. A hero CTA is singular; excluding repeats keeps the header
     // CTA that legitimately sits in a nav bar.
-    // Match on TAG, not class: a lesson list's active item carries a modifier
-    // class ("lesson-nav-active" vs "-inactive"), so a class signature found no
-    // twin and the nav item still won. Eight sibling BUTTONs is a list; the
-    // header CTA that legitimately wins elsewhere has no same-tag siblings.
+    // A repeated item inside a list or nav is navigation, not THE call to
+    // action. Both conditions are required. Counting same-tag siblings alone
+    // was too blunt: an Unbounce mobile layout puts every anchor under one flat
+    // root, so seven unrelated siblings excluded every real CTA on the page and
+    // left an email address in the footer as the only survivor.
     const par = el.parentElement;
-    if (par) {
+    if (par && el.closest('nav,ul,ol,[role="list"],[role="navigation"],[role="menu"],[role="tablist"]')) {
       let twins = 0;
       for (const sib of par.children) if (sib !== el && sib.tagName === el.tagName) twins++;
       if (twins >= 3) continue;
