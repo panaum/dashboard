@@ -1175,7 +1175,19 @@ def run_responsive(browser, url: str, outdir: Path) -> dict:
             data = _settle(reads[-2], reads[-1]) if len(reads) > 1 else reads[0]
             shot = outdir / f"w{w:04d}.png"
             try:
-                page.screenshot(path=str(shot), full_page=True)
+                # Clipped to the viewport WIDTH, full height. A plain full-page
+                # capture widens to the scrollWidth, so a page that overflows
+                # produced a 958px-wide image for a 768px viewport — showing
+                # content the visitor cannot see without scrolling sideways, and
+                # hiding the very bug the run had just found.
+                ph = int((data or {}).get("pageHeight") or 0)
+                if ph > 0:
+                    # full_page AND clip together: clip alone is relative to the
+                    # viewport and silently truncated every capture to one screen.
+                    page.screenshot(path=str(shot), full_page=True,
+                                    clip={"x": 0, "y": 0, "width": w, "height": min(ph, 30000)})
+                else:
+                    page.screenshot(path=str(shot), full_page=True)
                 out["shots"].append({"width": w, "path": str(shot)})
             except PWError as exc:
                 out["errors"].append(f"{w}px screenshot failed: {str(exc)[:120]}")

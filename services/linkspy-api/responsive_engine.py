@@ -494,7 +494,15 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
                         prev = cur
                     data = _settle(prev, cur)
                     try:
-                        shots[w] = page.screenshot(full_page=True, type="jpeg", quality=72)
+                        # Viewport WIDTH, full height. A plain full-page capture
+                        # widens to the scrollWidth, which hid a 190px overflow
+                        # by showing content the visitor cannot reach.
+                        ph = int((data or {}).get("pageHeight") or 0)
+                        shots[w] = (page.screenshot(full_page=True, type="jpeg", quality=72,
+                                                    clip={"x": 0, "y": 0, "width": w,
+                                                          "height": min(ph, 30000)})
+                                    if ph > 0 else
+                                    page.screenshot(full_page=True, type="jpeg", quality=72))
                     except PWError as exc:
                         out["errors"].append(f"{w}px screenshot: {str(exc)[:120]}")
                     if data:
