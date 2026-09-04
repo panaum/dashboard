@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><title>Known-broken fixture</title>
+<style>
+  body { margin:0; font:16px/1.4 system-ui; }
+  .wide { width: 1700px; background:#fee; padding:12px; }        /* real overflow */
+  .clip { width:200px; height:40px; overflow:hidden; background:#eef; }  /* real clip */
+  .stack { position:relative; }
+  .stack p { margin:0; }
+  .stack p.over-b { margin-top:-30px !important; color:#900; }                       /* real text collision */
+  .ok { width:90%; background:#efe; padding:12px; }
+  .sr { position:absolute; width:1px; height:1px; overflow:hidden; }  /* must be ignored */
+  .ellip { width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } /* ignored */
+  a.cta { display:inline-block; margin:24px; padding:16px 28px; background:#4f46e5; color:#fff; text-decoration:none; }
+</style>
+<a class="cta" href="#">Get my free quote</a>
+<div class="ok">This block behaves and should never be reported.</div>
+<div class="wide">This element is 1700px wide and forces the document to scroll sideways.</div>
+<div class="clip">This sentence is far too long for its two-hundred-pixel box and is genuinely cut off by overflow hidden, across several lines.</div>
+<div class="stack">
+  <p>FIRST LINE OF TEXT THAT SITS HERE</p>
+  <p class="over-b">SECOND LINE DRAGGED UP ON TOP OF IT</p>
+</div>
+<a class="sr" href="#">Skip to content — screen reader only</a>
+<div class="ellip">Ellipsis truncation is deliberate and must not be reported</div>

@@ -559,6 +559,17 @@ def build_report(url: str, a: dict, b: dict) -> dict:
     searches = len([f for f in forms if f.get("fields") and _is_search(f)])
     add(F("platform", "INFO", "Platform", plat + (f" · {plugin}" if plugin else "")))
 
+    # Landed somewhere else? Everything below describes whatever page we ended
+    # up on, so a silent redirect makes the whole report about the wrong thing.
+    # blace.com/venue/carondelet-house/ answers 200 and then redirects to the
+    # homepage in JavaScript — a clean bill of health for a page that is gone.
+    want, got = urlsplit(url), urlsplit(a["final_url"] or url)
+    if want.path.rstrip("/") != got.path.rstrip("/"):
+        add(F("redirect", "WARN", "Landed on a different page",
+              f"{url} ended up at {a['final_url']}. Every finding below describes "
+              "that page, not the one you asked for.",
+              [f"asked for  {want.path or '/'}", f"ended at   {got.path or '/'}"]))
+
     # 2 · forms
     in_frame = [f for f in real if f.get("frame") != "main"]
     if not real:
@@ -821,6 +832,12 @@ def check_url(browser, url: str, outdir: Path | None = None, pw=None,
               responsive: bool = False, cross: bool = False) -> dict:
     t0 = time.time()
     a = run_pass(browser, url, accept_consent=False)
+    # One retry on a transport failure. In a batch run a page failed to load
+    # once and was honestly reported as "cannot verify" — but a page skipped for
+    # a transient reason is a page nobody checked, which is the same cost as a
+    # miss. A blocked or challenged page is NOT retried: that is a real answer.
+    if a["outcome"] in ("load_failed", "timeout"):
+        a = run_pass(browser, url, accept_consent=False)
     b = (run_pass(browser, url, accept_consent=True) if a["outcome"] == "ok"
          else {**a, "consent_button": None})
     rep = build_report(url, a, b)
@@ -1689,8 +1706,16 @@ def main() -> int:
 
     urls = list(args.urls)
     if args.file:
+        # A line starting with ./ resolves against the list file's own directory
+        # and becomes a file:// URL, so a checked-in fixture can sit beside the
+        # list and the set stays runnable from anywhere.
+        base = Path(args.file).resolve().parent
         with open(args.file) as fh:
-            urls += [ln.strip() for ln in fh if ln.strip() and not ln.startswith("#")]
+            for ln in fh:
+                ln = ln.strip()
+                if not ln or ln.startswith("#"):
+                    continue
+                urls.append((base / ln).resolve().as_uri() if ln.startswith("./") else ln)
     urls = list(dict.fromkeys(urls))
     if not urls:
         ap.error("give at least one URL")

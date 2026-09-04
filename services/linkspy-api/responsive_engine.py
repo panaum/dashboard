@@ -489,7 +489,7 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
     travel through the dashboard proxy."""
     started = time.time()
     say = on_progress or (lambda _m: None)
-    out = {"widths": [], "errors": [], "hits": [], "blocked": 0}
+    out = {"widths": [], "errors": [], "hits": [], "blocked": 0, "final_url": None}
     shots: dict[int, bytes] = {}
     target = with_params(url)
 
@@ -518,6 +518,8 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
                         page.wait_for_load_state("networkidle", timeout=10000)
                     except PWTimeout:
                         pass
+                    if out["final_url"] is None:
+                        out["final_url"] = page.url
                     page.wait_for_timeout(1200)
                     prev = _eval(page.main_frame, RESPONSIVE_JS, None, w)
                     cur = prev
@@ -560,5 +562,14 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
 
     out["elapsed"] = round(time.time() - started, 1)
     out["findings"] = responsive_findings(out)
+    landed = out.get("final_url")
+    if landed:
+        want, got = urlsplit(url).path.rstrip("/"), urlsplit(landed).path.rstrip("/")
+        if want != got:
+            out["findings"].insert(0, F(
+                "redirect", "WARN", "Landed on a different page",
+                f"{url} ended up at {landed}. Every finding below describes that "
+                "page, not the one you asked for.",
+                [f"asked for  {want or '/'}", f"ended at   {got or '/'}"]))
     out["shot_widths"] = sorted(shots)
     return out, shots

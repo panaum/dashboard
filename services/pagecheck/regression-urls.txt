@@ -9,7 +9,7 @@
 # expected: overflow / edge / clipped / overlap
 
 # FAIL WARN WARN WARN — synthetic, every defect planted deliberately
-file://FIXTURE/broken.html
+./fixtures/broken.html
 
 # PASS PASS WARN PASS — clean; the clipped WARN is a known collapsed FAQ
 https://kashmirbloom.com/
@@ -28,3 +28,6 @@ https://pages.wealthhubaustralia.com.au/australian-healthcare-professionals/
 
 # PASS WARN PASS PASS — the edge WARN is deliberate footer bleed, not a bug
 https://thecontractorconsultants.com/ghp-testimonials-by-trade?hs_preview=QcHsliPL-217273471113
+
+# WARN redirect — /venue/carondelet-house/ silently lands on the homepage
+https://blace.com/venue/carondelet-house/
