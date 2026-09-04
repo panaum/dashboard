@@ -16,7 +16,7 @@ const f = (id: string, status: Finding["status"], detail = ""): Finding => ({
   id, status, title: id, detail,
 });
 
-const RENDER_OK = [f("overflow", "PASS"), f("clipped", "PASS"), f("overlap", "PASS")];
+const RENDER_OK = [f("overflow", "PASS"), f("edge", "PASS"), f("clipped", "PASS"), f("overlap", "PASS")];
 
 // ── the guard that matters most ────────────────────────────────────────────
 
@@ -148,4 +148,15 @@ test("normalised capture output feeds the mapper end to end", () => {
   const dummy = props.find((p) => p.itemName === "No Dummy Copy / Video / Images");
   assert.equal(dummy?.verdict, "failing");
   assert.match(dummy!.detail, /lorem ipsum/);
+});
+
+test("content cut off at the viewport edge cannot leave the Chrome row passing", () => {
+  const [p] = proposalsFromSweep([
+    f("overflow", "PASS"),
+    f("edge", "WARN", "an image runs 35px past the viewport and is clipped"),
+    f("clipped", "PASS"),
+    f("overlap", "PASS"),
+  ]);
+  assert.equal(p.verdict, "couldnt_verify");
+  assert.match(p.detail, /35px/);
 });

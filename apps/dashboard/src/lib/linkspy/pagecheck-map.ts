@@ -54,7 +54,7 @@ export type Proposal = {
 /** Findings that together decide whether Chrome renders the page correctly.
  *  The sweep IS Chrome, at eight widths, so it answers the dual Desktop/Mobile
  *  row directly — normally two manual passes. */
-const CHROME_RENDER = ["overflow", "clipped", "overlap"];
+const CHROME_RENDER = ["overflow", "edge", "clipped", "overlap"];
 
 /** Ambiguity never becomes a pass. A WARN means "look at the screenshots", and
  *  a checklist row that says PASSED because nobody looked is worse than one
