@@ -31,6 +31,12 @@ const VIEWS: Record<string, (p: URLSearchParams) => string | null> = {
     if (!id) return null;
     return `/api/qa-bridge/monitor/stored-scan?registry_site_id=${encodeURIComponent(id)}`;
   },
+  // Poll a running responsive sweep (eight page loads, so it is a job).
+  responsive: (p) => {
+    const id = p.get("id");
+    if (!id) return null;
+    return `/api/qa-bridge/monitor/responsive-status?check_id=${encodeURIComponent(id)}`;
+  },
   // Poll a running Pagecheck job.
   pagecheck: (p) => {
     const id = p.get("id");
@@ -74,9 +80,13 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   // Pagecheck runs two page loads (~35s), so it starts a job and the client
   // polls — a single request would outlive the serverless budget.
-  const path = req.nextUrl.searchParams.get("action") === "pagecheck"
+  const action = req.nextUrl.searchParams.get("action");
+  const path = action === "pagecheck"
     ? "/api/qa-bridge/monitor/pagecheck"
-    : "/api/qa-bridge/monitor/sites";
+    : action === "responsive"
+      // Eight widths, eight page loads, 60-90s — a job, polled via ?view=responsive.
+      ? "/api/qa-bridge/monitor/responsive"
+      : "/api/qa-bridge/monitor/sites";
   return forward(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

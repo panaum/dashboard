@@ -36,3 +36,6 @@ e2e/.auth/
 
 # Python bytecode
 __pycache__/
+
+# Pagecheck run output: screenshots + JSON, ~20MB per page.
+pagecheck-runs/
