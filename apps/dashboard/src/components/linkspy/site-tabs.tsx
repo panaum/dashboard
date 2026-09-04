@@ -7,20 +7,23 @@ import { useState } from "react";
 // screen at a time. Panels are server-rendered and passed in as children, so
 // switching tabs costs nothing and refetches nothing.
 
-export type SiteTabKey = "overview" | "promises" | "privacy" | "history";
+export type SiteTabKey = "overview" | "layout" | "promises" | "privacy" | "history";
 
 const TABS: Array<{ key: SiteTabKey; label: string }> = [
   { key: "overview", label: "Overview" },
+  { key: "layout", label: "Layout" },
   { key: "promises", label: "Promises" },
   { key: "privacy", label: "Privacy" },
   { key: "history", label: "History" },
 ];
 
 export function SiteTabs({
-  overview, promises, privacy, history,
+  overview, layout, promises, privacy, history,
 }: Record<SiteTabKey, React.ReactNode>) {
   const [tab, setTab] = useState<SiteTabKey>("overview");
-  const panels: Record<SiteTabKey, React.ReactNode> = { overview, promises, privacy, history };
+  const panels: Record<SiteTabKey, React.ReactNode> = {
+    overview, layout, promises, privacy, history,
+  };
 
   return (
     <div>

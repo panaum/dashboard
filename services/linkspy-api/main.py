@@ -3779,6 +3779,99 @@ async def qa_monitor_pagecheck_status(check_id: str = Query(...),
     return out
 
 
+@app.post("/api/qa-bridge/monitor/responsive")
+async def qa_monitor_responsive_start(request: Request,
+                                      authorization: str = Header(default=None),
+                                      x_api_key: str = Header(default=None)):
+    """Start a responsive sweep for one URL.
+
+    Eight page loads at eight widths, ~60-90s. Far past what a serverless proxy
+    can hold open, so it uses the same start-and-poll shape as the pagecheck and
+    scan jobs. Screenshots stay in the job entry as bytes and are fetched one at
+    a time from responsive-shot; putting 4MB of images through the status JSON
+    would be slower than the sweep itself."""
+    import uuid
+    from urllib.parse import urlparse
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    raw = str(body.get("url") or "").strip()
+    target = raw if "://" in raw else (f"https://{raw}" if raw else "")
+    parsed = urlparse(target)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return JSONResponse({"error": "a valid http(s) url is required"}, status_code=400)
+
+    now = time.time()
+    _qa_checks_gc(now)
+    running = sum(1 for e in _qa_check_jobs.values() if e.get("status") == "running")
+    if running >= _QA_CHECK_MAX_RUNNING:
+        return JSONResponse({"error": "check_capacity",
+                             "detail": "Two checks are already running — try again in a minute."},
+                            status_code=429)
+
+    check_id = uuid.uuid4().hex
+    entry = {"status": "running", "url": target, "started_at": now, "kind": "responsive",
+             "progress": {"message": "Starting…", "percent": 0}}
+    _qa_check_jobs[check_id] = entry
+
+    async def run():
+        import asyncio as _asyncio
+        from responsive_engine import run_responsive
+        try:
+            def progress(msg):
+                done = entry["progress"].get("percent", 0)
+                entry["progress"] = {"message": msg, "percent": min(95, done + 12)}
+            report, shots = await _asyncio.to_thread(run_responsive, target, progress)
+            entry["report"] = report
+            entry["shots"] = shots            # bytes, never serialised into JSON
+            entry["status"] = "done"
+            entry["progress"] = {"message": "Done", "percent": 100}
+        except Exception as e:
+            entry["status"] = "failed"
+            entry["error"] = f"responsive sweep failed ({type(e).__name__})"
+
+    entry["task"] = asyncio.create_task(run())
+    return {"check_id": check_id, "status": "running"}
+
+
+@app.get("/api/qa-bridge/monitor/responsive-status")
+async def qa_monitor_responsive_status(check_id: str = Query(...),
+                                       authorization: str = Header(default=None),
+                                       x_api_key: str = Header(default=None)):
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    _qa_checks_gc(time.time())
+    entry = _qa_check_jobs.get(check_id)
+    if not entry:
+        return {"status": "not_found"}
+    out = {k: entry.get(k) for k in ("status", "url", "progress", "error") if entry.get(k) is not None}
+    if entry.get("report"):
+        out["report"] = entry["report"]
+    return out
+
+
+@app.get("/api/qa-bridge/monitor/responsive-shot")
+async def qa_monitor_responsive_shot(check_id: str = Query(...), width: int = Query(...),
+                                     authorization: str = Header(default=None),
+                                     x_api_key: str = Header(default=None)):
+    """One screenshot from a finished sweep. Bytes live only in the job entry,
+    so they disappear with it after the TTL — nothing is written to disk."""
+    _key, err = await _qa_monitor_gate(authorization, x_api_key)
+    if err:
+        return err
+    entry = _qa_check_jobs.get(check_id) or {}
+    shot = (entry.get("shots") or {}).get(width)
+    if not shot:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return Response(content=shot, media_type="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=600"})
+
+
 @app.get("/api/qa-bridge/monitor/attribution")
 async def qa_monitor_attribution(url: str = Query(...),
                                  authorization: str = Header(default=None),

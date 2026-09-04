@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { SiteTabs } from "@/components/linkspy/site-tabs";
+import { ResponsivePanel } from "@/components/linkspy/responsive-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -87,6 +88,7 @@ export default async function SiteDetailPage({
       />
 
       <SiteTabs
+        layout={<ResponsivePanel url={site?.url ?? u ?? null} />}
         overview={
           <>
         {/* Vitals — LinkSpy's own guard cards (SSL / domain / indexability /
