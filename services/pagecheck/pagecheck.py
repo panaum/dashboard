@@ -1057,6 +1057,20 @@ RESPONSIVE_JS = """(vw) => {
     // A footer newsletter box is always below the fold, so letting it win made
     // the whole check vacuous — it beat the hero CTA on a contact page.
     if (el.closest('footer, [class*="footer" i], [id*="footer" i]')) continue;
+    // One of many identical siblings is a list or a nav, not THE call to
+    // action. A lesson-list item won on a course page purely by being large and
+    // near the top. A hero CTA is singular; excluding repeats keeps the header
+    // CTA that legitimately sits in a nav bar.
+    // Match on TAG, not class: a lesson list's active item carries a modifier
+    // class ("lesson-nav-active" vs "-inactive"), so a class signature found no
+    // twin and the nav item still won. Eight sibling BUTTONs is a list; the
+    // header CTA that legitimately wins elsewhere has no same-tag siblings.
+    const par = el.parentElement;
+    if (par) {
+      let twins = 0;
+      for (const sib of par.children) if (sib !== el && sib.tagName === el.tagName) twins++;
+      if (twins >= 3) continue;
+    }
     const s = getComputedStyle(el);
     const filled = !/^rgba?\\(0, 0, 0, 0\\)$|transparent/.test(s.backgroundColor || '');
     const top = Math.round(r.top + window.scrollY);
