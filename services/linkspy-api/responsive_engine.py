@@ -120,7 +120,22 @@ RESPONSIVE_JS = """(vw) => {
     return false;
   };
 
+  const SLIDERS = '[class*="splide"],[class*="swiper"],[class*="slick"],[class*="carousel"],'
+    + '[class*="slider"],[class*="glide"],[class*="flickity"],[class*="marquee"],'
+    + '[class*="ticker"],[class*="track"],[id*="track"],[class*="loop"]';
   const doc = document.documentElement;
+  // A bot challenge renders a perfectly tidy page. Measuring it and reporting
+  // PASS is the worst outcome available: a silent all-clear on a page nobody
+  // actually saw. Cloudflare rate-limited a run and this went unnoticed.
+  const t = (document.title || '').toLowerCase();
+  const hit = document.querySelector('.cf-error-overview, #challenge-running, #challenge-form');
+  const titleHit = /just a moment|attention required|you have been blocked|access denied|verify you are human/.test(t);
+  if (hit || titleHit) {
+    return { challenged: true,
+             challengedWhy: hit ? ('matched ' + (hit.className || hit.id)) : ('title: ' + t.slice(0, 60)),
+             docOverflow: 0, culprits: [], cut: [], edge: [], overlaps: [], cta: null };
+  }
+
   const docOverflow = Math.max(0, doc.scrollWidth - doc.clientWidth);
   const all = [...document.querySelectorAll('body *')];
 
@@ -142,6 +157,36 @@ RESPONSIVE_JS = """(vw) => {
                       over: Math.round(r.right - vw), text: snippet(el) });
       if (culprits.length >= 8) break;
     }
+  }
+
+  // 1b · content cut off at the viewport edge.
+  //
+  // The overflow check above is gated on the document actually scrolling
+  // sideways, which is right for a decorative background bleeding out of a
+  // clipped hero — but it also hid a real bug: a photo 35px past a 1024px
+  // viewport, clipped so the page never scrolled, reported as a clean pass.
+  // Content is the distinction. Only images and text-bearing elements count,
+  // only when part of them is still on screen (an off-canvas menu is
+  // deliberate), and sliders are excluded because their track is meant to sit
+  // outside the frame.
+  const edge = [];
+  for (const el of all) {
+    if (!vis(el)) continue;
+    const st = getComputedStyle(el);
+    if (st.position === 'fixed') continue;
+    const isImg = el.tagName === 'IMG' || el.tagName === 'PICTURE';
+    if (!isImg && !ownText(el)) continue;
+    if (el.closest(SLIDERS)) continue;
+    const r = el.getBoundingClientRect();
+    const cutR = Math.round(r.right - vw);
+    const cutL = Math.round(-r.left);
+    const cut = Math.max(cutR, cutL);
+    if (cut < 8) continue;
+    if (r.right <= 0 || r.left >= vw) continue;          // wholly off screen
+    const frac = Math.round((cut / Math.max(1, r.width)) * 100);
+    edge.push({ sel: sel(el), tag: el.tagName, cut, frac,
+                side: cutR >= cutL ? 'right' : 'left', text: snippet(el) });
+    if (edge.length >= 8) break;
   }
 
   // 2 · clipped or truncated text. Ellipsis and line-clamp are deliberate, so
@@ -227,8 +272,8 @@ RESPONSIVE_JS = """(vw) => {
     }
   }
 
-  return { docOverflow, docWidth: doc.scrollWidth,
-           pageHeight: doc.scrollHeight, culprits, cut, overlaps, cta: best };
+  return { challenged: false, docOverflow, docWidth: doc.scrollWidth,
+           pageHeight: doc.scrollHeight, culprits, cut, edge, overlaps, cta: best };
 }"""
 
 
@@ -241,7 +286,8 @@ def _keys(d: dict | None) -> frozenset:
     # and an animation is not a layout bug.
     b = lambda n: round((n or 0) / 16)
     return frozenset(
-        [("o", c["sel"], b(c.get("over"))) for c in d.get("culprits") or []]
+        [("e", c["sel"], b(c.get("cut"))) for c in d.get("edge") or []]
+        + [("o", c["sel"], b(c.get("over"))) for c in d.get("culprits") or []]
         + [("c", c["sel"], b(c.get("dx")), b(c.get("dy"))) for c in d.get("cut") or []]
         + [("v", o["a"], o["b"]) for o in d.get("overlaps") or []]
         + [("cta", (d.get("cta") or {}).get("sel", ""))])
@@ -259,7 +305,8 @@ def _settle(d1: dict | None, d2: dict | None) -> dict | None:
         return d2 or d1
     b = lambda n: round((n or 0) / 16)
     out = dict(d2)
-    for key, ident in (("culprits", lambda x: (x["sel"], b(x.get("over")))),
+    for key, ident in (("edge", lambda x: (x["sel"], b(x.get("cut")))),
+                       ("culprits", lambda x: (x["sel"], b(x.get("over")))),
                        ("cut", lambda x: (x["sel"], b(x.get("dx")), b(x.get("dy")))),
                        ("overlaps", lambda x: (x["a"], x["b"]))):
         seen = {ident(x) for x in (d1.get(key) or [])}
@@ -292,6 +339,18 @@ def responsive_findings(r: dict) -> list[dict]:
     if not r.get("widths"):
         return out
 
+    blocked_w = [wd["width"] for wd in r["widths"] if wd.get("challenged")]
+    if blocked_w:
+        why = sorted({wd.get("challengedWhy", "") for wd in r["widths"] if wd.get("challenged")})
+        out.append(F_("blocked", "SKIP", "Blocked at some widths",
+                      f"A bot challenge was served at {_ranges(blocked_w)}, so those widths "
+                      "measured nothing real. Re-run, more slowly, before trusting this page.",
+                      [w for w in why if w][:3]))
+    # Everything below reads only the widths that actually rendered the page.
+    r = {**r, "widths": [wd for wd in r["widths"] if not wd.get("challenged")]}
+    if not r["widths"]:
+        return out
+
     # 1 · overflow, keyed by culprit element
     by_el: dict[str, dict] = {}
     for wd in r["widths"]:
@@ -312,6 +371,24 @@ def responsive_findings(r: dict) -> list[dict]:
     else:
         out.append(F_("overflow", "PASS", "Horizontal overflow",
                       "No sideways scroll at any of the eight widths."))
+
+    # 1b · content cut at the viewport edge
+    by_edge: dict[str, dict] = {}
+    for wd in r["widths"]:
+        for e in wd.get("edge", []):
+            g = by_edge.setdefault(e["sel"], {"widths": [], "cut": 0, "frac": 0,
+                                              "tag": e.get("tag", ""), "text": e.get("text", "")})
+            g["widths"].append(wd["width"])
+            g["cut"], g["frac"] = max(g["cut"], e["cut"]), max(g["frac"], e.get("frac", 0))
+    if by_edge:
+        ev = [f"{_ranges(g['widths']):18} {s_:40} {g['cut']}px cut ({g['frac']}% of it)  {g['text'][:26]!r}"
+              for s_, g in sorted(by_edge.items(), key=lambda kv: -kv[1]["cut"])[:8]]
+        out.append(F_("edge", "WARN", "Content cut off at the edge",
+                      f"{len(by_edge)} image(s) or text block(s) run past the viewport and are "
+                      "clipped. Some bleed is deliberate — check the screenshots.", ev))
+    else:
+        out.append(F_("edge", "PASS", "Content cut off at the edge",
+                      "Nothing runs past the viewport edge."))
 
     # 2 · clipped text — ambiguous by nature, so it never escalates past WARN
     by_cut: dict[str, dict] = {}
