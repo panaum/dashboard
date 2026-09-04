@@ -1,0 +1,30 @@
+# Calibration set. Run after EVERY detection change:
+#   ./.venv/bin/python pagecheck.py -f regression-urls.txt --responsive --out /tmp/regress
+#
+# Each line records what the page is known to do, so a change that "fixes" one
+# page and silently degrades another is caught. That has already happened twice:
+# a CTA rule tuned on a course page excluded every real CTA on an Unbounce page,
+# and a scrollable-ancestor exclusion briefly undid the viewport-edge check.
+#
+# expected: overflow / edge / clipped / overlap
+
+# FAIL WARN WARN WARN — synthetic, every defect planted deliberately
+file://FIXTURE/broken.html
+
+# PASS PASS WARN PASS — clean; the clipped WARN is a known collapsed FAQ
+https://kashmirbloom.com/
+
+# PASS WARN PASS PASS — hero photo 35px past a 1024 viewport, clipped
+https://elitepractice.clickfunnels.com/dr-dania-alkhani
+
+# FAIL WARN PASS PASS — Unbounce serves its 958px desktop layout at 768
+https://pages.wealthhubaustralia.com.au/homeowners/
+
+# PASS PASS PASS PASS — clean; CTA must resolve to "Next lesson", not a nav item
+https://sites.leadconnectorhq.com/preview/eQ0cwf6o3t313rYJnrwD?notrack=true
+
+# PASS PASS PASS PASS — clean; CTA must resolve to "Take the 60-Second Quiz"
+https://pages.wealthhubaustralia.com.au/australian-healthcare-professionals/
+
+# PASS WARN PASS PASS — the edge WARN is deliberate footer bleed, not a bug
+https://thecontractorconsultants.com/ghp-testimonials-by-trade?hs_preview=QcHsliPL-217273471113

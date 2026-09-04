@@ -119,6 +119,17 @@ RESPONSIVE_JS = """(vw) => {
     }
     return false;
   };
+  // Only auto/scroll — a strip the visitor can scroll sideways is meant to
+  // extend past the edge. Deliberately NOT hidden/clip: content clipped at the
+  // viewport edge is the bug the edge check exists to find.
+  const scrollableAnc = (el) => {
+    let n = el.parentElement;
+    while (n && n !== document.documentElement) {
+      if (/auto|scroll/.test(getComputedStyle(n).overflowX)) return true;
+      n = n.parentElement;
+    }
+    return false;
+  };
 
   const SLIDERS = '[class*="splide"],[class*="swiper"],[class*="slick"],[class*="carousel"],'
     + '[class*="slider"],[class*="glide"],[class*="flickity"],[class*="marquee"],'
@@ -183,7 +194,16 @@ RESPONSIVE_JS = """(vw) => {
     const cut = Math.max(cutR, cutL);
     if (cut < 8) continue;
     if (r.right <= 0 || r.left >= vw) continue;          // wholly off screen
+    // A horizontally SCROLLABLE strip is meant to extend past the edge — a
+    // filter bar of trades reported every off-screen chip as cut content. Only
+    // auto/scroll qualifies: an ancestor with overflow:hidden is exactly the
+    // case this check exists for (a photo clipped at the viewport edge), so
+    // reusing clipped() here silently undid that.
+    if (scrollableAnc(el)) continue;
     const frac = Math.round((cut / Math.max(1, r.width)) * 100);
+    // Barely-visible slivers are off-canvas by design (carousel neighbours,
+    // decorative art), not content someone is losing.
+    if (frac >= 90) continue;
     edge.push({ sel: sel(el), tag: el.tagName, cut, frac,
                 side: cutR >= cutL ? 'right' : 'left', text: snippet(el) });
     if (edge.length >= 8) break;
