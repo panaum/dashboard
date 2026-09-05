@@ -21,6 +21,7 @@ https://elitepractice.clickfunnels.com/dr-dania-alkhani
 https://pages.wealthhubaustralia.com.au/homeowners/
 
 # PASS PASS PASS PASS — clean; CTA must resolve to "Next lesson", not a nav item
+# (CTA rule: a form's own submit control outranks a link that scrolls to it)
 https://sites.leadconnectorhq.com/preview/eQ0cwf6o3t313rYJnrwD?notrack=true
 
 # PASS PASS PASS PASS — clean; CTA must resolve to "Take the 60-Second Quiz"
@@ -31,3 +32,11 @@ https://thecontractorconsultants.com/ghp-testimonials-by-trade?hs_preview=QcHsli
 
 # WARN redirect — /venue/carondelet-house/ silently lands on the homepage
 https://blace.com/venue/carondelet-house/
+
+# PASS PASS WARN PASS — hand-built; CTA must resolve to the form's NEXT, not
+# the "GET A FAST QUOTE" link below the fold
+https://www.rhinocorentals.com/get-free-quote
+
+# PASS PASS PASS PASS — HubSpot; the SCHEDULE CALL button pulses, and its
+# animation must not read as clipped text
+https://roadmap.thepeakfp.com/plan-for-retirement
