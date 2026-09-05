@@ -213,3 +213,49 @@ model SpineOutbox {
 
   @@index([deliveredAt])
 }
+
+// Layout checking: a page someone wants watched, and the history of what the
+// responsive sweep found each time it ran. Separate from Page/Project because a
+// checked URL is not always a tracked deliverable — a competitor page, a
+// client's page before it is onboarded, a preview link.
+model LayoutSite {
+  id        String      @id @default(cuid())
+  url       String      @unique
+  label     String? //     what a human calls it; falls back to the URL
+  runs      LayoutRun[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+// One sweep. `findings` is the engine's output verbatim, so a later change to
+// how findings are shaped cannot rewrite history — the run records what the
+// tool actually said at the time.
+model LayoutRun {
+  id        String     @id @default(cuid())
+  site      LayoutSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  siteId    String
+  checkedAt DateTime   @default(now())
+  findings  Json
+  worst     String     @default("PASS") // FAIL | WARN | SKIP | PASS — for the list
+  failCount Int        @default(0)
+  warnCount Int        @default(0)
+  shots     LayoutShot[]
+
+  @@index([siteId, checkedAt])
+}
+
+// The rendered page at one width. Kept for the two most recent runs of a site
+// only — that is what a before/after comparison needs, and it caps the images
+// at roughly 64MB across ten sites instead of growing indefinitely. Findings
+// history outlives the images; an older run still says what it found.
+model LayoutShot {
+  id     String    @id @default(cuid())
+  run    LayoutRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId  String
+  width  Int
+  image  Bytes //     JPEG, viewport width by full page height
+  bytes  Int //       recorded so storage can be reported without reading blobs
+
+  @@unique([runId, width])
+  @@index([runId])
+}
