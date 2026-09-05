@@ -38,6 +38,7 @@ def run(fixture: str, devices: str, *extra: str) -> tuple[int, dict]:
     for d in report["devices"]:
         if d["status"] != "ok":
             raise AssertionError(f"{d['profile_id']} capture failed: {d['error']}\n{proc.stderr[-800:]}")
+    report["_out"] = str(out)          # where the run wrote; tests of the files need it
     return proc.returncode, report
 
 
@@ -330,6 +331,69 @@ class WebfontStacks(unittest.TestCase):
                 self.assertEqual([f for f in d["findings"] if f["rule"] == "webfont"
                                   and "fallback face" in f["message"]], [])
                 self.assertEqual(code, 0)
+
+
+class Report(unittest.TestCase):
+    """report.json is the contract; report.html must work from its own folder."""
+
+    def test_report_json_is_versioned_and_images_are_relative(self):
+        _, rep = run("clean.html", ANDROID)
+        self.assertEqual(rep["schemaVersion"], 1)
+        self.assertEqual(rep["files"], {"json": "report.json", "html": "report.html"})
+        out = Path(rep["_out"])
+        self.assertTrue((out / "report.html").is_file())
+        for d in rep["devices"]:
+            self.assertLessEqual({"fold", "full"}, set(d["images"]), d["notes"])   # thumb needs Pillow
+            for kind, rel in d["images"].items():
+                self.assertFalse(Path(rel).is_absolute(), f"{kind}: {rel} must be relative to the run dir")
+                self.assertTrue((out / rel).is_file(), f"{kind}: {rel} is not under the run dir")
+            self.assertIsNone(d["diff"], "baseline diffing is step 6; the slot is reserved so the schema holds")
+            self.assertIn("is_mobile", d)
+        for key in ("devicesPassed", "devicesFailed", "devicesWithErrors", "devicesWithWarnings"):
+            self.assertIn(key, rep["summary"])
+
+    def test_gallery_is_one_file_sorted_worst_first_with_overlays_and_compare(self):
+        from playwright.sync_api import sync_playwright
+        # Two devices, one warning between them: the warned one must lead.
+        _, rep = run("cls.html", f"{TOUCH},{ANDROID}")
+        out = Path(rep["_out"]); html = (out / "report.html").read_text()
+        self.assertNotRegex(html, r'<(script|link|img)\b[^>]*\b(src|href)="https?://',
+                            "self-contained: nothing fetched from the network")
+        with sync_playwright() as p:
+            b = p.chromium.launch()
+            try:
+                pg = b.new_page(viewport={"width": 1300, "height": 900})
+                errors: list[str] = []
+                pg.on("pageerror", lambda e: errors.append(str(e)))
+                pg.goto((out / "report.html").resolve().as_uri())
+                pg.wait_for_selector(".card")
+                keys = pg.eval_on_selector_all(".card", "els => els.map(e => e.dataset.key)")
+                self.assertEqual(keys[0], ANDROID, f"the device with a warning leads: {keys}")
+                pg.wait_for_function("[...document.querySelectorAll('.card img')].every(i => i.complete)")
+                broken = pg.eval_on_selector_all(
+                    ".card img", "els => els.filter(i => !(i.naturalWidth > 0)).map(i => i.getAttribute('src'))")
+                self.assertEqual(broken, [], "thumbnails must resolve from the HTML's own directory")
+                # detail: one row per finding, and a box drawn for each finding that has one
+                pg.click(f'.card[data-key="{ANDROID}"] .frame')
+                pg.wait_for_selector("#detail.open")
+                dev = next(d for d in rep["devices"] if d["profile_id"] == ANDROID)
+                self.assertEqual(pg.locator("#detail .f").count(), len(dev["findings"]))
+                drawable = [f for f in dev["findings"] if f.get("box") and f["box"]["width"] > 0]
+                pg.wait_for_function(f"document.querySelectorAll('#detail .box').length === {len(drawable)}")
+                pg.keyboard.press("Escape")
+                self.assertEqual(pg.locator("#detail.open").count(), 0)
+                # compare: tick two, the button wakes, two panes appear
+                self.assertTrue(pg.locator("#cmp").is_disabled())
+                for k in (TOUCH, ANDROID):
+                    pg.check(f'.card[data-key="{k}"] .pick')
+                self.assertFalse(pg.locator("#cmp").is_disabled())
+                pg.click("#cmp")
+                pg.wait_for_selector("#compare.open")
+                self.assertEqual(pg.locator("#compare .pane").count(), 2)
+                self.assertIn("Unverified profiles", pg.inner_text("footer"))
+                self.assertEqual(errors, [], "the gallery's own script must not throw")
+            finally:
+                b.close()
 
 
 class ImageSizeThresholds(unittest.TestCase):

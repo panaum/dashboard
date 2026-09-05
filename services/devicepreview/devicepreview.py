@@ -29,6 +29,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
+from html import escape as html_escape
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -157,13 +158,18 @@ class CaptureResult:
     device_scale_factor: float = 1.0
     landscape: bool = False
     color_scheme: str = "light"
-    images: dict[str, str] = field(default_factory=dict)   # fold | full | thumb -> path
+    is_mobile: bool = False
+    has_touch: bool = False
+    images: dict[str, str] = field(default_factory=dict)   # fold | full | thumb -> path relative to the run dir
     timings_ms: dict[str, int] = field(default_factory=dict)
     fonts: dict[str, Any] = field(default_factory=dict)
     fixed_chrome: list[dict[str, Any]] = field(default_factory=list)
     page: dict[str, Any] = field(default_factory=dict)      # scrollWidth, scrollHeight, title
     notes: list[str] = field(default_factory=list)
     findings: list[dict[str, Any]] = field(default_factory=list)   # step 3
+    # Baseline comparison (step 6) fills this; reserved now so report.json's
+    # shape does not change when it lands.
+    diff: dict[str, Any] | None = None
 
 
 # ── page-side JS ────────────────────────────────────────────────────────────
@@ -828,6 +834,7 @@ class LocalBackend(Backend):
             backend=self.name, url=url, viewport={"width": w, "height": h},
             device_scale_factor=profile.device_scale_factor,
             landscape=options.landscape, color_scheme=options.color_scheme,
+            is_mobile=profile.is_mobile, has_touch=profile.has_touch,
         )
         t_start = time.time()
         font_requests: list[dict[str, Any]] = []
@@ -920,15 +927,18 @@ class LocalBackend(Backend):
                                     clip={"x": 0, "y": 0, "width": w, "height": min(sh, 30000)})
                 else:
                     page.screenshot(path=str(full), full_page=True)
-                res.images["fold"] = str(fold)
-                res.images["full"] = str(full)
+                # Relative to the run directory, so report.html beside them can
+                # reference the files and the whole folder can be zipped and
+                # opened anywhere.
+                res.images["fold"] = _rel(fold, options.out_dir)
+                res.images["full"] = _rel(full, options.out_dir)
                 if any(c["edge"] == "top" for c in res.fixed_chrome):
                     res.notes.append("fixed/sticky header present — some engines repeat it down "
                                      "a full-page capture; check the full image before trusting it")
 
                 thumb = _thumbnail(fold, out / f"thumb{suffix}.png", options.thumb_width)
                 if thumb:
-                    res.images["thumb"] = str(thumb)
+                    res.images["thumb"] = _rel(thumb, options.out_dir)
                 else:
                     res.notes.append("no thumbnail: Pillow not importable; gallery will scale "
                                      "the fold capture instead")
@@ -1016,6 +1026,13 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, An
                                "substituted on this backend, so the typography is not authentic",
                     "selector": "body", "box": whole})
     return out
+
+def _rel(path: Path, base: Path) -> str:
+    try:
+        return path.relative_to(base).as_posix()
+    except ValueError:                     # a backend wrote somewhere else; keep the truth
+        return path.as_posix()
+
 
 def _thumbnail(src: Path, dst: Path, width: int) -> Path | None:
     """Downscale the fold capture for the gallery grid. Pillow is optional: it is
@@ -1178,14 +1195,23 @@ def run_matrix(url: str, chosen: list[Profile], schemes: list[str], base_opts: C
 def summarise(results: list[CaptureResult]) -> dict[str, Any]:
     sev = {"error": 0, "warn": 0, "info": 0}
     with_errors: list[str] = []
+    with_warnings: list[str] = []
+    failed: list[str] = []
     for r in results:
+        if r.status != "ok":
+            failed.append(r.profile_id)
         if any(f["severity"] == "error" for f in r.findings):
             with_errors.append(r.profile_id)
+        elif any(f["severity"] == "warn" for f in r.findings):
+            with_warnings.append(r.profile_id)
         for f in r.findings:
             sev[f["severity"]] = sev.get(f["severity"], 0) + 1
+    # A capture that failed vouches for nothing, so it is neither passed nor
+    # counted against the page; it is listed on its own.
+    passed = [r.profile_id for r in results if r.status == "ok" and r.profile_id not in with_errors]
     return {"errors": sev["error"], "warnings": sev["warn"], "infos": sev["info"],
-            "devicesWithErrors": with_errors,
-            "devicesPassed": len(results) - len(with_errors)}
+            "devicesWithErrors": with_errors, "devicesWithWarnings": with_warnings,
+            "devicesFailed": failed, "devicesPassed": len(passed)}
 
 
 def load_rules(disable: str) -> dict[str, bool]:
@@ -1207,6 +1233,270 @@ def load_rules(disable: str) -> dict[str, bool]:
             raise SystemExit(f"--disable-rule: unknown rule {k!r}. Known: {', '.join(rules)}")
         rules[k] = False
     return rules
+
+
+# ── report.html ─────────────────────────────────────────────────────────────
+
+REPORT_HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>devicepreview · __TITLE__</title>
+<style>
+:root{--bg:#f4f5f8;--card:#fff;--ink:#1b1f27;--muted:#69727f;--line:#e2e5eb;--err:#c8322b;--warn:#b86e00;--info:#2b62b0;--ok:#2d8a57;--accent:#3a55c9}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+a{color:inherit}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;flex-wrap:wrap;gap:12px 32px;align-items:center}
+header h1{font-size:16px;margin:0 0 2px;font-weight:600;word-break:break-all}
+.meta{color:var(--muted);font-size:12px}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.stat{padding:4px 11px;border-radius:999px;font-weight:600;font-size:12px;background:#eceef3;color:var(--muted)}
+.stat.err{background:#fbe7e5;color:var(--err)}.stat.warn{background:#fff0d6;color:var(--warn)}.stat.ok{background:#e2f3e9;color:var(--ok)}.stat.fail{background:#1b1f27;color:#fff}
+main{padding:18px 24px 30px;max-width:1600px;margin:0 auto}
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.toolbar button,.close,#cmpclose{border:1px solid var(--line);background:var(--card);padding:6px 12px;border-radius:8px;cursor:pointer;font:inherit;color:var(--ink)}
+.toolbar button[disabled]{opacity:.45;cursor:default}
+.hint{color:var(--muted);font-size:12px}
+h2.group{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:24px 0 10px;font-weight:600}
+h2.group .n{font-weight:500;margin-left:6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer;position:relative;transition:box-shadow .15s}
+.card:hover,.card:focus-visible{box-shadow:0 4px 18px rgba(20,30,60,.12);outline:none}
+.card.failed{border-style:dashed}
+.card .name{font-weight:600;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding-right:22px}
+.card .eng{color:var(--muted);font-weight:500;font-size:11px}
+.card .sub{color:var(--muted);font-size:11px;margin-bottom:10px}
+.frame{background:#15171c;border-radius:12px;padding:8px;margin:0 auto;max-width:100%}
+.frame.phone{border-radius:24px;padding:16px 9px;max-width:170px}
+.frame.tablet{border-radius:16px;padding:12px;max-width:200px}
+.frame.desktop{border-radius:8px 8px 3px 3px;padding:7px 7px 12px}
+.screen{background:#fff;overflow:hidden;border-radius:4px;width:100%}
+.frame.phone .screen{border-radius:14px}
+.screen img{display:block;width:100%;height:100%;object-fit:cover;object-position:top}
+.nope{display:flex;align-items:center;justify-content:center;height:100%;min-height:80px;color:#8a919c;font-size:11px;padding:8px;text-align:center}
+.badges{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.b{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px}
+.b.err{background:#fbe7e5;color:var(--err)}.b.warn{background:#fff0d6;color:var(--warn)}.b.info{background:#e6eefb;color:var(--info)}.b.ok{background:#e2f3e9;color:var(--ok)}.b.fail{background:#1b1f27;color:#fff}.b.unv{background:#eceef3;color:var(--muted);font-weight:500}
+.pick{position:absolute;top:12px;right:12px;width:17px;height:17px;margin:0;accent-color:var(--accent);cursor:pointer}
+.card.selected{outline:2px solid var(--accent)}
+.overlay{position:fixed;inset:0;background:rgba(20,24,32,.74);display:none;z-index:10;overflow:auto;padding:20px}
+.overlay.open{display:block}
+.panel{background:var(--card);border-radius:14px;max-width:1500px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:auto 1fr}
+.panel .head{grid-column:1/-1;display:flex;gap:14px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.panel .head h3{margin:0;font-size:15px}
+.close{margin-left:auto}
+.shot{padding:18px;overflow:auto;max-height:calc(100vh - 118px);background:#f0f1f4;border-radius:0 0 0 14px}
+.wrap{position:relative;width:min(100%,var(--w));margin:0 auto;box-shadow:0 2px 12px rgba(0,0,0,.12)}
+.wrap img{display:block;width:100%}
+.box{position:absolute;border:2px solid var(--info);background:rgba(43,98,176,.12);cursor:pointer;box-sizing:border-box}
+.box.err{border-color:var(--err);background:rgba(200,50,43,.13)}.box.warn{border-color:var(--warn);background:rgba(184,110,0,.13)}
+.box.hot{box-shadow:0 0 0 3px #fff,0 0 0 6px var(--accent);z-index:2}
+.side{border-left:1px solid var(--line);padding:6px 16px 16px;overflow:auto;max-height:calc(100vh - 118px)}
+.side h4{margin:14px 0 6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.f{border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:8px 10px;margin-bottom:8px;cursor:pointer;font-size:12.5px}
+.f.err{border-left-color:var(--err)}.f.warn{border-left-color:var(--warn)}.f.info{border-left-color:var(--info)}
+.f.hot{background:#eef2ff}
+.f .rule{font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:2px}
+.f code{display:block;margin-top:4px;font-size:11px;color:var(--muted);word-break:break-all}
+.note{font-size:12px;color:var(--muted);margin:4px 0}
+.diffimg{width:100%;border:1px solid var(--line);border-radius:6px;margin-top:6px}
+.compare{display:none;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.compare.open{display:grid}
+.compare .ch{grid-column:1/-1;display:flex;gap:12px;align-items:center}
+.compare .ch #cmpclose{margin-left:auto}
+.pane{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.pane .ph{padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600;font-size:13px;display:flex;justify-content:space-between;gap:8px}
+.pane .pb{overflow:auto;max-height:78vh;background:#f0f1f4}
+.pane img{display:block;width:100%}
+footer{padding:22px 24px 28px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);background:var(--card)}
+footer p{margin:6px 0;max-width:960px}
+@media (max-width:900px){.panel{grid-template-columns:1fr}.side{border-left:0;border-top:1px solid var(--line);max-height:none}.shot{max-height:70vh}.compare{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<header id="head"></header>
+<main>
+  <div class="toolbar">
+    <button id="cmp" type="button" disabled>Compare selected (0/2)</button>
+    <span class="hint">Click a device to see its full page with findings drawn on it. Tick two devices to compare them side by side.</span>
+  </div>
+  <section id="compare" class="compare" aria-live="polite"></section>
+  <div id="groups"></div>
+</main>
+<div id="detail" class="overlay" role="dialog" aria-modal="true"></div>
+<footer id="foot"></footer>
+<script id="dp-data" type="application/json">__DATA__</script>
+<script>
+(() => {
+const R = JSON.parse(document.getElementById('dp-data').textContent);
+const $ = (sel, el = document) => el.querySelector(sel);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const SEVN = {error: 0, warn: 1, info: 2};
+const count = d => { const c = {error: 0, warn: 0, info: 0}; for (const f of d.findings || []) c[f.severity] = (c[f.severity] || 0) + 1; return c; };
+// Worst first. A failed capture outranks everything: it cannot vouch for the
+// page at all. Then errors, warnings, infos; ties keep matrix order.
+const score = d => { const c = count(d); return (d.status !== 'ok' ? 1e9 : 0) + c.error * 1e6 + c.warn * 1e3 + c.info; };
+const devs = R.devices.map((d, i) => ({...d, _i: i, _c: count(d), _s: score(d),
+  _key: d.profile_id + (d.color_scheme !== 'light' ? '-' + d.color_scheme : '') + (d.landscape ? '-landscape' : ''),
+  _variant: [d.color_scheme !== 'light' ? d.color_scheme : '', d.landscape ? 'landscape' : ''].filter(Boolean).join(' · '),
+  _shape: d.is_mobile ? (Math.min(d.viewport.width, d.viewport.height) < 600 ? 'phone' : 'tablet') : 'desktop'}));
+const byKey = Object.fromEntries(devs.map(d => [d._key, d]));
+const PLATFORM = {ios: 'iOS phones', ipados: 'iPadOS tablets', android: 'Android', desktop: 'Desktop'};
+const ms = v => v >= 1000 ? (v / 1000).toFixed(1) + 's' : v + 'ms';
+const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+
+{ // header
+  const s = R.summary, failed = devs.filter(d => d.status !== 'ok').length;
+  $('#head').innerHTML = `<div><h1><a href="${esc(R.url)}" target="_blank" rel="noopener">${esc(R.url)}</a></h1>
+    <div class="meta">${esc(new Date(R.startedAt).toLocaleString())} · ${ms(R.timing.wallMs)} wall · backend ${esc(R.backend)} · devicepreview ${esc(R.tool.version)}</div></div>
+    <div class="stats"><span class="stat${s.errors ? ' err' : ''}">${plural(s.errors, 'error')}</span>
+    <span class="stat${s.warnings ? ' warn' : ''}">${plural(s.warnings, 'warning')}</span>
+    <span class="stat ok">${s.devicesPassed}/${devs.length} devices passed</span>
+    ${failed ? `<span class="stat fail">${plural(failed, 'capture')} failed</span>` : ''}</div>`;
+}
+
+const card = d => {
+  const img = d.images.thumb || d.images.fold, c = d._c;
+  const badges = d.status !== 'ok' ? '<span class="b fail">capture failed</span>'
+    : (c.error || c.warn || c.info)
+      ? (c.error ? `<span class="b err">${plural(c.error, 'error')}</span>` : '')
+        + (c.warn ? `<span class="b warn">${plural(c.warn, 'warning')}</span>` : '')
+        + (c.info ? `<span class="b info">${c.info} info</span>` : '')
+      : '<span class="b ok">clean</span>';
+  return `<div class="card${d.status !== 'ok' ? ' failed' : ''}" data-key="${esc(d._key)}" tabindex="0" role="button" aria-label="Open ${esc(d.label)}">
+    <input type="checkbox" class="pick" title="Select for compare" aria-label="Select ${esc(d.label)} for compare">
+    <div class="name"><span>${esc(d.label)}</span><span class="eng">${esc(d.engine)}</span></div>
+    <div class="sub">${d.viewport.width}×${d.viewport.height} @${d.device_scale_factor}×${d._variant ? ' · ' + esc(d._variant) : ''}</div>
+    <div class="frame ${d._shape}"><div class="screen" style="aspect-ratio:${d.viewport.width} / ${d.viewport.height}">${
+      img ? `<img src="${esc(img)}" alt="${esc(d.label)}, above the fold">` : `<div class="nope">${esc(d.error || 'no capture')}</div>`}</div></div>
+    <div class="badges">${badges}${d.verified ? '' : '<span class="b unv" title="Viewport, scale factor and user agent come from published specs, not a physical device">unverified</span>'}</div></div>`;
+};
+
+{ // grid: grouped by platform, each group and the groups themselves worst first
+  const groups = new Map();
+  for (const d of devs) (groups.get(d.platform) || groups.set(d.platform, []).get(d.platform)).push(d);
+  const ordered = [...groups.entries()]
+    .map(([p, ds]) => [p, ds.sort((a, b) => b._s - a._s || a._i - b._i)])
+    .sort((a, b) => b[1][0]._s - a[1][0]._s || a[1][0]._i - b[1][0]._i);
+  $('#groups').innerHTML = ordered.map(([p, ds]) =>
+    `<h2 class="group">${esc(PLATFORM[p] || p)}<span class="n">${ds.length}</span></h2><div class="grid">${ds.map(card).join('')}</div>`).join('');
+}
+
+// detail view: full page with the findings drawn where they are
+const detail = $('#detail');
+const closeDetail = () => { detail.classList.remove('open'); detail.innerHTML = ''; document.body.style.overflow = ''; };
+const openDetail = key => {
+  const d = byKey[key]; if (!d) return;
+  const fs = (d.findings || []).map((f, i) => ({...f, _i: i})).sort((a, b) => (SEVN[a.severity] ?? 9) - (SEVN[b.severity] ?? 9) || a._i - b._i);
+  const full = d.images.full || d.images.fold;
+  detail.innerHTML = `<div class="panel">
+    <div class="head"><h3>${esc(d.label)}</h3><span class="meta">${esc(d.engine)} · ${d.viewport.width}×${d.viewport.height} @${d.device_scale_factor}×${d._variant ? ' · ' + esc(d._variant) : ''}${d.final_url && d.final_url !== d.url ? ' · landed on ' + esc(d.final_url) : ''}</span>
+      <button class="close" type="button">Close ✕</button></div>
+    <div class="shot"><div class="wrap" style="--w:${d.viewport.width}px">${
+      full ? `<img id="dshot" src="${esc(full)}" alt="${esc(d.label)}, full page">` : `<div class="nope">${esc(d.error || 'no capture')}</div>`}</div></div>
+    <aside class="side">
+      ${d.status !== 'ok' ? `<h4>Capture failed</h4><p class="note">${esc(d.error)}</p>` : ''}
+      <h4>Findings (${fs.length})</h4>
+      ${fs.length ? fs.map(f => `<div class="f ${f.severity === 'error' ? 'err' : esc(f.severity)}" data-f="${f._i}">
+          <div class="rule">${esc(f.severity)} · ${esc(f.rule)}</div><div>${esc(f.message)}</div>${f.selector ? `<code>${esc(f.selector)}</code>` : ''}</div>`).join('')
+        : '<p class="note">Nothing flagged on this device.</p>'}
+      ${d.diff ? `<h4>Baseline diff</h4><p class="note">${Number(d.diff.percent ?? 0).toFixed(3)}% of pixels changed${d.diff.regressed ? ' — regressed' : ''}</p>${d.diff.image ? `<img class="diffimg" src="${esc(d.diff.image)}" alt="difference against the baseline">` : ''}` : ''}
+      ${d.notes && d.notes.length ? `<h4>Notes</h4>${d.notes.map(n => `<p class="note">${esc(n)}</p>`).join('')}` : ''}
+      <h4>Timings</h4><p class="note">${Object.entries(d.timings_ms || {}).map(([k, v]) => `${esc(k)} ${ms(v)}`).join(' · ')}</p>
+    </aside></div>`;
+  detail.classList.add('open'); document.body.style.overflow = 'hidden';
+  const img = $('#dshot', detail);
+  if (img) {
+    // Boxes are in CSS pixels of the document; the image is CSS px × scale
+    // factor, so its natural size gives the exact mapping — no reliance on a
+    // scrollHeight read at a different moment.
+    const place = () => {
+      const W = img.naturalWidth / d.device_scale_factor, H = img.naturalHeight / d.device_scale_factor;
+      if (!W || !H) return;
+      const wrap = img.parentElement;
+      wrap.querySelectorAll('.box').forEach(b => b.remove());
+      for (const f of fs) {
+        const b = f.box;
+        if (!b || !(b.width > 0) || !(b.height > 0) || b.x >= W || b.y >= H) continue;   // off the capture: listed, not drawn
+        const el = document.createElement('div');
+        el.className = 'box ' + (f.severity === 'error' ? 'err' : f.severity); el.dataset.f = f._i; el.title = f.message;
+        el.style.cssText = `left:${b.x / W * 100}%;top:${b.y / H * 100}%;width:${Math.min(b.width, W - b.x) / W * 100}%;height:${Math.min(b.height, H - b.y) / H * 100}%`;
+        wrap.appendChild(el);
+      }
+    };
+    if (img.complete && img.naturalWidth) place(); else img.addEventListener('load', place);
+  }
+  const hot = (i, on) => detail.querySelectorAll(`[data-f="${i}"]`).forEach(el => el.classList.toggle('hot', on));
+  detail.addEventListener('mouseover', e => { const t = e.target.closest('[data-f]'); if (t) hot(t.dataset.f, true); });
+  detail.addEventListener('mouseout', e => { const t = e.target.closest('[data-f]'); if (t) hot(t.dataset.f, false); });
+  detail.addEventListener('click', e => {
+    if (e.target === detail) return closeDetail();
+    if (e.target.closest('.close')) return closeDetail();
+    const t = e.target.closest('[data-f]'); if (!t) return;
+    const other = t.classList.contains('box') ? $(`.f[data-f="${t.dataset.f}"]`, detail) : $(`.box[data-f="${t.dataset.f}"]`, detail);
+    if (other) other.scrollIntoView({block: 'center', behavior: 'smooth'});
+  });
+};
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+// card interactions: click opens, the checkbox selects for compare
+document.addEventListener('click', e => { const c = e.target.closest('.card'); if (c && !e.target.classList.contains('pick')) openDetail(c.dataset.key); });
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('card')) openDetail(e.target.dataset.key); });
+const cmpBtn = $('#cmp'), cmp = $('#compare');
+const picks = () => [...document.querySelectorAll('.pick:checked')].map(p => p.closest('.card').dataset.key);
+const syncPicks = () => {
+  const n = picks().length;
+  cmpBtn.disabled = n !== 2; cmpBtn.textContent = `Compare selected (${n}/2)`;
+  document.querySelectorAll('.pick').forEach(p => { p.disabled = n >= 2 && !p.checked; p.closest('.card').classList.toggle('selected', p.checked); });
+};
+document.addEventListener('change', e => { if (e.target.classList.contains('pick')) syncPicks(); });
+cmpBtn.addEventListener('click', () => {
+  const [a, b] = picks().map(k => byKey[k]); if (!a || !b) return;
+  const pane = d => `<div class="pane"><div class="ph"><span>${esc(d.label)} · ${esc(d.engine)}</span><span class="meta">${d.viewport.width}×${d.viewport.height}${d._variant ? ' · ' + esc(d._variant) : ''}</span></div>
+    <div class="pb">${d.images.full ? `<img src="${esc(d.images.full)}" alt="${esc(d.label)}, full page">` : `<div class="nope">${esc(d.error || 'no capture')}</div>`}</div></div>`;
+  cmp.innerHTML = `<div class="ch"><strong>Side by side</strong><span class="hint">Scrolling one pane scrolls the other proportionally.</span><button type="button" id="cmpclose">Close compare</button></div>${pane(a)}${pane(b)}`;
+  cmp.classList.add('open'); cmp.scrollIntoView({behavior: 'smooth', block: 'start'});
+  const [pa, pb] = cmp.querySelectorAll('.pb'); let lock = false;
+  const link = (from, to) => from.addEventListener('scroll', () => {
+    if (lock) return; lock = true;
+    to.scrollTop = from.scrollTop / Math.max(1, from.scrollHeight - from.clientHeight) * (to.scrollHeight - to.clientHeight);
+    requestAnimationFrame(() => { lock = false; });
+  });
+  link(pa, pb); link(pb, pa);
+  $('#cmpclose').addEventListener('click', () => { cmp.classList.remove('open'); cmp.innerHTML = ''; });
+});
+syncPicks();
+
+{ // footer: what this run cannot vouch for
+  const names = [...new Set(devs.filter(d => !d.verified).map(d => d.label))];
+  const off = Object.entries(R.rules || {}).filter(([, v]) => !v).map(([k]) => k);
+  $('#foot').innerHTML = `${names.length
+      ? `<p><strong>Unverified profiles (${names.length}):</strong> ${esc(names.join(', '))}. Their viewport, scale factor and user agent come from published specifications and have not been checked against the physical device.</p>`
+      : '<p>Every profile in this run has been verified against a physical device.</p>'}
+    <p><strong>Rendering fidelity:</strong> ${esc(R.fidelityNote)}</p>
+    <p>report.json schema v${esc(R.schemaVersion)} · ${plural(devs.length, 'capture')} · rules switched off: ${off.length ? esc(off.join(', ')) : 'none'}</p>`;
+}
+})();
+</script>
+</body>
+</html>
+"""
+
+
+def write_report_html(report: dict[str, Any], out_dir: Path) -> Path:
+    """One file, no network. CSS and JS are inline, the report is embedded as
+    JSON, and images are referenced relative to the run directory, so the
+    folder can be zipped and opened anywhere. Every '<' in the embedded JSON is
+    escaped as \\u003c (still valid JSON), so no string a page handed us —
+    a title, a selector, a font name — can close the script element early."""
+    data = json.dumps(report, separators=(",", ":")).replace("<", "\\u003c")
+    page = REPORT_HTML.replace("__TITLE__", html_escape(report["url"])).replace("__DATA__", data)
+    path = out_dir / "report.html"
+    path.write_text(page, encoding="utf-8")
+    return path
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
@@ -1290,7 +1580,8 @@ def main() -> int:
 
     report = {
         "schemaVersion": SCHEMA_VERSION,
-        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 4},
+        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 5},
+        "files": {"json": "report.json", "html": "report.html"},
         "url": url,
         "startedAt": started.isoformat(timespec="seconds"),
         "finishedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -1307,6 +1598,7 @@ def main() -> int:
                          "scroll physics and OS animation timing are not. See LIMITATIONS.md."),
     }
     (out_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    write_report_html(report, out_dir)
 
     failed = [r for r in results if r.status != "ok"]
     summary = report["summary"]
@@ -1316,6 +1608,7 @@ def main() -> int:
         say(f"\n  {len(results)} capture(s), {len(failed)} failed, "
             f"{summary['errors']} error(s), {summary['warnings']} warning(s), "
             f"{timing['wallMs'] / 1000:.1f}s wall → {out_dir}/report.json")
+        say(f"  gallery: {out_dir}/report.html")
         for r in results:
             for f in r.findings:
                 if f["severity"] == "error":
