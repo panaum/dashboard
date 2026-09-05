@@ -1365,10 +1365,19 @@ def responsive_findings(r: dict) -> list[dict]:
         if fold:
             below.append(wd["width"])
     if rows:
-        out.append(F_("cta", "INFO", "Primary CTA position",
-                      (f"Below the fold at {_ranges(below)}." if below
-                       else "Within the first screen at every width.")
-                      + " Position is reported, not judged.", rows))
+        seen_w = [wd["width"] for wd in r["widths"] if wd.get("cta")]
+        visible = [w for w in seen_w if w not in below]
+        # Whether someone sees the call to action without scrolling is the point
+        # of measuring its position, so the finding leads with that answer
+        # rather than making the reader derive it from a table of pixels.
+        if below:
+            detail = (f"Not visible until you scroll at {_ranges(below)}."
+                      + (f" Visible without scrolling at {_ranges(visible)}." if visible
+                         else " It is below the fold at every width."))
+        else:
+            detail = "Visible without scrolling at every width."
+        out.append(F_("cta", "WARN" if below else "PASS", "Is the CTA visible before scrolling?",
+                      detail, rows))
 
     if r.get("shots"):
         out.append(F_("shots", "INFO", "Screenshots",
