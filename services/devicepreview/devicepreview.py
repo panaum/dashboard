@@ -23,9 +23,11 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -450,33 +452,164 @@ def make_backend(name: str, pw: Playwright) -> Backend:
     raise SystemExit(f"unknown backend {name!r}; choose local, macos or browserstack")
 
 
+# ── font self-check ─────────────────────────────────────────────────────────
+
+# Fonts are the single biggest source of garbage screenshots on headless Linux.
+# Ten "i"s rendering as wide as ten "W"s means every proportional face fell back
+# to a monospace — and a hundred captures would all be wrong the same way. This
+# is checked before a run and fails loudly, rather than shipping them silently.
+# Measured on inline <span>s, which shrink-wrap their text. The first version
+# measured block <p>s and got the container width every time — 1248px for ten
+# "i"s, ten "W"s, CJK and emoji alike — and so failed a machine with perfectly
+# good fonts, then refused to run on the strength of its own bug.
+SELF_CHECK_HTML = """<!doctype html><meta charset="utf-8">
+<style>body{font:16px sans-serif;margin:16px} .serif{font-family:serif} p{margin:4px 0}</style>
+<p><span id="narrow">iiiiiiiiii</span></p><p><span id="wide">WWWWWWWWWW</span></p>
+<p><span id="serif" class="serif">The quick brown fox jumps over the lazy dog</span></p>
+<p><span id="cjk">日本語のテキスト</span></p><p><span id="emoji">😀🎉</span></p>"""
+
+SELF_CHECK_JS = """() => {
+  const w = id => document.getElementById(id).getBoundingClientRect().width;
+  return { narrow: w('narrow'), wide: w('wide'), serif: w('serif'),
+           cjk: w('cjk'), emoji: w('emoji') };
+}"""
+
+
+def self_check(pw: Playwright, engines: tuple[str, ...], say) -> list[str]:
+    """Returns a list of problems; empty means fonts look sane. The monospace
+    test is the reliable one. Missing CJK or emoji glyphs still render as boxes
+    with width, so those are reported as measurements, not verdicts."""
+    problems: list[str] = []
+    for engine in engines:
+        try:
+            b = getattr(pw, engine).launch()
+        except PWError as exc:
+            problems.append(f"{engine}: cannot launch — {str(exc)[:120]}")
+            continue
+        try:
+            pg = b.new_page()
+            pg.set_content(SELF_CHECK_HTML)
+            m = pg.evaluate(SELF_CHECK_JS)
+            say(f"  self-check {engine:8} i×10={m['narrow']:.0f}px  W×10={m['wide']:.0f}px  "
+                f"cjk={m['cjk']:.0f}px  emoji={m['emoji']:.0f}px")
+            if m["narrow"] <= 0 or m["wide"] <= 0:
+                problems.append(f"{engine}: text did not render at all")
+            elif abs(m["narrow"] - m["wide"]) < 2:
+                problems.append(f"{engine}: proportional text renders monospace "
+                                "(i×10 == W×10) — font fallback is broken")
+        finally:
+            b.close()
+    return problems
+
+
+# ── running the matrix ──────────────────────────────────────────────────────
+
+
+def _capture_with_retry(backend: Backend, url: str, profile: Profile,
+                        options: CaptureOptions, say) -> CaptureResult:
+    """One retry, with double the timeout. A single flaky navigation must not
+    fail a fifteen-device run; a page that fails twice has genuinely failed."""
+    first = backend.capture(url, profile, options)
+    if first.status == "ok":
+        return first
+    say(f"  {profile.label}: retrying with {options.timeout_s * 2:.0f}s timeout — {first.error}")
+    second = backend.capture(url, profile, replace(options, timeout_s=options.timeout_s * 2))
+    if second.status == "ok":
+        second.notes.insert(0, f"first attempt failed ({first.error}); succeeded on retry")
+    else:
+        second.notes.insert(0, f"failed twice; first attempt: {first.error}")
+    return second
+
+
+def run_engine(engine: str, profiles: list[Profile], url: str, schemes: list[str],
+               base_opts: CaptureOptions, backend_name: str, say) -> list[CaptureResult]:
+    """Everything one engine has to do, on one thread, with one browser.
+
+    Playwright's sync API is bound to the thread that created it, so this is
+    the unit of parallelism: engines run side by side, and captures within an
+    engine run in sequence against that engine's single browser. Never more
+    than one browser per engine — a launch is seconds, a context is
+    milliseconds, and browsers are memory-hungry."""
+    results: list[CaptureResult] = []
+    with sync_playwright() as pw:
+        backend = make_backend(backend_name, pw)
+        try:
+            for scheme in schemes:
+                opts = replace(base_opts, color_scheme=scheme)
+                for p in profiles:
+                    r = _capture_with_retry(backend, url, p, opts, say)
+                    say(f"  {p.label:28} {engine:8} {scheme:5} {r.status:6} "
+                        f"{r.timings_ms.get('total', 0):>6}ms" + (f"  — {r.error}" if r.error else ""))
+                    results.append(r)
+        finally:
+            backend.close()
+    return results
+
+
+def run_matrix(url: str, chosen: list[Profile], schemes: list[str], base_opts: CaptureOptions,
+               backend_name: str, concurrency: int, say) -> tuple[list[CaptureResult], dict]:
+    by_engine: dict[str, list[Profile]] = {}
+    for p in chosen:
+        by_engine.setdefault(p.engine, []).append(p)
+    workers = max(1, min(concurrency, len(by_engine)))
+    t0 = time.time()
+    results: list[CaptureResult] = []
+    engine_ms: dict[str, int] = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = {ex.submit(run_engine, e, ps, url, schemes, base_opts, backend_name, say): e
+                   for e, ps in by_engine.items()}
+        for fut in as_completed(futures):
+            engine = futures[fut]
+            rs = fut.result()
+            engine_ms[engine] = sum(r.timings_ms.get("total", 0) for r in rs)
+            results.extend(rs)
+    # Report in matrix order regardless of which engine finished first.
+    order = {p.id: i for i, p in enumerate(chosen)}
+    results.sort(key=lambda r: (order.get(r.profile_id, 999), r.color_scheme))
+    return results, {"wallMs": int((time.time() - t0) * 1000), "workers": workers,
+                     "perEngineMs": engine_ms}
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="devicepreview",
                                  description="How does this URL render across real device profiles?")
-    ap.add_argument("url")
+    ap.add_argument("url", nargs="?")
     ap.add_argument("--devices", default="", help="comma list of ids, or 'all'")
     ap.add_argument("--tier", choices=("primary", "all"), default="primary")
     ap.add_argument("--include-edge", action="store_true")
     ap.add_argument("--landscape", action="store_true")
     ap.add_argument("--color-scheme", choices=("light", "dark", "both"), default="light")
     ap.add_argument("--backend", choices=("local", "macos", "browserstack"), default="local")
+    ap.add_argument("--concurrency", type=int, default=min(os.cpu_count() or 1, 4),
+                    help="parallel engines; default min(cpu_count, 4)")
     ap.add_argument("--timeout", type=float, default=30.0, help="seconds")
     ap.add_argument("--out", help="default: ./runs/<timestamp>")
     ap.add_argument("--json", action="store_true", help="print report.json path only")
     ap.add_argument("--list-devices", action="store_true")
+    ap.add_argument("--self-check", action="store_true",
+                    help="render a font test page in every engine and exit")
+    ap.add_argument("--no-self-check", action="store_true",
+                    help="skip the pre-run font check (it costs about a second)")
     args = ap.parse_args()
 
-    url = args.url if "://" in args.url else f"https://{args.url}"
-    out_dir = Path(args.out) if args.out else Path("runs") / datetime.now().strftime("%Y%m%d-%H%M%S")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    say = (lambda *a, **k: None) if args.json else (lambda *a, **k: print(*a, file=sys.stderr, **k))
+    lock = threading.Lock()
+    def say(*a, **k):
+        if args.json:
+            return
+        with lock:
+            print(*a, file=sys.stderr, **k)
 
-    started = datetime.now(timezone.utc)
-    results: list[CaptureResult] = []
     with sync_playwright() as pw:
+        if args.self_check:
+            problems = self_check(pw, ENGINES, say)
+            for pr in problems:
+                print(f"  FAIL {pr}", file=sys.stderr)
+            print("  fonts look sane in all engines" if not problems else
+                  f"  {len(problems)} problem(s)", file=sys.stderr)
+            return 2 if problems else 0
         profiles = load_devices(pw)
         if args.list_devices:
             for p in profiles:
@@ -484,31 +617,41 @@ def main() -> int:
                 print(f"  {p.id:22} {p.label:28} {p.engine:9} {p.viewport['width']}x{p.viewport['height']} "
                       f"@{p.device_scale_factor:g}  {p.tier}{v}")
             return 0
-        chosen = select_profiles(profiles, args.devices, args.tier, args.include_edge)
-        schemes = ["light", "dark"] if args.color_scheme == "both" else [args.color_scheme]
-        backend = make_backend(args.backend, pw)
-        try:
-            for scheme in schemes:
-                opts = CaptureOptions(out_dir=out_dir, landscape=args.landscape,
-                                      color_scheme=scheme, timeout_s=args.timeout)
-                for p in chosen:   # sequential in step 1; concurrency is step 2
-                    say(f"  {p.label} ({p.engine}, {scheme}) …", end="", flush=True)
-                    r = backend.capture(url, p, opts)
-                    say(f" {r.status} {r.timings_ms.get('total', 0)}ms"
-                        + (f"  — {r.error}" if r.error else ""))
-                    results.append(r)
-        finally:
-            backend.close()
+        if not args.url:
+            ap.error("a url is required")
+        # A quick chromium-only check before spending minutes on captures. The
+        # full three-engine check is --self-check.
+        problems = [] if args.no_self_check else self_check(pw, ("chromium",), say)
+        if problems:
+            for pr in problems:
+                print(f"  FAIL {pr}", file=sys.stderr)
+            print("  refusing to run: screenshots would be wrong. Install the fonts in the "
+                  "Dockerfile, or pass --no-self-check to override.", file=sys.stderr)
+            return 2
+
+    url = args.url if "://" in args.url else f"https://{args.url}"
+    out_dir = Path(args.out) if args.out else Path("runs") / datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    chosen = select_profiles(profiles, args.devices, args.tier, args.include_edge)
+    schemes = ["light", "dark"] if args.color_scheme == "both" else [args.color_scheme]
+    base_opts = CaptureOptions(out_dir=out_dir, landscape=args.landscape, timeout_s=args.timeout)
+
+    started = datetime.now(timezone.utc)
+    say(f"  {len(chosen)} device(s) × {len(schemes)} scheme(s), "
+        f"{len({p.engine for p in chosen})} engine(s) in parallel")
+    results, timing = run_matrix(url, chosen, schemes, base_opts, args.backend,
+                                 args.concurrency, say)
 
     report = {
         "schemaVersion": SCHEMA_VERSION,
-        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 1},
+        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 2},
         "url": url,
         "startedAt": started.isoformat(timespec="seconds"),
         "finishedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "backend": args.backend,
         "options": {"landscape": args.landscape, "colorScheme": args.color_scheme,
-                    "timeoutSeconds": args.timeout},
+                    "timeoutSeconds": args.timeout, "concurrency": args.concurrency},
+        "timing": timing,
         "devices": [asdict(r) for r in results],
         "unverifiedProfiles": sorted({r.profile_id for r in results if not r.verified}),
         "fidelityNote": ("The local backend uses real browser engines, not real devices. "
@@ -517,14 +660,14 @@ def main() -> int:
     }
     (out_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 
+    failed = [r for r in results if r.status != "ok"]
     if args.json:
         print(out_dir / "report.json")
     else:
-        failed = [r for r in results if r.status != "ok"]
-        say(f"\n  {len(results)} capture(s), {len(failed)} failed → {out_dir}/report.json")
-    # Exit codes per spec: 0 clean, 1 error-severity finding (none exist until
-    # step 3), 2 tool failure. A failed capture is a tool failure.
-    return 2 if any(r.status != "ok" for r in results) else 0
+        say(f"\n  {len(results)} capture(s), {len(failed)} failed, "
+            f"{timing['wallMs'] / 1000:.1f}s wall → {out_dir}/report.json")
+    # 0 clean, 1 error-severity finding (none until step 3), 2 tool failure.
+    return 2 if failed else 0
 
 
 if __name__ == "__main__":

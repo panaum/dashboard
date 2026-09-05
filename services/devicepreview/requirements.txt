@@ -1,0 +1,5 @@
+playwright>=1.45
+# The one dependency beyond Playwright and the standard library. Used only to
+# downscale thumbnails; if removed, captures still succeed and each result
+# carries a note that the gallery will scale the fold image instead.
+pillow>=10
