@@ -374,11 +374,15 @@ class Report(unittest.TestCase):
                     ".card img", "els => els.filter(i => !(i.naturalWidth > 0)).map(i => i.getAttribute('src'))")
                 self.assertEqual(broken, [], "thumbnails must resolve from the HTML's own directory")
                 # detail: one row per finding, and a box drawn for each finding that has one
-                pg.click(f'.card[data-key="{ANDROID}"] .frame')
+                pg.click(f'.card[data-key="{ANDROID}"] .open')
                 pg.wait_for_selector("#detail.open")
                 dev = next(d for d in rep["devices"] if d["profile_id"] == ANDROID)
                 self.assertEqual(pg.locator("#detail .f").count(), len(dev["findings"]))
-                drawable = [f for f in dev["findings"] if f.get("box") and f["box"]["width"] > 0]
+                # page-level findings (viewport meta, layout shift, fonts) are
+                # listed but never drawn — a viewport-sized box over the fold
+                # pointed at nothing and hid what was under it
+                drawable = [f for f in dev["findings"] if f.get("box") and f["box"]["width"] > 0
+                            and f.get("scope") != "page"]
                 pg.wait_for_function(f"document.querySelectorAll('#detail .box').length === {len(drawable)}")
                 pg.keyboard.press("Escape")
                 self.assertEqual(pg.locator("#detail.open").count(), 0)
@@ -391,6 +395,8 @@ class Report(unittest.TestCase):
                 pg.wait_for_selector("#compare.open")
                 self.assertEqual(pg.locator("#compare .pane").count(), 2)
                 self.assertIn("Unverified profiles", pg.inner_text("footer"))
+                # the verdict is the first thing on the page and names the worst outcome
+                self.assertRegex(pg.inner_text("header h1"), r"warning|clean|issue")
                 self.assertEqual(errors, [], "the gallery's own script must not throw")
             finally:
                 b.close()

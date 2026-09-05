@@ -941,8 +941,16 @@ class LocalBackend(Backend):
 
                 t0 = time.time()
                 response = page.goto(url, wait_until="domcontentloaded", timeout=options.timeout_s * 1000)
+                main_status = response.status if response is not None else None
+                # A challenge page polls forever and never goes network-idle;
+                # recognise it now rather than after the full idle timeout.
+                early = page.evaluate(BLOCK_JS) or {}
+                wall_why = None
+                if early.get("blocked") or main_status in (403, 429, 503):
+                    wall_why = early.get("why") or f"HTTP {main_status} for the main document"
+                    page.wait_for_timeout(300)   # let the wall paint before it is photographed
                 try:
-                    page.wait_for_load_state("networkidle", timeout=options.timeout_s * 1000)
+                    page.wait_for_load_state("networkidle", timeout=options.timeout_s * 1000 if wall_why is None else 1)
                 except PWTimeout:
                     # A page that polls or streams never goes idle. Degrade to a
                     # fixed settle rather than failing a capture that is fine.
@@ -955,17 +963,15 @@ class LocalBackend(Backend):
                 # Is this the site, or a wall in front of it? Decide before any
                 # audit runs: findings about a block page are findings about
                 # nothing. The wall itself is kept as evidence.
-                main_status = response.status if response is not None else None
-                wall = page.evaluate(BLOCK_JS) or {}
-                if wall.get("blocked") or main_status in (403, 429, 503):
+                wall = {} if wall_why else (page.evaluate(BLOCK_JS) or {})
+                if wall_why or wall.get("blocked"):
                     out = options.out_dir / profile.id
                     out.mkdir(parents=True, exist_ok=True)
                     fold = out / f"fold{suffix}.png"
                     page.screenshot(path=str(fold))
                     res.images["fold"] = _rel(fold, options.out_dir)
                     res.page = page.evaluate(PAGE_JS) or {}
-                    why = wall.get("why") or f"HTTP {main_status} for the main document"
-                    raise _Blocked(why)
+                    raise _Blocked(wall_why or wall.get("why"))
 
                 fonts = page.evaluate(FONTS_JS) or {}
                 res.fonts = {
@@ -1007,6 +1013,13 @@ class LocalBackend(Backend):
                 # Webfont findings need the network, which only Python saw.
                 if options.rules.get("webfont"):
                     res.findings.extend(_font_findings(res.fonts, w, h))
+                # A finding about the document (viewport meta, layout shift,
+                # a font, the page scrolling sideways) has no place on the
+                # page to point at; a viewport-sized box drawn over the fold
+                # implied one and hid what was under it.
+                for f in res.findings:
+                    if f.get("selector") in ("html", "head", "body"):
+                        f["scope"] = "page"
                 res.timings_ms["audit"] = int((time.time() - t_audit) * 1000)
 
                 t2 = time.time()
@@ -1047,9 +1060,9 @@ class LocalBackend(Backend):
             res.status = "blocked"
             res.error = f"a bot wall or error page was served instead of the site ({exc}); nothing was audited"
         except PWTimeout as exc:
-            res.status, res.error = "failed", f"timeout: {str(exc)[:200]}"
+            res.status, res.error = "failed", f"timeout: {_first_line(exc)}"
         except PWError as exc:
-            res.status, res.error = "failed", f"{type(exc).__name__}: {str(exc)[:200]}"
+            res.status, res.error = "failed", f"{type(exc).__name__}: {_first_line(exc)}"
 
         res.timings_ms["total"] = int((time.time() - t_start) * 1000)
         return res
@@ -1129,6 +1142,12 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, An
                                "substituted on this backend, so the typography is not authentic",
                     "selector": "body", "box": whole})
     return out
+
+def _first_line(exc: BaseException) -> str:
+    """Playwright appends a multi-line call log to every message; the first
+    line is the fact, the rest is noise in a report."""
+    return str(exc).split("\n", 1)[0].strip()[:200]
+
 
 def _rel(path: Path, base: Path) -> str:
     try:
@@ -1290,7 +1309,7 @@ def run_matrix(url: str, chosen: list[Profile], schemes: list[str], base_opts: C
             results.extend(rs)
     # Report in matrix order regardless of which engine finished first.
     order = {p.id: i for i, p in enumerate(chosen)}
-    results.sort(key=lambda r: (order.get(r.profile_id, 999), r.color_scheme))
+    results.sort(key=lambda r: (order.get(r.profile_id, 999), r.color_scheme != "light", r.landscape))
     return results, {"wallMs": int((time.time() - t0) * 1000), "workers": workers,
                      "perEngineMs": engine_ms}
 
@@ -1348,246 +1367,461 @@ REPORT_HTML = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>devicepreview · __TITLE__</title>
 <style>
-:root{--bg:#f4f5f8;--card:#fff;--ink:#1b1f27;--muted:#69727f;--line:#e2e5eb;--err:#c8322b;--warn:#b86e00;--info:#2b62b0;--ok:#2d8a57;--accent:#3a55c9}
+:root{
+  --bg:#f2f4f8;--surface:#ffffff;--surface-2:#eaeef4;--ink:#161a21;--muted:#5b6473;--faint:#8a93a3;--line:#dde2ea;--line-2:#c9d1dc;
+  --accent:#2f4fd0;--accent-ink:#ffffff;--accent-soft:#e4e9fb;
+  --err:#bf2a2a;--err-soft:#fbe8e6;--warn:#9c5a00;--warn-soft:#fff2da;--info:#2b67ad;--info-soft:#e6eefb;--ok:#1d7f4f;--ok-soft:#e1f4e8;--wall:#262a31;--wall-soft:#e3e6eb;
+  --frame:#14171c;--shadow:0 1px 2px rgba(22,26,33,.06),0 10px 28px rgba(22,26,33,.09);--ring:0 0 0 3px var(--accent-soft);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0e1116;--surface:#161a21;--surface-2:#1d222b;--ink:#e6eaf1;--muted:#9aa4b5;--faint:#6b7585;--line:#28303b;--line-2:#374050;
+  --accent:#8aa4ff;--accent-ink:#0e1116;--accent-soft:#222b45;
+  --err:#ff7373;--err-soft:#3b1c1c;--warn:#f1b53a;--warn-soft:#3a2d12;--info:#78adff;--info-soft:#1a2740;--ok:#55c78f;--ok-soft:#16321f;--wall:#c9cfd9;--wall-soft:#2a3039;
+  --frame:#04060a;--shadow:0 1px 2px rgba(0,0,0,.5),0 10px 28px rgba(0,0,0,.4);--ring:0 0 0 3px #2c3a66;
+}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
 a{color:inherit}
-header{background:var(--card);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;flex-wrap:wrap;gap:12px 32px;align-items:center}
-header h1{font-size:16px;margin:0 0 2px;font-weight:600;word-break:break-all}
-.meta{color:var(--muted);font-size:12px}
-.stats{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
-.stat{padding:4px 11px;border-radius:999px;font-weight:600;font-size:12px;background:#eceef3;color:var(--muted)}
-.stat.err{background:#fbe7e5;color:var(--err)}.stat.warn{background:#fff0d6;color:var(--warn)}.stat.ok{background:#e2f3e9;color:var(--ok)}.stat.fail{background:#1b1f27;color:#fff}
-main{padding:18px 24px 30px;max-width:1600px;margin:0 auto}
-.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.toolbar button,.close,#cmpclose{border:1px solid var(--line);background:var(--card);padding:6px 12px;border-radius:8px;cursor:pointer;font:inherit;color:var(--ink)}
-.toolbar button[disabled]{opacity:.45;cursor:default}
+button{font:inherit;color:inherit}
+code,.mono{font-family:var(--mono);font-size:.86em}
+.num{font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sr{position:absolute;left:-9999px}
+
+/* ── verdict header ─────────────────────────────────────────────── */
+.top{background:var(--surface);border-bottom:1px solid var(--line)}
+.top .in{max-width:1640px;margin:0 auto;padding:22px 28px 18px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px 32px;align-items:start}
+.verdict{display:flex;gap:14px;align-items:flex-start}
+.verdict .mark{flex:none;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:20px;font-weight:700;color:#fff}
+.verdict h1{margin:0;font-size:22px;line-height:1.2;font-weight:650;letter-spacing:-.01em;text-wrap:balance}
+.verdict .sub{margin:6px 0 0;color:var(--muted);font-size:13px}
+.verdict .sub a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line-2);word-break:break-all}
+.verdict .sub a:hover{border-color:var(--ink)}
+.tone-err .mark{background:var(--err)}.tone-warn .mark{background:var(--warn)}.tone-ok .mark{background:var(--ok)}.tone-wall .mark{background:var(--wall)}
+.stats{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-self:center}
+.stat{display:flex;flex-direction:column;align-items:flex-start;padding:8px 14px;border-radius:10px;background:var(--surface-2);min-width:88px}
+.stat b{font-size:20px;font-weight:650;line-height:1.1}
+.stat span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+.stat.err{background:var(--err-soft)}.stat.err b{color:var(--err)}
+.stat.warn{background:var(--warn-soft)}.stat.warn b{color:var(--warn)}
+.stat.ok{background:var(--ok-soft)}.stat.ok b{color:var(--ok)}
+.stat.wall{background:var(--wall-soft)}.stat.wall b{color:var(--wall)}
+
+/* ── toolbar ───────────────────────────────────────────────────── */
+main{max-width:1640px;margin:0 auto;padding:16px 28px 40px}
+.bar{display:flex;gap:10px 18px;align-items:center;flex-wrap:wrap;padding:6px 0 14px}
+.seg{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;padding:6px 11px;border-radius:7px;cursor:pointer;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
+.seg button .n{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.seg button.on{background:var(--surface-2);color:var(--ink)}
+.seg button.on .n{color:var(--muted)}
+.seg button[disabled]{opacity:.4;cursor:default}
+.chips{display:inline-flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 11px;cursor:pointer;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
+.chip.on{border-color:var(--accent);color:var(--ink);background:var(--accent-soft)}
+.chip .n{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.grow{flex:1}
+.btn{border:1px solid var(--line);background:var(--surface);padding:7px 13px;border-radius:9px;cursor:pointer}
+.btn:hover{border-color:var(--line-2)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn[disabled]{opacity:.45;cursor:default}
 .hint{color:var(--muted);font-size:12px}
-h2.group{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:24px 0 10px;font-weight:600}
-h2.group .n{font-weight:500;margin-left:6px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:16px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer;position:relative;transition:box-shadow .15s}
-.card:hover,.card:focus-visible{box-shadow:0 4px 18px rgba(20,30,60,.12);outline:none}
-.card.failed{border-style:dashed}
-.card .name{font-weight:600;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding-right:22px}
-.card .eng{color:var(--muted);font-weight:500;font-size:11px}
-.card .sub{color:var(--muted);font-size:11px;margin-bottom:10px}
-.frame{background:#15171c;border-radius:12px;padding:8px;margin:0 auto;max-width:100%}
-.frame.phone{border-radius:24px;padding:16px 9px;max-width:170px}
-.frame.tablet{border-radius:16px;padding:12px;max-width:200px}
+
+/* ── groups + cards ─────────────────────────────────────────────── */
+.groups{display:flex;flex-wrap:wrap;gap:26px 30px;align-items:flex-start}
+.group{flex:0 1 auto;max-width:100%}
+.group h2{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600;display:flex;gap:8px;align-items:baseline}
+.group h2 .n{color:var(--faint);font-weight:500;letter-spacing:0;text-transform:none}
+.cards{display:flex;flex-wrap:wrap;gap:14px}
+.card{position:relative;width:236px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 12px 12px 16px;box-shadow:0 1px 2px rgba(22,26,33,.04);transition:box-shadow .15s,transform .15s;overflow:hidden}
+.card:hover{box-shadow:var(--shadow)}
+.card .stripe{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--ok)}
+.card.sev-error .stripe{background:var(--err)}.card.sev-warn .stripe{background:var(--warn)}.card.sev-info .stripe{background:var(--info)}.card.sev-wall .stripe,.card.sev-fail .stripe{background:var(--wall)}
+.card.sev-fail{border-style:dashed}
+.card.selected{border-color:var(--accent);box-shadow:var(--ring)}
+.card .head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:8px}
+.card .name{font-weight:620;font-size:13.5px;line-height:1.25}
+.card .sub{color:var(--muted);font-size:11.5px;margin-top:2px}
+.card .pickw{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none;padding:2px 0 2px 6px}
+.card .pick{width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}
+.card .open{display:block;width:100%;border:0;background:transparent;padding:0;cursor:zoom-in;text-align:left;border-radius:10px}
+.frame{background:var(--frame);border-radius:12px;padding:8px;margin:0 auto}
+.frame.phone{border-radius:24px;padding:16px 9px;max-width:168px}
+.frame.tablet{border-radius:16px;padding:12px;max-width:196px}
 .frame.desktop{border-radius:8px 8px 3px 3px;padding:7px 7px 12px}
-.screen{background:#fff;overflow:hidden;border-radius:4px;width:100%}
+.screen{background:#fff;overflow:hidden;border-radius:4px;width:100%;position:relative;max-height:300px}
 .frame.phone .screen{border-radius:14px}
 .screen img{display:block;width:100%;height:100%;object-fit:cover;object-position:top}
-.nope{display:flex;align-items:center;justify-content:center;height:100%;min-height:80px;color:#8a919c;font-size:11px;padding:8px;text-align:center}
-.badges{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
-.b{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px}
-.b.err{background:#fbe7e5;color:var(--err)}.b.warn{background:#fff0d6;color:var(--warn)}.b.info{background:#e6eefb;color:var(--info)}.b.ok{background:#e2f3e9;color:var(--ok)}.b.fail{background:#1b1f27;color:#fff}.b.unv{background:#eceef3;color:var(--muted);font-weight:500}
-.pick{position:absolute;top:12px;right:12px;width:17px;height:17px;margin:0;accent-color:var(--accent);cursor:pointer}
-.card.selected{outline:2px solid var(--accent)}
-.overlay{position:fixed;inset:0;background:rgba(20,24,32,.74);display:none;z-index:10;overflow:auto;padding:20px}
-.overlay.open{display:block}
-.panel{background:var(--card);border-radius:14px;max-width:1500px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:auto 1fr}
-.panel .head{grid-column:1/-1;display:flex;gap:14px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.panel .head h3{margin:0;font-size:15px}
-.close{margin-left:auto}
-.shot{padding:18px;overflow:auto;max-height:calc(100vh - 118px);background:#f0f1f4;border-radius:0 0 0 14px}
-.wrap{position:relative;width:min(100%,var(--w));margin:0 auto;box-shadow:0 2px 12px rgba(0,0,0,.12)}
+.screen .nope{display:flex;align-items:center;justify-content:center;height:100%;min-height:90px;color:#7d8694;font-size:11px;padding:8px;text-align:center;background:#f4f5f7}
+.badges{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.b{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;font-variant-numeric:tabular-nums}
+.b.err{background:var(--err-soft);color:var(--err)}.b.warn{background:var(--warn-soft);color:var(--warn)}.b.info{background:var(--info-soft);color:var(--info)}.b.ok{background:var(--ok-soft);color:var(--ok)}.b.fail{background:var(--wall);color:#fff}.b.unv{background:var(--surface-2);color:var(--muted);font-weight:500}
+.card .worst{margin:9px 0 0;font-size:12px;line-height:1.4;color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .worst .r{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-right:6px}
+.empty{color:var(--muted);padding:40px 0;text-align:center}
+
+/* ── detail dialog ─────────────────────────────────────────────── */
+.dialog{position:fixed;inset:0;background:rgba(10,13,18,.72);display:none;z-index:20;padding:18px}
+.dialog.open{display:block}
+.panel{background:var(--surface);border-radius:16px;height:100%;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden;box-shadow:var(--shadow)}
+.dhead{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.dhead h2{margin:0;font-size:16px;font-weight:650}
+.dhead .meta{color:var(--muted);font-size:12px;margin-top:1px}
+.nav{border:1px solid var(--line);background:var(--surface);width:34px;height:34px;border-radius:9px;cursor:pointer;font-size:18px;line-height:1;display:grid;place-items:center}
+.nav[disabled]{opacity:.35;cursor:default}
+.dtools{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.tog{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
+.tog input{accent-color:var(--accent);margin:0}
+.lnk{font-size:12.5px;color:var(--muted)}
+.dbody{display:grid;grid-template-columns:minmax(0,1fr) 400px;min-height:0}
+.shot{overflow:auto;background:var(--surface-2);padding:20px;min-height:0}
+.wrap{position:relative;width:var(--zw);margin:0 auto;box-shadow:0 2px 14px rgba(0,0,0,.18);background:#fff}
 .wrap img{display:block;width:100%}
-.box{position:absolute;border:2px solid var(--info);background:rgba(43,98,176,.12);cursor:pointer;box-sizing:border-box}
-.box.err{border-color:var(--err);background:rgba(200,50,43,.13)}.box.warn{border-color:var(--warn);background:rgba(184,110,0,.13)}
+.wrap.noov .box{display:none}
+.box{position:absolute;border:2px solid var(--info);background:rgba(43,103,173,.13);cursor:pointer;box-sizing:border-box}
+.box.err{border-color:var(--err);background:rgba(191,42,42,.14)}.box.warn{border-color:var(--warn);background:rgba(156,90,0,.14)}
 .box.hot{box-shadow:0 0 0 3px #fff,0 0 0 6px var(--accent);z-index:2}
-.side{border-left:1px solid var(--line);padding:6px 16px 16px;overflow:auto;max-height:calc(100vh - 118px)}
-.side h4{margin:14px 0 6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-.f{border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:8px 10px;margin-bottom:8px;cursor:pointer;font-size:12.5px}
+.box.dim{opacity:.25}
+.side{border-left:1px solid var(--line);overflow:auto;min-height:0;padding:0 16px 20px}
+.side h4{margin:18px 0 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:flex;gap:8px;align-items:baseline}
+.side h4 .n{color:var(--faint);font-weight:500;letter-spacing:0;text-transform:none}
+.sevbar{position:sticky;top:0;background:var(--surface);padding:12px 0 10px;border-bottom:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap;z-index:1}
+.f{border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:8px 10px;margin-bottom:8px;cursor:pointer;font-size:12.5px;background:var(--surface)}
 .f.err{border-left-color:var(--err)}.f.warn{border-left-color:var(--warn)}.f.info{border-left-color:var(--info)}
-.f.hot{background:#eef2ff}
-.f .rule{font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:2px}
-.f code{display:block;margin-top:4px;font-size:11px;color:var(--muted);word-break:break-all}
-.note{font-size:12px;color:var(--muted);margin:4px 0}
+.f.hot{background:var(--accent-soft)}
+.f.hide{display:none}
+.f .rule{display:flex;gap:6px;align-items:center;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px;font-family:var(--mono)}
+.f .rule .sv{width:7px;height:7px;border-radius:50%;background:var(--info)}
+.f.err .rule .sv{background:var(--err)}.f.warn .rule .sv{background:var(--warn)}
+.f code{display:block;margin-top:5px;color:var(--muted);word-break:break-all}
+.note{font-size:12.5px;color:var(--muted);margin:4px 0;line-height:1.45}
+.state{border-radius:10px;padding:12px 14px;margin-top:14px;font-size:13px;line-height:1.45}
+.state.wall{background:var(--wall-soft)}.state.fail{background:var(--err-soft)}
+.state b{display:block;margin-bottom:4px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12.5px;color:var(--muted)}
+.kv b{color:var(--ink);font-weight:500}
 .diffimg{width:100%;border:1px solid var(--line);border-radius:6px;margin-top:6px}
-.compare{display:none;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+
+/* ── compare ──────────────────────────────────────────────────── */
+.compare{display:none;grid-template-columns:1fr 1fr;gap:16px;margin:4px 0 26px}
 .compare.open{display:grid}
-.compare .ch{grid-column:1/-1;display:flex;gap:12px;align-items:center}
-.compare .ch #cmpclose{margin-left:auto}
-.pane{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.compare .ch{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.compare select{font:inherit;color:inherit;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:6px 8px;max-width:260px}
+.pane{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .pane .ph{padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600;font-size:13px;display:flex;justify-content:space-between;gap:8px}
-.pane .pb{overflow:auto;max-height:78vh;background:#f0f1f4}
-.pane img{display:block;width:100%}
-footer{padding:22px 24px 28px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);background:var(--card)}
-footer p{margin:6px 0;max-width:960px}
-@media (max-width:900px){.panel{grid-template-columns:1fr}.side{border-left:0;border-top:1px solid var(--line);max-height:none}.shot{max-height:70vh}.compare{grid-template-columns:1fr}}
+.pane .ph .meta{color:var(--muted);font-weight:500}
+.pane .pb{overflow:auto;max-height:78vh;background:var(--surface-2);padding:14px}
+.pane .wrap{width:min(100%,var(--zw))}
+
+/* ── footer ───────────────────────────────────────────────────── */
+footer{border-top:1px solid var(--line);background:var(--surface)}
+footer .in{max-width:1640px;margin:0 auto;padding:22px 28px 30px;color:var(--muted);font-size:12.5px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px 40px}
+footer p{margin:0;line-height:1.5;max-width:70ch}
+footer b{color:var(--ink);font-weight:600}
+
+@media (max-width:980px){
+  .top .in{grid-template-columns:1fr}.stats{justify-content:flex-start}
+  .dbody{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}.side{border-left:0;border-top:1px solid var(--line);max-height:42vh}
+  .compare{grid-template-columns:1fr}
+}
+@media (max-width:560px){.top .in,main,footer .in{padding-left:16px;padding-right:16px}.card{width:100%}.dialog{padding:0}.panel{border-radius:0}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 </style>
 </head>
 <body>
-<header id="head"></header>
+<header class="top"><div class="in"><div class="verdict" id="verdict"></div><div class="stats" id="stats"></div></div></header>
 <main>
-  <div class="toolbar">
-    <button id="cmp" type="button" disabled>Compare selected (0/2)</button>
-    <span class="hint">Click a device to see its full page with findings drawn on it. Tick two devices to compare them side by side.</span>
-  </div>
+  <nav class="bar" id="bar" aria-label="Filters"></nav>
   <section id="compare" class="compare" aria-live="polite"></section>
-  <div id="groups"></div>
+  <div id="groups" class="groups"></div>
+  <p id="empty" class="empty" hidden></p>
 </main>
-<div id="detail" class="overlay" role="dialog" aria-modal="true"></div>
-<footer id="foot"></footer>
+<div id="detail" class="dialog" role="dialog" aria-modal="true" aria-labelledby="dtitle"></div>
+<footer><div class="in" id="foot"></div></footer>
 <script id="dp-data" type="application/json">__DATA__</script>
 <script>
 (() => {
 const R = JSON.parse(document.getElementById('dp-data').textContent);
 const $ = (sel, el = document) => el.querySelector(sel);
+const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const SEVN = {error: 0, warn: 1, info: 2};
+const plural = (n, w, ws) => n + ' ' + (n === 1 ? w : (ws || w + 's'));
+const ms = v => v >= 1000 ? (v / 1000).toFixed(1) + 's' : v + 'ms';
+const PLATFORM = {ios: 'iOS phones', ipados: 'iPadOS tablets', android: 'Android', desktop: 'Desktop'};
+const ENGINE = {webkit: 'WebKit', chromium: 'Chromium', firefox: 'Firefox'};
+
+// ── model ──────────────────────────────────────────────────────────
 const count = d => { const c = {error: 0, warn: 0, info: 0}; for (const f of d.findings || []) c[f.severity] = (c[f.severity] || 0) + 1; return c; };
-// Worst first. A failed capture outranks everything: it cannot vouch for the
-// page at all. Then errors, warnings, infos; ties keep matrix order.
+// Worst first. A blocked or failed capture outranks everything: it cannot
+// vouch for the page at all. Then errors, warnings, infos; ties keep matrix order.
 const score = d => { const c = count(d); return (d.status !== 'ok' ? 1e9 : 0) + c.error * 1e6 + c.warn * 1e3 + c.info; };
-const devs = R.devices.map((d, i) => ({...d, _i: i, _c: count(d), _s: score(d),
+const worstSev = d => d.status === 'blocked' ? 'wall' : d.status !== 'ok' ? 'fail' : d._c.error ? 'error' : d._c.warn ? 'warn' : d._c.info ? 'info' : 'ok';
+const devs = R.devices.map((d, i) => { const c = count(d); return {...d, _i: i, _c: c, _s: score(d),
   _key: d.profile_id + (d.color_scheme !== 'light' ? '-' + d.color_scheme : '') + (d.landscape ? '-landscape' : ''),
   _variant: [d.color_scheme !== 'light' ? d.color_scheme : '', d.landscape ? 'landscape' : ''].filter(Boolean).join(' · '),
-  _shape: d.is_mobile ? (Math.min(d.viewport.width, d.viewport.height) < 600 ? 'phone' : 'tablet') : 'desktop'}));
+  _shape: d.is_mobile ? (Math.min(d.viewport.width, d.viewport.height) < 600 ? 'phone' : 'tablet') : 'desktop'}; });
+devs.forEach(d => { d._sev = worstSev(d); d._worst = (d.findings || []).slice().sort((a, b) => (SEVN[a.severity] ?? 9) - (SEVN[b.severity] ?? 9))[0] || null; });
 const byKey = Object.fromEntries(devs.map(d => [d._key, d]));
-const PLATFORM = {ios: 'iOS phones', ipados: 'iPadOS tablets', android: 'Android', desktop: 'Desktop'};
-const ms = v => v >= 1000 ? (v / 1000).toFixed(1) + 's' : v + 'ms';
-const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+const nDevices = new Set(devs.map(d => d.profile_id)).size, multi = devs.length !== nDevices;
+const unit = multi ? 'capture' : 'device';
+const platforms = [...new Set(devs.map(d => d.platform))];
+const state = {sev: 'all', platforms: new Set(platforms), sort: 'worst', picks: []};
 
-{ // header
-  const s = R.summary, failed = devs.filter(d => d.status === 'failed').length, blocked = devs.filter(d => d.status === 'blocked').length;
-  $('#head').innerHTML = `<div><h1><a href="${esc(R.url)}" target="_blank" rel="noopener">${esc(R.url)}</a></h1>
-    <div class="meta">${esc(new Date(R.startedAt).toLocaleString())} · ${ms(R.timing.wallMs)} wall · backend ${esc(R.backend)} · devicepreview ${esc(R.tool.version)}</div></div>
-    <div class="stats"><span class="stat${s.errors ? ' err' : ''}">${plural(s.errors, 'error')}</span>
-    <span class="stat${s.warnings ? ' warn' : ''}">${plural(s.warnings, 'warning')}</span>
-    <span class="stat ok">${s.devicesPassed}/${devs.length} devices passed</span>
-    ${blocked ? `<span class="stat fail">${plural(blocked, 'device')} blocked by bot protection</span>` : ''}
-    ${failed ? `<span class="stat fail">${plural(failed, 'capture')} failed</span>` : ''}</div>`;
+// ── verdict header ─────────────────────────────────────────────────
+{
+  const s = R.summary, errDev = new Set(devs.filter(d => d._c.error).map(d => d.profile_id)).size;
+  const blocked = devs.filter(d => d.status === 'blocked').length, failed = devs.filter(d => d.status === 'failed').length;
+  let tone, mark, line;
+  if (s.errors) { tone = 'err'; mark = '!'; line = `${plural(s.errors, 'ship-blocking issue')} on ${errDev} of ${nDevices} devices`; }
+  else if (blocked) { tone = 'wall'; mark = '⊘'; line = `Blocked by bot protection on ${plural(blocked, unit)}`; }
+  else if (failed) { tone = 'wall'; mark = '×'; line = `${plural(failed, 'capture')} failed — nothing to vouch for there`; }
+  else if (s.warnings) { tone = 'warn'; mark = '~'; line = `No errors · ${plural(s.warnings, 'warning')} to review`; }
+  else { tone = 'ok'; mark = '✓'; line = `All ${nDevices} devices clean`; }
+  const extras = [];
+  if (s.errors && blocked) extras.push(`${plural(blocked, unit)} blocked`);
+  if ((s.errors || blocked) && failed) extras.push(`${plural(failed, 'capture')} failed`);
+  const started = new Date(R.startedAt);
+  $('#verdict').className = 'verdict tone-' + tone;
+  $('#verdict').innerHTML = `<div class="mark" aria-hidden="true">${mark}</div><div>
+    <h1>${esc(line)}${extras.length ? ' · ' + esc(extras.join(' · ')) : ''}</h1>
+    <p class="sub"><a href="${esc(R.url)}" target="_blank" rel="noopener">${esc(R.url)}</a><br>
+    ${plural(devs.length, 'capture')} across ${plural(nDevices, 'device')} and ${plural(platforms.length, 'platform')} · ${esc(started.toLocaleString())} · ${ms(R.timing.wallMs)} · ${esc(R.backend)} backend · devicepreview ${esc(R.tool.version)}</p></div>`;
+  $('#stats').innerHTML = `
+    <div class="stat ${s.errors ? 'err' : ''}"><b class="num">${s.errors}</b><span>errors</span></div>
+    <div class="stat ${s.warnings ? 'warn' : ''}"><b class="num">${s.warnings}</b><span>warnings</span></div>
+    <div class="stat"><b class="num">${s.infos}</b><span>info</span></div>
+    <div class="stat ok"><b class="num">${s.devicesPassed}<small style="font-size:12px;color:var(--muted)">/${devs.length}</small></b><span>${unit}s passed</span></div>
+    ${blocked ? `<div class="stat wall"><b class="num">${blocked}</b><span>blocked</span></div>` : ''}
+    ${failed ? `<div class="stat wall"><b class="num">${failed}</b><span>failed</span></div>` : ''}`;
 }
 
-const card = d => {
-  const img = d.images.thumb || d.images.fold, c = d._c;
-  const badges = d.status === 'blocked' ? '<span class="b fail">blocked — bot protection</span>'
+// ── toolbar ────────────────────────────────────────────────────────
+const sevMatch = d => state.sev === 'all' || (state.sev === 'error' && d._c.error) || (state.sev === 'warn' && d._c.warn)
+  || (state.sev === 'clean' && d.status === 'ok' && !d._c.error && !d._c.warn) || (state.sev === 'problem' && d.status !== 'ok');
+const visible = () => devs.filter(d => sevMatch(d) && state.platforms.has(d.platform));
+const renderBar = () => {
+  const n = k => devs.filter(d => { const save = state.sev; state.sev = k; const m = sevMatch(d); state.sev = save; return m; }).length;
+  const segs = [['all', 'All'], ['error', 'With errors'], ['warn', 'With warnings'], ['clean', 'Clean'], ['problem', 'Blocked / failed']]
+    .filter(([k]) => k === 'all' || n(k)).map(([k, l]) => `<button type="button" data-sev="${k}" class="${state.sev === k ? 'on' : ''}" aria-pressed="${state.sev === k}">${l}<span class="n">${n(k)}</span></button>`).join('');
+  const chips = platforms.map(p => `<button type="button" class="chip ${state.platforms.has(p) ? 'on' : ''}" data-plat="${esc(p)}" aria-pressed="${state.platforms.has(p)}">${esc(PLATFORM[p] || p)}<span class="n">${devs.filter(d => d.platform === p).length}</span></button>`).join('');
+  $('#bar').innerHTML = `<div class="seg" role="group" aria-label="Filter by result">${segs}</div>
+    ${platforms.length > 1 ? `<div class="chips" role="group" aria-label="Platforms">${chips}</div>` : ''}
+    <div class="seg" role="group" aria-label="Order"><button type="button" data-sort="worst" class="${state.sort === 'worst' ? 'on' : ''}">Worst first</button><button type="button" data-sort="matrix" class="${state.sort === 'matrix' ? 'on' : ''}">Matrix order</button></div>
+    <span class="grow"></span>
+    <button type="button" class="btn primary" id="cmp" disabled>Compare selected (0/2)</button>
+    <span class="hint">Tick two ${unit}s to compare them side by side.</span>`;
+};
+document.addEventListener('click', e => {
+  const s = e.target.closest('[data-sev]'); if (s) { state.sev = s.dataset.sev; render(); return; }
+  const p = e.target.closest('[data-plat]'); if (p) {
+    if (state.platforms.has(p.dataset.plat) && state.platforms.size === 1) state.platforms = new Set(platforms);   // last one off = all back on
+    else if (state.platforms.has(p.dataset.plat)) state.platforms.delete(p.dataset.plat); else state.platforms.add(p.dataset.plat);
+    render(); return;
+  }
+  const o = e.target.closest('[data-sort]'); if (o) { state.sort = o.dataset.sort; render(); }
+});
+
+// ── cards ──────────────────────────────────────────────────────────
+const badges = d => {
+  const c = d._c;
+  const main = d.status === 'blocked' ? '<span class="b fail">blocked — bot protection</span>'
     : d.status !== 'ok' ? '<span class="b fail">capture failed</span>'
     : (c.error || c.warn || c.info)
       ? (c.error ? `<span class="b err">${plural(c.error, 'error')}</span>` : '')
         + (c.warn ? `<span class="b warn">${plural(c.warn, 'warning')}</span>` : '')
         + (c.info ? `<span class="b info">${c.info} info</span>` : '')
       : '<span class="b ok">clean</span>';
-  return `<div class="card${d.status !== 'ok' ? ' failed' : ''}" data-key="${esc(d._key)}" tabindex="0" role="button" aria-label="Open ${esc(d.label)}">
-    <input type="checkbox" class="pick" title="Select for compare" aria-label="Select ${esc(d.label)} for compare">
-    <div class="name"><span>${esc(d.label)}</span><span class="eng">${esc(d.engine)}</span></div>
-    <div class="sub">${d.viewport.width}×${d.viewport.height} @${d.device_scale_factor}×${d._variant ? ' · ' + esc(d._variant) : ''}</div>
-    <div class="frame ${d._shape}"><div class="screen" style="aspect-ratio:${d.viewport.width} / ${d.viewport.height}">${
-      img ? `<img src="${esc(img)}" alt="${esc(d.label)}, above the fold">` : `<div class="nope">${esc(d.error || 'no capture')}</div>`}</div></div>
-    <div class="badges">${badges}${d.verified ? '' : '<span class="b unv" title="Viewport, scale factor and user agent come from published specs, not a physical device">unverified</span>'}</div></div>`;
+  return main + (d.verified ? '' : '<span class="b unv" title="Viewport, scale factor and user agent come from published specs, not a physical device">unverified</span>');
 };
-
-{ // grid: grouped by platform, each group and the groups themselves worst first
+const card = d => {
+  const img = d.images.thumb || d.images.fold;
+  const w = d._worst;
+  return `<article class="card sev-${d._sev} ${state.picks.includes(d._key) ? 'selected' : ''}" data-key="${esc(d._key)}">
+    <span class="stripe" aria-hidden="true"></span>
+    <div class="head"><div><div class="name">${esc(d.label)}</div><div class="sub">${esc(ENGINE[d.engine] || d.engine)} · ${d.viewport.width}×${d.viewport.height} @${d.device_scale_factor}×${d._variant ? ' · ' + esc(d._variant) : ''}</div></div>
+      <label class="pickw"><input type="checkbox" class="pick" ${state.picks.includes(d._key) ? 'checked' : ''} ${state.picks.length >= 2 && !state.picks.includes(d._key) ? 'disabled' : ''} aria-label="Select ${esc(d.label)} for compare">compare</label></div>
+    <button type="button" class="open" aria-label="Open ${esc(d.label)}">
+      <div class="frame ${d._shape}"><div class="screen" style="aspect-ratio:${d.viewport.width} / ${d.viewport.height}">${
+        img ? `<img src="${esc(img)}" alt="${esc(d.label)}, above the fold">` : `<div class="nope">${esc(d.error || 'no capture')}</div>`}</div></div>
+    </button>
+    <div class="badges">${badges(d)}</div>
+    ${d.status !== 'ok' ? `<p class="worst">${esc(d.error || '')}</p>`
+      : w ? `<p class="worst" title="${esc(w.message)}"><span class="r">${esc(w.rule)}</span>${esc(w.message)}</p>` : ''}
+  </article>`;
+};
+const render = () => {
+  renderBar();
+  const vis = visible().sort((a, b) => state.sort === 'worst' ? (b._s - a._s || a._i - b._i) : a._i - b._i);
   const groups = new Map();
-  for (const d of devs) (groups.get(d.platform) || groups.set(d.platform, []).get(d.platform)).push(d);
-  const ordered = [...groups.entries()]
-    .map(([p, ds]) => [p, ds.sort((a, b) => b._s - a._s || a._i - b._i)])
-    .sort((a, b) => b[1][0]._s - a[1][0]._s || a[1][0]._i - b[1][0]._i);
-  $('#groups').innerHTML = ordered.map(([p, ds]) =>
-    `<h2 class="group">${esc(PLATFORM[p] || p)}<span class="n">${ds.length}</span></h2><div class="grid">${ds.map(card).join('')}</div>`).join('');
-}
+  for (const d of vis) (groups.get(d.platform) || groups.set(d.platform, []).get(d.platform)).push(d);
+  const ordered = [...groups.entries()].sort((a, b) => state.sort === 'worst' ? (b[1][0]._s - a[1][0]._s || a[1][0]._i - b[1][0]._i) : a[1][0]._i - b[1][0]._i);
+  $('#groups').innerHTML = ordered.map(([p, ds]) => `<section class="group"><h2>${esc(PLATFORM[p] || p)}<span class="n">${ds.length}</span></h2><div class="cards">${ds.map(card).join('')}</div></section>`).join('');
+  const empty = $('#empty'); empty.hidden = vis.length > 0;
+  empty.textContent = devs.length ? 'No captures match these filters.' : 'This run captured nothing.';
+  syncPicks();
+};
 
-// detail view: full page with the findings drawn where they are
+// ── overlays (shared by detail and compare) ────────────────────────
+// Boxes are in CSS pixels of the document; the image is CSS px × scale
+// factor, so its natural size gives the exact mapping.
+const drawBoxes = (wrap, img, d, fs) => {
+  const place = () => {
+    const W = img.naturalWidth / d.device_scale_factor, H = img.naturalHeight / d.device_scale_factor;
+    if (!W || !H) return;
+    $$('.box', wrap).forEach(b => b.remove());
+    for (const f of fs) {
+      const b = f.box;
+      if (f.scope === 'page' || !b || !(b.width > 0) || !(b.height > 0) || b.x >= W || b.y >= H) continue;
+      const el = document.createElement('div');
+      el.className = 'box ' + (f.severity === 'error' ? 'err' : f.severity); el.dataset.f = f._i; el.title = f.rule + ': ' + f.message;
+      el.style.cssText = `left:${b.x / W * 100}%;top:${b.y / H * 100}%;width:${Math.min(b.width, W - b.x) / W * 100}%;height:${Math.min(b.height, H - b.y) / H * 100}%`;
+      wrap.appendChild(el);
+    }
+  };
+  if (img.complete && img.naturalWidth) place(); else img.addEventListener('load', place, {once: true});
+};
+const indexed = d => (d.findings || []).map((f, i) => ({...f, _i: i})).sort((a, b) => (SEVN[a.severity] ?? 9) - (SEVN[b.severity] ?? 9) || a._i - b._i);
+
+// ── detail dialog ──────────────────────────────────────────────────
 const detail = $('#detail');
-const closeDetail = () => { detail.classList.remove('open'); detail.innerHTML = ''; document.body.style.overflow = ''; };
-const openDetail = key => {
+const dstate = {key: null, zoom: 'fit', overlays: true, sev: new Set(['error', 'warn', 'info']), opener: null};
+const order = () => visible().sort((a, b) => state.sort === 'worst' ? (b._s - a._s || a._i - b._i) : a._i - b._i).map(d => d._key);
+const closeDetail = () => { if (!detail.classList.contains('open')) return; detail.classList.remove('open'); detail.innerHTML = ''; document.body.style.overflow = '';
+  if (dstate.opener && document.contains(dstate.opener)) dstate.opener.focus(); };
+const zoomWidth = d => dstate.zoom === 'fit' ? '100%' : `${d.viewport.width * Number(dstate.zoom)}px`;
+const openDetail = (key, opener) => {
   const d = byKey[key]; if (!d) return;
-  const fs = (d.findings || []).map((f, i) => ({...f, _i: i})).sort((a, b) => (SEVN[a.severity] ?? 9) - (SEVN[b.severity] ?? 9) || a._i - b._i);
+  dstate.key = key; if (opener) dstate.opener = opener;
+  const fs = indexed(d), placed = fs.filter(f => f.scope !== 'page' && f.box && f.box.width > 0), pageLevel = fs.filter(f => !placed.includes(f));
   const full = d.images.full || d.images.fold;
+  const keys = order(), at = keys.indexOf(key);
+  const fitem = f => `<div class="f ${f.severity === 'error' ? 'err' : esc(f.severity)} ${dstate.sev.has(f.severity) ? '' : 'hide'}" data-f="${f._i}" tabindex="0">
+      <div class="rule"><span class="sv" aria-hidden="true"></span>${esc(f.severity)} · ${esc(f.rule)}</div><div>${esc(f.message)}</div>${f.selector && f.scope !== 'page' ? `<code>${esc(f.selector)}</code>` : ''}</div>`;
+  const c = d._c;
+  const failedFonts = (d.fonts && d.fonts.failed_requests || []).length;
   detail.innerHTML = `<div class="panel">
-    <div class="head"><h3>${esc(d.label)}</h3><span class="meta">${esc(d.engine)} · ${d.viewport.width}×${d.viewport.height} @${d.device_scale_factor}×${d._variant ? ' · ' + esc(d._variant) : ''}${d.final_url && d.final_url !== d.url ? ' · landed on ' + esc(d.final_url) : ''}</span>
-      <button class="close" type="button">Close ✕</button></div>
-    <div class="shot"><div class="wrap" style="--w:${d.viewport.width}px">${
-      full ? `<img id="dshot" src="${esc(full)}" alt="${esc(d.label)}, full page">` : `<div class="nope">${esc(d.error || 'no capture')}</div>`}</div></div>
-    <aside class="side">
-      ${d.status === 'blocked' ? `<h4>Blocked</h4><p class="note">${esc(d.error)}</p><p class="note">What you see is the wall, kept as evidence. Nothing on it was audited and this device is not counted as passed.</p>`
-        : d.status !== 'ok' ? `<h4>Capture failed</h4><p class="note">${esc(d.error)}</p>` : ''}
-      <h4>Findings (${fs.length})</h4>
-      ${fs.length ? fs.map(f => `<div class="f ${f.severity === 'error' ? 'err' : esc(f.severity)}" data-f="${f._i}">
-          <div class="rule">${esc(f.severity)} · ${esc(f.rule)}</div><div>${esc(f.message)}</div>${f.selector ? `<code>${esc(f.selector)}</code>` : ''}</div>`).join('')
-        : '<p class="note">Nothing flagged on this device.</p>'}
-      ${d.diff ? `<h4>Baseline diff</h4><p class="note">${Number(d.diff.percent ?? 0).toFixed(3)}% of pixels changed${d.diff.regressed ? ' — regressed' : ''}</p>${d.diff.image ? `<img class="diffimg" src="${esc(d.diff.image)}" alt="difference against the baseline">` : ''}` : ''}
-      ${d.notes && d.notes.length ? `<h4>Notes</h4>${d.notes.map(n => `<p class="note">${esc(n)}</p>`).join('')}` : ''}
-      <h4>Timings</h4><p class="note">${Object.entries(d.timings_ms || {}).map(([k, v]) => `${esc(k)} ${ms(v)}`).join(' · ')}</p>
-    </aside></div>`;
+    <header class="dhead">
+      <button type="button" class="nav" data-step="-1" ${at <= 0 ? 'disabled' : ''} aria-label="Previous ${unit}" title="Previous (←)">‹</button>
+      <div><h2 id="dtitle">${esc(d.label)}</h2><div class="meta">${esc(ENGINE[d.engine] || d.engine)} · ${d.viewport.width}×${d.viewport.height} @${d.device_scale_factor}×${d._variant ? ' · ' + esc(d._variant) : ''}${d.final_url && d.final_url !== d.url ? ' · landed on ' + esc(d.final_url) : ''} · ${at + 1} of ${keys.length}</div></div>
+      <button type="button" class="nav" data-step="1" ${at >= keys.length - 1 ? 'disabled' : ''} aria-label="Next ${unit}" title="Next (→)">›</button>
+      <div class="dtools">
+        <div class="seg" role="group" aria-label="Zoom">${[['fit', 'Fit'], ['1', '100%'], ['2', '200%']].map(([z, l]) => `<button type="button" data-zoom="${z}" class="${dstate.zoom === z ? 'on' : ''}">${l}</button>`).join('')}</div>
+        <label class="tog"><input type="checkbox" id="ov" ${dstate.overlays ? 'checked' : ''}> Overlays</label>
+        ${full ? `<a class="lnk" href="${esc(full)}" target="_blank" rel="noopener">Open image</a>` : ''}
+        <button type="button" class="btn close">Close</button>
+      </div>
+    </header>
+    <div class="dbody">
+      <div class="shot"><div class="wrap ${dstate.overlays ? '' : 'noov'}" style="--zw:${zoomWidth(d)}">${
+        full ? `<img id="dshot" src="${esc(full)}" alt="${esc(d.label)}, full page">` : `<div class="nope" style="min-height:200px">${esc(d.error || 'no capture')}</div>`}</div></div>
+      <aside class="side">
+        <div class="sevbar" role="group" aria-label="Show severities">${[['error', 'errors', c.error], ['warn', 'warnings', c.warn], ['info', 'info', c.info]].map(([k, l, n]) =>
+          `<button type="button" class="chip ${dstate.sev.has(k) ? 'on' : ''}" data-dsev="${k}" aria-pressed="${dstate.sev.has(k)}" ${n ? '' : 'disabled'}>${l}<span class="n">${n}</span></button>`).join('')}</div>
+        ${d.status === 'blocked' ? `<div class="state wall"><b>Blocked</b>${esc(d.error)}<br>What you see is the wall, kept as evidence. Nothing on it was audited and this ${unit} is not counted as passed. Try again later, or from a network the site trusts.</div>`
+          : d.status !== 'ok' ? `<div class="state fail"><b>Capture failed</b>${esc(d.error)}<br>Retried once with double the timeout. Nothing here vouches for the page.</div>` : ''}
+        ${d.status === 'ok' && !fs.length ? '<p class="note" style="margin-top:16px">Nothing flagged on this ' + unit + '. Look at the capture anyway — the rules catch geometry, not taste.</p>' : ''}
+        ${placed.length ? `<h4>On the page<span class="n">${placed.length}</span></h4>${placed.map(fitem).join('')}` : ''}
+        ${pageLevel.length ? `<h4>About the whole page<span class="n">${pageLevel.length}</span></h4>${pageLevel.map(fitem).join('')}` : ''}
+        ${d.diff ? `<h4>Baseline diff</h4><p class="note">${Number(d.diff.percent ?? 0).toFixed(3)}% of pixels changed${d.diff.regressed ? ' — regressed' : ''}</p>${d.diff.image ? `<img class="diffimg" src="${esc(d.diff.image)}" alt="difference against the baseline">` : ''}` : ''}
+        ${d.notes && d.notes.length ? `<h4>Notes</h4>${d.notes.map(n => `<p class="note">${esc(n)}</p>`).join('')}` : ''}
+        <h4>Capture</h4><div class="kv">
+          ${d.page && d.page.title ? `<span>Title</span><b>${esc(d.page.title)}</b>` : ''}
+          ${d.page && d.page.scrollHeight ? `<span>Page</span><b class="num">${d.page.scrollWidth}×${d.page.scrollHeight} css px</b>` : ''}
+          ${d.page && d.page.cls != null ? `<span>Layout shift</span><b class="num">${Number(d.page.cls).toFixed(3)}</b>` : ''}
+          ${d.fonts && d.fonts.faces ? `<span>Webfonts</span><b>${d.fonts.faces.filter(f => f.used).length} used${failedFonts ? `, ${failedFonts} failed request${failedFonts === 1 ? '' : 's'}` : ''}</b>` : ''}
+          <span>Timings</span><b class="num">${Object.entries(d.timings_ms || {}).map(([k, v]) => `${esc(k)} ${ms(v)}`).join(' · ')}</b>
+        </div>
+      </aside>
+    </div></div>`;
   detail.classList.add('open'); document.body.style.overflow = 'hidden';
-  const img = $('#dshot', detail);
-  if (img) {
-    // Boxes are in CSS pixels of the document; the image is CSS px × scale
-    // factor, so its natural size gives the exact mapping — no reliance on a
-    // scrollHeight read at a different moment.
-    const place = () => {
-      const W = img.naturalWidth / d.device_scale_factor, H = img.naturalHeight / d.device_scale_factor;
-      if (!W || !H) return;
-      const wrap = img.parentElement;
-      wrap.querySelectorAll('.box').forEach(b => b.remove());
-      for (const f of fs) {
-        const b = f.box;
-        if (!b || !(b.width > 0) || !(b.height > 0) || b.x >= W || b.y >= H) continue;   // off the capture: listed, not drawn
-        const el = document.createElement('div');
-        el.className = 'box ' + (f.severity === 'error' ? 'err' : f.severity); el.dataset.f = f._i; el.title = f.message;
-        el.style.cssText = `left:${b.x / W * 100}%;top:${b.y / H * 100}%;width:${Math.min(b.width, W - b.x) / W * 100}%;height:${Math.min(b.height, H - b.y) / H * 100}%`;
-        wrap.appendChild(el);
-      }
-    };
-    if (img.complete && img.naturalWidth) place(); else img.addEventListener('load', place);
-  }
-  const hot = (i, on) => detail.querySelectorAll(`[data-f="${i}"]`).forEach(el => el.classList.toggle('hot', on));
-  detail.addEventListener('mouseover', e => { const t = e.target.closest('[data-f]'); if (t) hot(t.dataset.f, true); });
-  detail.addEventListener('mouseout', e => { const t = e.target.closest('[data-f]'); if (t) hot(t.dataset.f, false); });
-  detail.addEventListener('click', e => {
-    if (e.target === detail) return closeDetail();
-    if (e.target.closest('.close')) return closeDetail();
-    const t = e.target.closest('[data-f]'); if (!t) return;
-    const other = t.classList.contains('box') ? $(`.f[data-f="${t.dataset.f}"]`, detail) : $(`.box[data-f="${t.dataset.f}"]`, detail);
-    if (other) other.scrollIntoView({block: 'center', behavior: 'smooth'});
-  });
+  const img = $('#dshot', detail); if (img) drawBoxes($('.wrap', detail), img, d, fs);
+  $('.close', detail).focus();
 };
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
-
-// card interactions: click opens, the checkbox selects for compare
-document.addEventListener('click', e => { const c = e.target.closest('.card'); if (c && !e.target.classList.contains('pick')) openDetail(c.dataset.key); });
-document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('card')) openDetail(e.target.dataset.key); });
-const cmpBtn = $('#cmp'), cmp = $('#compare');
-const picks = () => [...document.querySelectorAll('.pick:checked')].map(p => p.closest('.card').dataset.key);
-const syncPicks = () => {
-  const n = picks().length;
-  cmpBtn.disabled = n !== 2; cmpBtn.textContent = `Compare selected (${n}/2)`;
-  document.querySelectorAll('.pick').forEach(p => { p.disabled = n >= 2 && !p.checked; p.closest('.card').classList.toggle('selected', p.checked); });
-};
-document.addEventListener('change', e => { if (e.target.classList.contains('pick')) syncPicks(); });
-cmpBtn.addEventListener('click', () => {
-  const [a, b] = picks().map(k => byKey[k]); if (!a || !b) return;
-  const pane = d => `<div class="pane"><div class="ph"><span>${esc(d.label)} · ${esc(d.engine)}</span><span class="meta">${d.viewport.width}×${d.viewport.height}${d._variant ? ' · ' + esc(d._variant) : ''}</span></div>
-    <div class="pb">${d.images.full ? `<img src="${esc(d.images.full)}" alt="${esc(d.label)}, full page">` : `<div class="nope">${esc(d.error || 'no capture')}</div>`}</div></div>`;
-  cmp.innerHTML = `<div class="ch"><strong>Side by side</strong><span class="hint">Scrolling one pane scrolls the other proportionally.</span><button type="button" id="cmpclose">Close compare</button></div>${pane(a)}${pane(b)}`;
-  cmp.classList.add('open'); cmp.scrollIntoView({behavior: 'smooth', block: 'start'});
-  const [pa, pb] = cmp.querySelectorAll('.pb'); let lock = false;
-  const link = (from, to) => from.addEventListener('scroll', () => {
-    if (lock) return; lock = true;
-    to.scrollTop = from.scrollTop / Math.max(1, from.scrollHeight - from.clientHeight) * (to.scrollHeight - to.clientHeight);
-    requestAnimationFrame(() => { lock = false; });
-  });
-  link(pa, pb); link(pb, pa);
-  $('#cmpclose').addEventListener('click', () => { cmp.classList.remove('open'); cmp.innerHTML = ''; });
+// One delegated listener for the dialog's lifetime — never re-registered per open.
+const hot = (i, on) => $$(`[data-f="${i}"]`, detail).forEach(el => el.classList.toggle('hot', on));
+detail.addEventListener('mouseover', e => { const t = e.target.closest('[data-f]'); if (t) hot(t.dataset.f, true); });
+detail.addEventListener('mouseout', e => { const t = e.target.closest('[data-f]'); if (t) hot(t.dataset.f, false); });
+detail.addEventListener('change', e => {
+  if (e.target.id === 'ov') { dstate.overlays = e.target.checked; $('.wrap', detail).classList.toggle('noov', !dstate.overlays); }
 });
-syncPicks();
+detail.addEventListener('click', e => {
+  if (e.target === detail || e.target.closest('.close')) return closeDetail();
+  const z = e.target.closest('[data-zoom]'); if (z) { dstate.zoom = z.dataset.zoom; const d = byKey[dstate.key]; $('.wrap', detail).style.setProperty('--zw', zoomWidth(d)); $$('[data-zoom]', detail).forEach(b => b.classList.toggle('on', b === z)); return; }
+  const st = e.target.closest('[data-step]'); if (st && !st.disabled) { const keys = order(), at = keys.indexOf(dstate.key) + Number(st.dataset.step); if (keys[at]) openDetail(keys[at]); return; }
+  const sv = e.target.closest('[data-dsev]'); if (sv) { const k = sv.dataset.dsev; dstate.sev.has(k) ? dstate.sev.delete(k) : dstate.sev.add(k); sv.classList.toggle('on'); sv.setAttribute('aria-pressed', dstate.sev.has(k));
+    $$('.f', detail).forEach(f => f.classList.toggle('hide', !dstate.sev.has(f.classList.contains('err') ? 'error' : f.classList.contains('warn') ? 'warn' : 'info')));
+    $$('.box', detail).forEach(b => b.classList.toggle('dim', !dstate.sev.has(b.classList.contains('err') ? 'error' : b.classList.contains('warn') ? 'warn' : 'info'))); return; }
+  const t = e.target.closest('[data-f]'); if (!t) return;
+  const other = t.classList.contains('box') ? $(`.f[data-f="${t.dataset.f}"]`, detail) : $(`.box[data-f="${t.dataset.f}"]`, detail);
+  if (other) { other.scrollIntoView({block: 'center', behavior: 'smooth'}); hot(t.dataset.f, true); setTimeout(() => hot(t.dataset.f, false), 1200); }
+});
+document.addEventListener('keydown', e => {
+  if (!detail.classList.contains('open')) return;
+  if (e.key === 'Escape') closeDetail();
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { const keys = order(), at = keys.indexOf(dstate.key) + (e.key === 'ArrowRight' ? 1 : -1); if (keys[at]) openDetail(keys[at]); }
+});
 
-{ // footer: what this run cannot vouch for
+// ── card interactions ──────────────────────────────────────────────
+document.addEventListener('click', e => { const o = e.target.closest('.card .open'); if (o) openDetail(o.closest('.card').dataset.key, o); });
+document.addEventListener('change', e => {
+  if (!e.target.classList.contains('pick')) return;
+  const key = e.target.closest('.card').dataset.key;
+  state.picks = e.target.checked ? [...state.picks.filter(k => k !== key), key].slice(-2) : state.picks.filter(k => k !== key);
+  syncPicks(); if ($('#compare').classList.contains('open') && state.picks.length === 2) openCompare();
+});
+const syncPicks = () => {
+  const n = state.picks.length, btn = $('#cmp');
+  if (btn) { btn.disabled = n !== 2; btn.textContent = `Compare selected (${n}/2)`; }
+  $$('.card').forEach(c => { const on = state.picks.includes(c.dataset.key); c.classList.toggle('selected', on); const p = $('.pick', c); p.checked = on; p.disabled = n >= 2 && !on; });
+};
+
+// ── compare ────────────────────────────────────────────────────────
+const cmp = $('#compare');
+const cstate = {overlays: false};
+const openCompare = () => {
+  const [a, b] = state.picks.map(k => byKey[k]); if (!a || !b) return;
+  const opts = sel => devs.map(d => `<option value="${esc(d._key)}" ${d._key === sel ? 'selected' : ''}>${esc(d.label)}${d._variant ? ' · ' + esc(d._variant) : ''}</option>`).join('');
+  const pane = (d, side) => `<div class="pane" data-side="${side}"><div class="ph"><span>${esc(d.label)} <span class="meta">· ${esc(ENGINE[d.engine] || d.engine)} · ${d.viewport.width}×${d.viewport.height}${d._variant ? ' · ' + esc(d._variant) : ''}</span></span><span class="meta">${d.status === 'ok' ? plural(d._c.error, 'error') + ', ' + plural(d._c.warn, 'warning') : esc(d.status)}</span></div>
+    <div class="pb"><div class="wrap ${cstate.overlays ? '' : 'noov'}" style="--zw:${d.viewport.width}px">${d.images.full ? `<img src="${esc(d.images.full)}" alt="${esc(d.label)}, full page">` : `<div class="nope" style="min-height:160px">${esc(d.error || 'no capture')}</div>`}</div></div></div>`;
+  cmp.innerHTML = `<div class="ch"><strong>Side by side</strong>
+      <select id="cmpA" aria-label="Left device">${opts(a._key)}</select><button type="button" class="btn" id="swap" title="Swap sides" aria-label="Swap sides">⇄</button><select id="cmpB" aria-label="Right device">${opts(b._key)}</select>
+      <label class="tog"><input type="checkbox" id="cmpov" ${cstate.overlays ? 'checked' : ''}> Overlays</label>
+      <span class="hint">Scrolling one pane scrolls the other proportionally.</span><span class="grow"></span><button type="button" class="btn" id="cmpclose">Close compare</button></div>${pane(a, 'a')}${pane(b, 'b')}`;
+  cmp.classList.add('open');
+  for (const [d, side] of [[a, 'a'], [b, 'b']]) { const wrap = $(`.pane[data-side="${side}"] .wrap`, cmp), img = $('img', wrap); if (img) drawBoxes(wrap, img, d, indexed(d)); }
+  const [pa, pb] = $$('.pb', cmp); let lock = false;
+  const link = (from, to) => from.addEventListener('scroll', () => { if (lock) return; lock = true;
+    to.scrollTop = from.scrollTop / Math.max(1, from.scrollHeight - from.clientHeight) * (to.scrollHeight - to.clientHeight); requestAnimationFrame(() => { lock = false; }); });
+  link(pa, pb); link(pb, pa);
+};
+cmp.addEventListener('change', e => {
+  if (e.target.id === 'cmpov') { cstate.overlays = e.target.checked; $$('.wrap', cmp).forEach(w => w.classList.toggle('noov', !cstate.overlays)); return; }
+  if (e.target.id === 'cmpA' || e.target.id === 'cmpB') { const A = $('#cmpA').value, B = $('#cmpB').value; state.picks = A === B ? [A] : [A, B]; syncPicks(); if (state.picks.length === 2) openCompare(); }
+});
+cmp.addEventListener('click', e => {
+  if (e.target.closest('#cmpclose')) { cmp.classList.remove('open'); cmp.innerHTML = ''; return; }
+  if (e.target.closest('#swap')) { state.picks.reverse(); openCompare(); }
+});
+document.addEventListener('click', e => { if (e.target.closest('#cmp') && state.picks.length === 2) { openCompare(); cmp.scrollIntoView({behavior: 'smooth', block: 'start'}); } });
+
+// ── footer ─────────────────────────────────────────────────────────
+{
   const names = [...new Set(devs.filter(d => !d.verified).map(d => d.label))];
   const off = Object.entries(R.rules || {}).filter(([, v]) => !v).map(([k]) => k);
-  $('#foot').innerHTML = `${names.length
-      ? `<p><strong>Unverified profiles (${names.length}):</strong> ${esc(names.join(', '))}. Their viewport, scale factor and user agent come from published specifications and have not been checked against the physical device.</p>`
-      : '<p>Every profile in this run has been verified against a physical device.</p>'}
-    <p><strong>Rendering fidelity:</strong> ${esc(R.fidelityNote)}</p>
-    <p>report.json schema v${esc(R.schemaVersion)} · ${plural(devs.length, 'capture')} · rules switched off: ${off.length ? esc(off.join(', ')) : 'none'}</p>`;
+  $('#foot').innerHTML = `<p>${names.length
+      ? `<b>Unverified profiles (${names.length}):</b> ${esc(names.join(', '))}. Their viewport, scale factor and user agent come from published specifications and have not been checked against the physical device.`
+      : '<b>Profiles:</b> every profile in this run has been verified against a physical device.'}</p>
+    <p><b>Rendering fidelity:</b> ${esc(R.fidelityNote)}</p>
+    <p><b>This run:</b> report.json schema v${esc(R.schemaVersion)} · ${plural(devs.length, 'capture')} · rules switched off: ${off.length ? esc(off.join(', ')) : 'none'} · <a href="report.json">report.json</a></p>`;
 }
+
+render();
 })();
 </script>
 </body>
