@@ -227,6 +227,17 @@ RESPONSIVE_JS = """(vw) => {
     if (el.closest('[aria-expanded="false"], [aria-hidden="true"], [hidden]')) continue;
     const dx = el.scrollWidth - el.clientWidth;
     const dy = el.scrollHeight - el.clientHeight;
+    // The element's scroll box overflowing is not the same as text being cut.
+    // A CTA with a pulsing glow reported 236px of hidden overflow mid-animation
+    // while its label "SCHEDULE CALL" sat perfectly inside the button. Ask the
+    // question the check is named for: do the rendered glyphs leave the box?
+    const box = el.getBoundingClientRect();
+    let outR = 0, outB = 0;
+    for (const tr of textRects(el)) {
+      outR = Math.max(outR, tr.right - box.right);
+      outB = Math.max(outB, tr.bottom - box.bottom);
+    }
+    if (outR < 2 && outB < 2) continue;
     if ((hidX && dx >= 4) || (hidY && dy >= 4)) {
       cut.push({ sel: sel(el), dx: Math.max(0, dx), dy: Math.max(0, dy), text: snippet(el) });
       if (cut.length >= 8) break;
@@ -268,7 +279,13 @@ RESPONSIVE_JS = """(vw) => {
 
   // 4 · the most prominent call to action. Reported, never judged.
   const CTA = /\\b(get|start|book|buy|call|contact|request|apply|sign ?up|subscribe|download|quote|demo|free|try|order|schedule|enquire|inquire|join|shop|claim|reserve)\\b/i;
-  let best = null;
+  // On a page with a lead form, submitting that form IS the conversion. A link
+  // labelled "GET A FAST QUOTE" only scrolls you to the form, so it must not
+  // outrank the form's own control — which is what happened here: the CTA
+  // vocabulary bonus let a below-fold link beat a NEXT button sitting in view.
+  // Rewarding visibility directly would make the check circular, so the rule is
+  // about what the control DOES, not where it sits.
+  let best = null, bestInForm = null;
   for (const el of document.querySelectorAll('a,button,input[type=submit],input[type=button],[role=button]')) {
     if (!vis(el)) continue;
     const t = ((el.innerText || el.value || '') + '').trim().replace(/\\s+/g, ' ');
@@ -301,14 +318,15 @@ RESPONSIVE_JS = """(vw) => {
     // near the top, not 2000px into the tail.
     const posW = 1 / (1 + (Math.max(0, top) / Math.max(1, doc.scrollHeight)) * 4);
     const score = area * (CTA.test(t) ? 2.5 : 1) * (filled ? 1.5 : 1) * posW;
-    if (!best || score > best.score) {
-      best = { score: Math.round(score), sel: sel(el), text: t.slice(0, 40),
-               top: top, height: Math.round(r.height) };
-    }
+    const cand = { score: Math.round(score), sel: sel(el), text: t.slice(0, 40),
+                   top: top, height: Math.round(r.height), inForm: !!el.closest('form') };
+    if (!best || cand.score > best.score) best = cand;
+    if (cand.inForm && (!bestInForm || cand.score > bestInForm.score)) bestInForm = cand;
   }
 
   return { challenged: false, docOverflow, docWidth: doc.scrollWidth,
-           pageHeight: doc.scrollHeight, culprits, cut, edge, overlaps, cta: best };
+           pageHeight: doc.scrollHeight, culprits, cut, edge, overlaps,
+           cta: bestInForm || best };
 }"""
 
 
