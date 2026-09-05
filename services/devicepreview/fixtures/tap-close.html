@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: tap targets too close</title><link rel="stylesheet" href="_base.css">
+<style>.row { display: flex; gap: 2px; align-items: flex-start; } .row button { padding: 0; }
+.big { width: 48px; height: 48px; } .small { width: 30px; height: 30px; }</style></head>
+<body>
+<p>Two adjacent 48×48 buttons (A, B) are 2px apart but both large — that is ordinary UI and must NOT be reported. The 30×30 button C sits 2px from B: that pair is the defect, because spacing matters when a target is small. C alone also trips tap-small, so this fixture exercises two rules by construction; the assertions pin down exactly which pairs fire.</p>
+<div class="row"><button id="a" class="big">A</button><button id="b" class="big">B</button><button id="c" class="small">C</button></div>
+</body></html>

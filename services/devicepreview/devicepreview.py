@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """devicepreview — how a URL renders across a fixed matrix of device profiles.
 
-Step 1 of the build: the device matrix, the capture interface, and the `local`
-backend, producing screenshots. No audit probe yet (step 3), no gallery (step 5).
+Build steps 1–3: the device matrix, the capture interface, the `local` backend
+with engine parallelism, and the audit probe's first rules (overflow, element
+wider than viewport, tap target too small, tap targets too close). No gallery
+yet (step 5), no baseline diffing (step 6).
 
 One interface, swappable backends:
 
@@ -135,6 +137,7 @@ class CaptureOptions:
     locale: str = "en-AU"
     timezone_id: str = "Australia/Sydney"
     thumb_width: int = 280
+    rules: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_RULES))
 
 
 @dataclass
@@ -232,6 +235,198 @@ FIXED_CHROME_JS = """() => {
                height: Math.round(r.height) });
   }
   return out;
+}"""
+
+# ── audit probe ─────────────────────────────────────────────────────────────
+# Runs in the page after lazy loading, per device. Every finding carries a
+# severity, a rule id, a plain message, a selector and a page-coordinate box so
+# the gallery can draw it. Rules are individually switchable; different clients
+# care about different things.
+#
+# Two lessons from calibrating the sibling tool on real client pages are baked
+# in. Overflow reports the element where the excess is INTRODUCED — the one
+# that is wider than its parent — not every descendant of it, or a single wide
+# hero produces a hundred rows. And "wider than the viewport" is scoped to
+# elements clipped by an ancestor, so the page does NOT scroll: that is the case
+# a scroll-gated overflow check is blind to (a photo cut at the edge of a 1024px
+# viewport passed as clean), and keeping the two disjoint means one fixture can
+# trigger exactly one rule.
+
+DEFAULT_RULES: dict[str, bool] = {
+    "overflow": True, "element-wider": True, "tap-small": True, "tap-close": True,
+}
+
+AUDIT_JS = """(cfg) => {
+  const rules = cfg.rules || {};
+  const vw = window.innerWidth, vh = window.innerHeight, sy = window.scrollY;
+  const doc = document.documentElement;
+  const findings = [];
+
+  const vis = (el) => {
+    const s = getComputedStyle(el);
+    if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') === 0) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0.5 || r.height <= 0.5) return false;
+    // Off-canvas is not visible. An off-screen mobile menu (translated to
+    // x = -972) passed every style check and contributed thirty tap-target
+    // findings for links nobody could see, let alone tap.
+    if (r.right <= 0 || r.left >= vw) return false;
+    if (r.bottom + sy <= 0) return false;
+    return true;
+  };
+  // Unique enough to draw an overlay and to find the element again by hand.
+  const sel = (el) => {
+    if (el.id) return el.tagName.toLowerCase() + '#' + el.id;
+    let cls = '';
+    if (typeof el.className === 'string' && el.className.trim()) {
+      cls = '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.');
+    }
+    let nth = '';
+    const p = el.parentElement;
+    if (p) {
+      const same = [...p.children].filter(c => c.tagName === el.tagName);
+      if (same.length > 1) nth = ':nth-of-type(' + (same.indexOf(el) + 1) + ')';
+    }
+    return (el.tagName.toLowerCase() + cls + nth).slice(0, 90);
+  };
+  const box = (r) => ({ x: Math.round(r.left), y: Math.round(r.top + sy),
+                        width: Math.round(r.width), height: Math.round(r.height) });
+  const snippet = (el) => (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 50);
+  // Content inside a container that clips or scrolls cannot move the document.
+  const clippedBy = (el) => {
+    let n = el.parentElement;
+    while (n && n !== doc) {
+      if (/hidden|clip|auto|scroll/.test(getComputedStyle(n).overflowX)) return n;
+      n = n.parentElement;
+    }
+    return null;
+  };
+  const all = [...document.querySelectorAll('body *')];
+  const docOverflow = Math.max(0, doc.scrollWidth - doc.clientWidth);
+
+  // ── overflow: the page scrolls sideways ────────────────────────────────
+  if (rules.overflow && docOverflow > 1) {
+    findings.push({ severity: 'error', rule: 'overflow',
+      message: 'The page scrolls sideways by ' + docOverflow + 'px (' + doc.scrollWidth + 'px wide in a ' + vw + 'px viewport)',
+      selector: 'html', box: { x: 0, y: 0, width: doc.scrollWidth, height: vh } });
+    let n = 0;
+    for (const el of all) {
+      if (!vis(el)) continue;
+      if (getComputedStyle(el).position === 'fixed') continue;
+      const r = el.getBoundingClientRect();
+      if (r.right <= vw + 1) continue;
+      if (clippedBy(el)) continue;                       // cannot be a cause
+      const p = el.parentElement;
+      if (p && p !== document.body && p.getBoundingClientRect().right > vw + 1) continue; // report the source, not its children
+      findings.push({ severity: 'error', rule: 'overflow',
+        message: sel(el) + ' extends ' + Math.round(r.right - vw) + 'px past the viewport',
+        selector: sel(el), box: box(r), text: snippet(el) });
+      if (++n >= 6) break;
+    }
+  }
+
+  // ── element-wider: wider than the viewport, but clipped so the page does not scroll ──
+  if (rules['element-wider']) {
+    let n = 0;
+    for (const el of all) {
+      if (!vis(el)) continue;
+      const s = getComputedStyle(el);
+      if (s.position === 'fixed') continue;
+      const r = el.getBoundingClientRect();
+      if (r.width <= vw + 1) continue;
+      if (r.right <= 0 || r.left >= vw) continue;         // wholly off screen: off-canvas by design
+      const clip = clippedBy(el);
+      if (!clip) continue;                                // unclipped → that is the overflow rule's job
+      if (/auto|scroll/.test(getComputedStyle(clip).overflowX)) continue; // a scrollable strip is meant to extend
+      const p = el.parentElement;
+      if (p && p !== clip && p.getBoundingClientRect().width > vw + 1) continue; // outermost offender only
+      const cut = Math.round(Math.max(r.right - vw, -r.left));
+      findings.push({ severity: 'warn', rule: 'element-wider',
+        message: sel(el) + ' is ' + Math.round(r.width) + 'px wide in a ' + vw + 'px viewport; ' + cut + 'px is clipped and cannot be seen',
+        selector: sel(el), box: box(r), text: snippet(el) });
+      if (++n >= 8) break;
+    }
+  }
+
+  // ── tap targets (touch profiles only) ──────────────────────────────────
+  const INTERACTIVE = 'a[href], button, input:not([type=hidden]), select, textarea, summary, [role="button"], [onclick]';
+  if (cfg.hasTouch && (rules['tap-small'] || rules['tap-close'])) {
+    const inter = [...document.querySelectorAll(INTERACTIVE)].filter(vis).slice(0, 400);
+    const rects = inter.map(el => el.getBoundingClientRect());
+
+    // Two standards, two severities. Under 24px in either dimension fails
+    // WCAG 2.5.8 (AA) and is a warning. Between 24 and 44 meets AA and misses
+    // only the 44px AAA ideal (2.5.5): info. Without the split a 130×34 header
+    // button and a 22px-tall footer link read as the same problem.
+    const small = (r) => Math.min(r.width, r.height) < 44;
+    const sevFor = (r) => Math.min(r.width, r.height) < 24 ? 'warn' : 'info';
+    if (rules['tap-small']) {
+      let n = 0, total = 0, unlistedWarn = 0, unlistedInfo = 0;
+      for (let i = 0; i < inter.length; i++) {
+        const el = inter[i], r = rects[i];
+        if (!small(r)) continue;
+        // An icon inside a big button is fine: the button is the target.
+        const host = el.parentElement && el.parentElement.closest(INTERACTIVE);
+        if (host && host !== el) {
+          const hr = host.getBoundingClientRect();
+          if (hr.width >= 44 && hr.height >= 44) continue;
+        }
+        total++;
+        if (n >= 12) { if (sevFor(r) === 'warn') unlistedWarn++; else unlistedInfo++; continue; }
+        {
+          const sv = sevFor(r);
+          findings.push({ severity: sv, rule: 'tap-small',
+            message: sel(el) + ' is ' + Math.round(r.width) + '×' + Math.round(r.height) + 'px — '
+              + (sv === 'warn' ? 'under the 24px WCAG AA minimum' : 'meets 24px AA but under the 44px AAA target'),
+            selector: sel(el), box: box(r), text: snippet(el) });
+          n++;
+        }
+      }
+      // The rollup takes the severity of what it hides and says how many of
+      // each, so an unlisted tail of AAA-only misses cannot inflate the
+      // warning count.
+      if (unlistedWarn + unlistedInfo > 0) findings.push({
+        severity: unlistedWarn ? 'warn' : 'info', rule: 'tap-small',
+        message: (unlistedWarn + unlistedInfo) + ' more small tap target(s) not listed'
+          + (unlistedWarn ? ' — ' + unlistedWarn + ' under the 24px AA minimum' : '')
+          + (unlistedInfo ? (unlistedWarn ? ', ' : ' — ') + unlistedInfo + ' between 24 and 44px' : ''),
+        selector: 'body', box: { x: 0, y: 0, width: vw, height: vh } });
+    }
+
+    if (rules['tap-close']) {
+      let n = 0;
+      const seen = new Set();
+      outer:
+      for (let i = 0; i < inter.length; i++) {
+        for (let j = i + 1; j < inter.length; j++) {
+          const a = inter[i], b = inter[j];
+          if (a.contains(b) || b.contains(a)) continue;
+          const ra = rects[i], rb = rects[j];
+          // Spacing matters when precision is required. Two full-width 52px
+          // accordion rows touching is ordinary list UI, not a defect; a
+          // pair only counts when at least one target is under 44px.
+          if (!small(ra) && !small(rb)) continue;
+          const dx = Math.max(0, Math.max(ra.left, rb.left) - Math.min(ra.right, rb.right));
+          const dy = Math.max(0, Math.max(ra.top, rb.top) - Math.min(ra.bottom, rb.bottom));
+          if (dx >= 8 || dy >= 8) continue;
+          const key = sel(a) + '|' + sel(b);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const smaller = Math.min(ra.width, ra.height) <= Math.min(rb.width, rb.height) ? ra : rb;
+          // One decimal: a 7.6px gap rounded to "8px apart; need 8px" reads as a
+          // false alarm to anyone checking the arithmetic.
+          const gap = Math.max(dx, dy);
+          findings.push({ severity: sevFor(smaller), rule: 'tap-close',
+            message: sel(a) + ' and ' + sel(b) + ' are ' + (gap < 1 ? 'touching' : gap.toFixed(1) + 'px apart') + '; small touch targets need 8px between them',
+            selector: sel(a), box: box(ra), related: sel(b), relatedBox: box(rb),
+            text: snippet(a) });
+          if (++n >= 8) break outer;
+        }
+      }
+    }
+  }
+
+  return { docOverflow, findings };
 }"""
 
 PAGE_JS = """() => ({
@@ -359,6 +554,14 @@ class LocalBackend(Backend):
                 res.fixed_chrome = page.evaluate(FIXED_CHROME_JS) or []
                 res.page = page.evaluate(PAGE_JS) or {}
 
+                t_audit = time.time()
+                audit = page.evaluate(AUDIT_JS, {
+                    "rules": options.rules,
+                    "hasTouch": profile.has_touch, "isMobile": profile.is_mobile,
+                }) or {}
+                res.findings = audit.get("findings", [])
+                res.timings_ms["audit"] = int((time.time() - t_audit) * 1000)
+
                 t2 = time.time()
                 out = options.out_dir / profile.id
                 out.mkdir(parents=True, exist_ok=True)
@@ -381,9 +584,6 @@ class LocalBackend(Backend):
                     page.screenshot(path=str(full), full_page=True)
                 res.images["fold"] = str(fold)
                 res.images["full"] = str(full)
-                if int(res.page.get("scrollWidth") or 0) > w + 1:
-                    res.notes.append(f"document is {res.page['scrollWidth']}px wide in a {w}px "
-                                     "viewport — the page scrolls sideways")
                 if any(c["edge"] == "top" for c in res.fixed_chrome):
                     res.notes.append("fixed/sticky header present — some engines repeat it down "
                                      "a full-page capture; check the full image before trusting it")
@@ -570,6 +770,40 @@ def run_matrix(url: str, chosen: list[Profile], schemes: list[str], base_opts: C
                      "perEngineMs": engine_ms}
 
 
+def summarise(results: list[CaptureResult]) -> dict[str, Any]:
+    sev = {"error": 0, "warn": 0, "info": 0}
+    with_errors: list[str] = []
+    for r in results:
+        if any(f["severity"] == "error" for f in r.findings):
+            with_errors.append(r.profile_id)
+        for f in r.findings:
+            sev[f["severity"]] = sev.get(f["severity"], 0) + 1
+    return {"errors": sev["error"], "warnings": sev["warn"], "infos": sev["info"],
+            "devicesWithErrors": with_errors,
+            "devicesPassed": len(results) - len(with_errors)}
+
+
+def load_rules(disable: str) -> dict[str, bool]:
+    """All rules on by default. A devicepreview.config.json beside devices.json
+    may switch some off ({"rules": {"tap-close": false}}); --disable-rule
+    switches more off for one run. Unknown names are an error, not a silent
+    no-op — a typo must not quietly re-enable a rule someone meant to drop."""
+    rules = dict(DEFAULT_RULES)
+    cfg_path = HERE / "devicepreview.config.json"
+    if cfg_path.exists():
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        for k, v in (cfg.get("rules") or {}).items():
+            if k not in rules:
+                raise SystemExit(f"devicepreview.config.json: unknown rule {k!r}. "
+                                 f"Known: {', '.join(rules)}")
+            rules[k] = bool(v)
+    for k in (x.strip() for x in disable.split(",") if x.strip()):
+        if k not in rules:
+            raise SystemExit(f"--disable-rule: unknown rule {k!r}. Known: {', '.join(rules)}")
+        rules[k] = False
+    return rules
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
 
@@ -589,6 +823,8 @@ def main() -> int:
     ap.add_argument("--out", help="default: ./runs/<timestamp>")
     ap.add_argument("--json", action="store_true", help="print report.json path only")
     ap.add_argument("--list-devices", action="store_true")
+    ap.add_argument("--disable-rule", default="", metavar="RULE,RULE",
+                    help=f"switch audit rules off for this run; known: {', '.join(DEFAULT_RULES)}")
     ap.add_argument("--self-check", action="store_true",
                     help="render a font test page in every engine and exit")
     ap.add_argument("--no-self-check", action="store_true",
@@ -634,7 +870,8 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     chosen = select_profiles(profiles, args.devices, args.tier, args.include_edge)
     schemes = ["light", "dark"] if args.color_scheme == "both" else [args.color_scheme]
-    base_opts = CaptureOptions(out_dir=out_dir, landscape=args.landscape, timeout_s=args.timeout)
+    base_opts = CaptureOptions(out_dir=out_dir, landscape=args.landscape, timeout_s=args.timeout,
+                               rules=load_rules(args.disable_rule))
 
     started = datetime.now(timezone.utc)
     say(f"  {len(chosen)} device(s) × {len(schemes)} scheme(s), "
@@ -644,7 +881,7 @@ def main() -> int:
 
     report = {
         "schemaVersion": SCHEMA_VERSION,
-        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 2},
+        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 3},
         "url": url,
         "startedAt": started.isoformat(timespec="seconds"),
         "finishedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -652,6 +889,8 @@ def main() -> int:
         "options": {"landscape": args.landscape, "colorScheme": args.color_scheme,
                     "timeoutSeconds": args.timeout, "concurrency": args.concurrency},
         "timing": timing,
+        "rules": base_opts.rules,
+        "summary": summarise(results),
         "devices": [asdict(r) for r in results],
         "unverifiedProfiles": sorted({r.profile_id for r in results if not r.verified}),
         "fidelityNote": ("The local backend uses real browser engines, not real devices. "
@@ -661,13 +900,20 @@ def main() -> int:
     (out_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     failed = [r for r in results if r.status != "ok"]
+    summary = report["summary"]
     if args.json:
         print(out_dir / "report.json")
     else:
         say(f"\n  {len(results)} capture(s), {len(failed)} failed, "
+            f"{summary['errors']} error(s), {summary['warnings']} warning(s), "
             f"{timing['wallMs'] / 1000:.1f}s wall → {out_dir}/report.json")
-    # 0 clean, 1 error-severity finding (none until step 3), 2 tool failure.
-    return 2 if failed else 0
+        for r in results:
+            for f in r.findings:
+                if f["severity"] == "error":
+                    say(f"    {r.label:26} {f['rule']:14} {f['message'][:90]}")
+    # 0 clean, 1 any error-severity finding, 2 tool failure. Failure wins: a
+    # run that could not capture cannot vouch for anything.
+    return 2 if failed else (1 if summary["errors"] else 0)
 
 
 if __name__ == "__main__":

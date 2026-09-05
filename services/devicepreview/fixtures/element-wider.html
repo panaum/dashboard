@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: element wider than viewport, clipped</title><link rel="stylesheet" href="_base.css">
+<style>.clip { overflow: hidden; } .wide { width: 2000px; background: #dfd; padding: 12px; }</style></head>
+<body>
+<p>Exactly one defect: a 2000px element sits inside an overflow:hidden container. The page does NOT scroll, so the overflow rule stays quiet — but the right-hand part of this content is cut off and unreachable.</p>
+<div class="clip"><div class="wide" id="culprit">The end of this sentence is clipped and can never be read on any device.</div></div>
+</body></html>

@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: overflow</title><link rel="stylesheet" href="_base.css">
+<style>.wide { width: 2000px; background: #fdd; padding: 12px; }</style></head>
+<body>
+<p>Exactly one defect: the block below is 2000px wide and nothing clips it, so the page scrolls sideways.</p>
+<div class="wide" id="culprit">This element is far wider than any viewport in the matrix.</div>
+<p>Nothing here is interactive, so the tap rules have nothing to say.</p>
+</body></html>
