@@ -236,7 +236,11 @@ class ImageSizeRule(unittest.TestCase):
 
 
 class ClsRule(unittest.TestCase):
-    def test_late_insert_shifts_layout_on_chromium(self):
+    # The fixture shifts ~70ms after navigation on purpose. On an is_mobile
+    # profile Chromium marks that window as hadRecentInput, and an observer that
+    # honoured the flag read 0 here while dropping every load-time shift on
+    # every phone profile. This test fails if that filter ever comes back.
+    def test_early_shift_on_a_phone_profile_is_counted(self):
         _, rep = run("cls.html", ANDROID)
         f = one(rep, ANDROID, "cls")
         self.assertIn(f["severity"], ("warn", "error"), f["message"])
@@ -289,10 +293,43 @@ class WebfontSibling(unittest.TestCase):
                 # that says the family still loaded, and must not fail the run.
                 for f in d["findings"]:
                     if f["rule"] == "webfont" and f["severity"] == "warn":
-                        self.assertIn("still loaded", f["message"])
+                        self.assertIn("still drawn", f["message"])
                 self.assertEqual(code, 0)
                 twins = [f for f in d["fonts"]["faces"] if f["family"].strip('"') == "Twin Sans"]
                 self.assertTrue(any(f["status"] == "loaded" for f in twins), twins)
+
+
+class WebfontStacks(unittest.TestCase):
+    """The unit of judgement is the stack the visitor's text is set in."""
+
+    def test_dead_first_face_with_a_live_twin_in_the_stack_is_not_a_fallback(self):
+        # apexure.com: "Poppins-Regular, Poppins, sans-serif" with the first in
+        # WebKit's "error" while the screenshot showed Poppins everywhere.
+        for dev in (TOUCH, ANDROID):
+            with self.subTest(device=dev):
+                code, rep = run("webfont-stack-twin.html", dev)
+                d = next(x for x in rep["devices"])
+                bad = [f for f in d["findings"] if f["rule"] == "webfont" and f["severity"] != "info"
+                       and "fallback face" in f["message"]]
+                self.assertEqual(bad, [], f"{dev}: text is drawn in Live Face, yet: {bad}")
+                self.assertEqual(code, 0)
+                st = next(s for s in d["fonts"]["stacks"] if "Dead Face" in s["stack"])
+                self.assertEqual([x.lower() for x in st["declared"]], ["dead face", "live face"])
+
+    def test_a_wrapper_naming_a_broken_face_is_not_used_text(self):
+        # 52 wrappers on a live page carried a family no glyph was set in; they
+        # made it "used" and a missing file became a fallback that nobody saw.
+        for dev in (TOUCH, ANDROID):
+            with self.subTest(device=dev):
+                code, rep = run("webfont-container.html", dev)
+                d = next(x for x in rep["devices"])
+                self.assertEqual([s for s in d["fonts"]["stacks"] if "Ghost" in s["stack"]], [],
+                                 "no element's own text is set in Ghost Face")
+                ghost = next(f for f in d["fonts"]["faces"] if f["family"].strip('"') == "Ghost Face")
+                self.assertFalse(ghost["used"])
+                self.assertEqual([f for f in d["findings"] if f["rule"] == "webfont"
+                                  and "fallback face" in f["message"]], [])
+                self.assertEqual(code, 0)
 
 
 class ImageSizeThresholds(unittest.TestCase):

@@ -197,19 +197,83 @@ FONTS_JS = """async () => {
     try { await Promise.all([...document.fonts].map(f => f.status === 'error' ? f.load().then(() => 1, () => 0) : 1)); } catch (e) {}
     await new Promise(r => setTimeout(r, 200));
   }
-  // Which families does rendered text actually ask for first? A declared but
-  // unused weight staying unloaded is normal; a used one is a fallback in disguise.
-  const used = new Set();
+  // Judge what the visitor SEES, stack by stack. For every distinct
+  // font-family/weight/style that some element's OWN text is set in, drop two
+  // hidden probes inside one such element: one inheriting the stack as it is,
+  // one with the page's @font-face families struck out of it. If both measure
+  // the same, the webfonts contributed nothing and that text is in a fallback.
+  // Neither FontFace status nor document.fonts.check() is trusted as evidence
+  // of failure: WebKit reported both declarations of Poppins-Regular in
+  // "error" on a run whose screenshot showed Poppins in every paragraph.
+  // Containers are skipped — a div whose innerText comes from children with
+  // their own font-family draws no glyphs — which is how 52 wrappers once made
+  // a family look "used" that no text ever asked for.
+  const declared = new Set();
+  try { for (const f of document.fonts) declared.add(String(f.family).replace(/^["']|["']$/g, '').toLowerCase()); } catch (e) {}
+  const bare = (s) => s.trim().replace(/^["']|["']$/g, '').toLowerCase();
+  const splitStack = (ff) => ff.split(',').map(x => x.trim()).filter(Boolean);
+  const GENERIC = /^(serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-serif|ui-sans-serif|ui-monospace|ui-rounded|emoji|math|fangsong|-apple-system|blinkmacsystemfont)$/;
+  const SKIP = /^(script|style|noscript|template|svg|input|textarea|select|option|img|video|canvas|iframe)$/i;
+  const own = (el) => { for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) return true; return false; };
+  const stacks = new Map();
   try {
-    for (const el of document.querySelectorAll('body, body *')) {
-      if (!el.innerText || !el.innerText.trim()) continue;
-      const first = (getComputedStyle(el).fontFamily || '').split(',')[0].trim().replace(/^["']|["']$/g, '').toLowerCase();
-      if (first) used.add(first);
+    for (const el of document.querySelectorAll('body *')) {
+      if (SKIP.test(el.tagName) || !(el instanceof HTMLElement) || !own(el)) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      const fams = splitStack(cs.fontFamily || '');
+      if (!fams.some(f => declared.has(bare(f)))) continue;   // a system-font stack has nothing to lose
+      const key = cs.fontFamily + '|' + cs.fontWeight + '|' + cs.fontStyle;
+      const st = stacks.get(key) || { stack: cs.fontFamily, weight: cs.fontWeight, style: cs.fontStyle, elements: 0, el, families: fams };
+      st.elements++; stacks.set(key, st);
     }
   } catch (e) {}
+  const PROBE = 'mmmmmmmmmmlliIWw0';
+  const measure = (host, ff) => {
+    const sp = document.createElement('span');
+    sp.textContent = PROBE;
+    sp.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:nowrap;'
+      + 'font-size:inherit;font-weight:inherit;font-style:inherit;letter-spacing:0;word-spacing:0;text-transform:none;font-family:' + ff;
+    host.appendChild(sp);
+    const w = sp.getBoundingClientRect().width;
+    sp.remove();
+    return w;
+  };
+  const stackOut = [];
+  for (const st of stacks.values()) {
+    const decl = st.families.filter(f => declared.has(bare(f)));
+    const without = st.families.filter(f => !declared.has(bare(f)));
+    // A stack with no generic tail falls to the UA default face; compare
+    // against serif, which is that default in every engine we run.
+    if (!without.some(f => GENERIC.test(bare(f)))) without.push('serif');
+    let renders = null;
+    try {
+      const w = measure(st.el, 'inherit'), wo = measure(st.el, without.join(', '));
+      renders = (w > 0 && wo > 0) ? Math.abs(w - wo) >= 0.5 : null;
+    } catch (e) {}
+    const status = {};
+    try { for (const f of document.fonts) { const k = bare(String(f.family)); if (decl.some(d => bare(d) === k)) (status[k] = status[k] || []).push(f.status); } } catch (e) {}
+    const el = st.el;
+    const cls = (typeof el.className === 'string' && el.className.trim()) ? '.' + el.className.trim().split(/\\s+/)[0] : '';
+    stackOut.push({ stack: st.stack, weight: st.weight, style: st.style, elements: st.elements,
+      sample: (el.tagName.toLowerCase() + (el.id ? '#' + el.id : cls)).slice(0, 60),
+      text: (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40),
+      declared: decl.map(d => d.trim().replace(/^["']|["']$/g, '')), status, renders });
+  }
+  // Per-face view for the report: a family is "used" when some text's stack
+  // names it, and "renders" when a stack that leads with it measured as drawn.
+  const usedFams = new Set(), rendersFam = {};
+  for (const so of stackOut) {
+    for (const d of so.declared) usedFams.add(bare(d));
+    const lead = bare(so.declared[0]);
+    if (so.renders === true) rendersFam[lead] = true;
+    else if (so.renders === false && rendersFam[lead] === undefined) rendersFam[lead] = false;
+  }
   const faces = [];
-  try { for (const f of document.fonts) faces.push({ family: f.family, status: f.status, weight: f.weight, style: f.style,
-    used: used.has(String(f.family).replace(/^["']|["']$/g, '').toLowerCase()) }); }
+  try { for (const f of document.fonts) {
+    const key = bare(String(f.family));
+    faces.push({ family: f.family, status: f.status, weight: f.weight, style: f.style,
+      used: usedFams.has(key), renders: usedFams.has(key) ? (rendersFam[key] === undefined ? null : rendersFam[key]) : null }); } }
   catch (e) {}
   // A page asking for Apple's system face will be substituted on Linux. That is
   // a fidelity note the reader needs, not a defect in the page.
@@ -220,7 +284,7 @@ FONTS_JS = """async () => {
       if (/-apple-system|sf pro|san francisco|blinkmacsystemfont/.test(ff)) { apple = true; break; }
     }
   } catch (e) {}
-  return { faces, requestsAppleSystemFont: apple };
+  return { faces, stacks: stackOut, requestsAppleSystemFont: apple };
 }"""
 
 LAZY_SCROLL_JS = """async (maxViewports) => {
@@ -298,8 +362,14 @@ CLS_INIT_JS = """(() => {
       && PerformanceObserver.supportedEntryTypes.includes('layout-shift');
     if (ok) {
       window.__dpCLS = 0;
+      // Count every entry, hadRecentInput included. This tool never taps,
+      // clicks or types, so that flag can only come from Chromium itself: under
+      // is_mobile emulation it marks the first ~500ms after EVERY navigation as
+      // "recent input" (desktop and has_touch-only contexts do not). Honouring
+      // it discarded every load-time shift on every phone and tablet profile —
+      // the font swaps and unsized images the rule exists to catch.
       new PerformanceObserver((list) => {
-        for (const e of list.getEntries()) if (!e.hadRecentInput) window.__dpCLS += e.value;
+        for (const e of list.getEntries()) window.__dpCLS += e.value;
       }).observe({ type: 'layout-shift', buffered: true });
     }
   } catch (e) { window.__dpCLS = null; }
@@ -791,6 +861,7 @@ class LocalBackend(Backend):
                 fonts = page.evaluate(FONTS_JS) or {}
                 res.fonts = {
                     "faces": fonts.get("faces", []),
+                    "stacks": fonts.get("stacks", []),
                     "requests": font_requests,
                     "failed_requests": [r for r in font_requests
                                         if r.get("status") is None or r["status"] >= 400],
@@ -880,71 +951,64 @@ class LocalBackend(Backend):
 
 
 def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, Any]]:
-    """Webfont findings from the network record and the settled FontFace list.
+    """Webfont findings from the network record and the measured font stacks.
 
-    Judged per FAMILY, not per declaration. Sites routinely declare a family
-    twice (theme + plugin); if any declaration loaded, the visitor sees the
-    family and the redundant twin is not a finding. A used family with every
-    declaration in "error" while every request succeeded means this engine
-    downloaded the files and rejected them — a real, engine-specific failure
-    (WebKit is stricter about font tables than Blink) that renders text in a
-    fallback and is invisible in a screenshot. A used family still "unloaded"
-    after being asked to load was refused before the network (origin, policy).
-    Apple-system substitution is info, so the reader knows the type is not
-    authentic."""
+    The unit is a STACK — the font-family/weight/style some element's own text
+    is set in — and the question is whether the page's webfonts in it are the
+    ones drawing. FONTS_JS answers by measurement: probe text inheriting the
+    stack against the same text with the page's @font-face families removed.
+    Equal widths mean fallback. FontFace status is never evidence of failure
+    (WebKit reported "error" on faces it was plainly drawing); it serves only
+    as a veto — a stack with a loaded declaration is not a fallback even when
+    its metrics coincide with the generic face, as a local() twin's do — and to
+    word the finding: refused before the network versus rejected after it.
+    A failed request is an error only when some text really is in a fallback;
+    otherwise it is a dead declaration worth a warning, never a failed build."""
     out: list[dict[str, Any]] = []
     whole = {"x": 0, "y": 0, "width": vw, "height": vh}
-    families: dict[str, list[dict[str, Any]]] = {}
-    for f in fonts.get("faces") or []:
-        families.setdefault(str(f.get("family", "")).strip('"\' '), []).append(f)
-    # Does the visitor actually see a fallback anywhere? Only if a family the
-    # page uses has no declaration that loaded.
-    unserved = [fam for fam, faces in families.items()
-                if fam and any(f.get("used") for f in faces)
-                and not any(f.get("status") in ("loaded", "loading") for f in faces)]
+    stacks = fonts.get("stacks") or []
+
+    def _loaded(st: dict[str, Any]) -> bool:
+        return any(v in ("loaded", "loading") for vals in (st.get("status") or {}).values() for v in vals)
+
+    fallback = [st for st in stacks if st.get("renders") is False and not _loaded(st)]
+    # One finding per leading family, however many weights it is used at.
+    by_family: dict[str, dict[str, Any]] = {}
+    for st in fallback:
+        lead = (st.get("declared") or ["?"])[0]
+        g = by_family.setdefault(lead, {"elements": 0, "sample": st.get("sample"), "statuses": set()})
+        g["elements"] += int(st.get("elements") or 0)
+        g["statuses"].update(v for vals in (st.get("status") or {}).values() for v in vals)
 
     failed = (fonts.get("failed_requests") or [])[:6]
     for r in failed:
         why = r.get("failure") or (f"HTTP {r['status']}" if r.get("status") else "failed")
         name = r["url"].rsplit("/", 1)[-1][:60]
-        if unserved:
-            # A file failed AND text is rendering in a fallback: that is the
-            # failure, and it fails the run.
+        if by_family:
             out.append({"severity": "error", "rule": "webfont",
                         "message": f"Webfont failed to load: {name} — {why}",
                         "selector": "head", "box": whole, "url": r["url"]})
         else:
-            # A file failed but every family the page uses still loaded from
-            # another declaration. A dead source is worth fixing; it is not a
-            # rendering defect, and must not fail a build.
             out.append({"severity": "warn", "rule": "webfont",
-                        "message": f"Declared webfont source {name} failed ({why}), but every font "
-                                   "family the page uses still loaded — a dead declaration, not a fallback",
+                        "message": f"Declared webfont source {name} failed ({why}), but every element that "
+                                   "asks for it is still drawn in one of the page's own fonts — a dead "
+                                   "declaration, not a fallback",
                         "selector": "head", "box": whole, "url": r["url"]})
-    n = 0
-    for fam, faces in families.items():
-        if not fam or not any(f.get("used") for f in faces):
-            continue                       # nobody sees a family no text asks for
-        statuses = {f.get("status") for f in faces}
-        if "loaded" in statuses or "loading" in statuses:
-            continue                       # served: a failed twin is redundant, not broken
-        if n >= 4:
-            break
-        decl = f"{len(faces)} declaration{'s' if len(faces) > 1 else ''}"
-        if statuses == {"error"}:
-            if failed:
-                continue                   # already reported as the failed request(s)
+
+    for fam, g in list(by_family.items())[:4]:
+        n = g["elements"]; where = f"{n} element{'s' if n != 1 else ''} (e.g. <{g['sample']}>)"
+        if "error" not in g["statuses"]:
             out.append({"severity": "warn", "rule": "webfont",
-                        "message": f"{fam} reported in error by this engine on two attempts ({decl}, every "
-                                   "request succeeded) — text is rendering in a fallback face here",
-                        "selector": "body", "box": whole, "family": fam})
-            n += 1
-        elif statuses <= {"unloaded", "error"}:
+                        "message": f"{fam} is used by the page but never loaded (no request was made — refused "
+                                   f"before the network); {where} measure as their fallback face",
+                        "selector": g["sample"] or "body", "box": whole, "family": fam})
+        elif failed:
+            continue                       # the failed request above is the finding
+        else:
             out.append({"severity": "warn", "rule": "webfont",
-                        "message": f"{fam} is used by the page but was never loaded ({decl}) — no request "
-                                   "was made, so it was refused before the network; text renders in a fallback",
-                        "selector": "body", "box": whole, "family": fam})
-            n += 1
+                        "message": f"{fam} is not being drawn by this engine (its declarations are in error "
+                                   f"though every request succeeded); {where} measure as their fallback face",
+                        "selector": g["sample"] or "body", "box": whole, "family": fam})
 
     if fonts.get("appleSystemFontRequested"):
         out.append({"severity": "info", "rule": "webfont",
@@ -952,7 +1016,6 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, An
                                "substituted on this backend, so the typography is not authentic",
                     "selector": "body", "box": whole})
     return out
-
 
 def _thumbnail(src: Path, dst: Path, width: int) -> Path | None:
     """Downscale the fold capture for the gallery grid. Pillow is optional: it is

@@ -5,5 +5,15 @@
 <div id="late"></div>
 <p>Exactly one defect: half a second after load, a 420px block is inserted above this paragraph and everything below it jumps. That is cumulative layout shift, and only Chromium can measure it.</p>
 <p>More content so the shifted area is large.</p>
-<script>setTimeout(() => { const d = document.getElementById('late'); d.style.height = '420px'; d.textContent = 'Late banner'; }, 500);</script>
+<script>
+  // requestAnimationFrame guarantees a frame was painted before the shift, so
+  // Chromium has a "before" to measure against; 50ms keeps it early. Early is
+  // the point: on is_mobile profiles Chromium flags the first ~500ms after a
+  // navigation as hadRecentInput, and the tool must count the shift anyway.
+  // The earlier 500ms timer landed at t≈507ms — 7ms past that window — and
+  // passed or failed on timing jitter alone until someone measured why.
+  requestAnimationFrame(() => setTimeout(() => {
+    const d = document.getElementById('late'); d.style.height = '420px'; d.textContent = 'Late banner';
+  }, 50));
+</script>
 </body></html>
