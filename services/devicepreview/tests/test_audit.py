@@ -95,7 +95,7 @@ class TapCloseRule(unittest.TestCase):
         # A next to B: both large, 2px apart, and that is ordinary UI.
         self.assertNotIn(frozenset({"button#a", "button#b"}), pairs, "two large adjacent targets are not a defect")
         self.assertEqual(len(close), 1)
-        self.assertIn("2px apart", close[0]["message"])
+        self.assertIn("2.0px apart", close[0]["message"])
         # C is 30×30: meets the 24px AA floor, misses the 44px AAA target → info.
         self.assertEqual(close[0]["severity"], "info")
         smalls = [f for f in dev["findings"] if f["rule"] == "tap-small"]
