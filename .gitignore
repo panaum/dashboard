@@ -39,3 +39,6 @@ __pycache__/
 
 # Pagecheck run output: screenshots + JSON, ~20MB per page.
 pagecheck-runs/
+
+# devicepreview run output: screenshots + report.json per run.
+services/devicepreview/runs/

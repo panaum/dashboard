@@ -1,0 +1,117 @@
+{
+  "_comment": [
+    "Device matrix for devicepreview. Data, not code: add a device here, never in logic.",
+    "Viewports are CSS pixels in portrait. Where `playwrightDevice` is set, that descriptor",
+    "is spread first and the explicit fields below override it — so user-agent strings stay",
+    "correct as Playwright updates them. Profiles without a descriptor are hand-specified.",
+    "`verified: false` means the numbers come from published specs and have not been confirmed",
+    "against a physical device. The report footer lists every unverified profile.",
+    "`userAgent: null` means use the engine's own default (correct for desktop baselines)."
+  ],
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "iphone-16-pro-max", "label": "iPhone 16 Pro Max", "engine": "webkit",
+      "platform": "ios", "tier": "primary", "playwrightDevice": "iPhone 16",
+      "viewport": { "width": 440, "height": 956 }, "deviceScaleFactor": 3,
+      "isMobile": true, "hasTouch": true, "userAgent": null, "verified": false
+    },
+    {
+      "id": "iphone-16-pro", "label": "iPhone 16 Pro", "engine": "webkit",
+      "platform": "ios", "tier": "primary", "playwrightDevice": "iPhone 16",
+      "viewport": { "width": 402, "height": 874 }, "deviceScaleFactor": 3,
+      "isMobile": true, "hasTouch": true, "userAgent": null, "verified": false
+    },
+    {
+      "id": "iphone-16", "label": "iPhone 16", "engine": "webkit",
+      "platform": "ios", "tier": "primary", "playwrightDevice": "iPhone 16",
+      "viewport": { "width": 393, "height": 852 }, "deviceScaleFactor": 3,
+      "isMobile": true, "hasTouch": true, "userAgent": null, "verified": false
+    },
+    {
+      "id": "iphone-se-3", "label": "iPhone SE (3rd gen)", "engine": "webkit",
+      "platform": "ios", "tier": "primary", "playwrightDevice": "iPhone SE (3rd gen)",
+      "viewport": { "width": 375, "height": 667 }, "deviceScaleFactor": 2,
+      "isMobile": true, "hasTouch": true, "userAgent": null, "verified": false
+    },
+    {
+      "id": "ipad-pro-13", "label": "iPad Pro 13\"", "engine": "webkit",
+      "platform": "ipados", "tier": "primary", "playwrightDevice": "iPad Pro 11",
+      "viewport": { "width": 1024, "height": 1366 }, "deviceScaleFactor": 2,
+      "isMobile": true, "hasTouch": true, "userAgent": null, "verified": false
+    },
+    {
+      "id": "ipad-air-11", "label": "iPad Air 11\"", "engine": "webkit",
+      "platform": "ipados", "tier": "primary", "playwrightDevice": "iPad Pro 11",
+      "viewport": { "width": 820, "height": 1180 }, "deviceScaleFactor": 2,
+      "isMobile": true, "hasTouch": true, "userAgent": null, "verified": false
+    },
+    {
+      "id": "galaxy-s25", "label": "Samsung Galaxy S25", "engine": "chromium",
+      "platform": "android", "tier": "primary", "playwrightDevice": "Galaxy S24",
+      "viewport": { "width": 412, "height": 892 }, "deviceScaleFactor": 2.625,
+      "isMobile": true, "hasTouch": true,
+      "userAgent": "Mozilla/5.0 (Linux; Android 15; SM-S931B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+      "verified": false
+    },
+    {
+      "id": "galaxy-s25-ultra", "label": "Samsung Galaxy S25 Ultra", "engine": "chromium",
+      "platform": "android", "tier": "primary", "playwrightDevice": "Galaxy S24",
+      "viewport": { "width": 412, "height": 916 }, "deviceScaleFactor": 3.5,
+      "isMobile": true, "hasTouch": true,
+      "userAgent": "Mozilla/5.0 (Linux; Android 15; SM-S938B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+      "verified": false
+    },
+    {
+      "id": "galaxy-z-flip-open", "label": "Galaxy Z Flip (unfolded)", "engine": "chromium",
+      "platform": "android", "tier": "primary", "playwrightDevice": "Galaxy S24",
+      "viewport": { "width": 412, "height": 960 }, "deviceScaleFactor": 2.625,
+      "isMobile": true, "hasTouch": true,
+      "userAgent": "Mozilla/5.0 (Linux; Android 15; SM-F741B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+      "verified": false
+    },
+    {
+      "id": "galaxy-z-flip-cover", "label": "Galaxy Z Flip (cover screen)", "engine": "chromium",
+      "platform": "android", "tier": "edge", "playwrightDevice": "Galaxy S24",
+      "viewport": { "width": 260, "height": 280 }, "deviceScaleFactor": 2.6,
+      "isMobile": true, "hasTouch": true,
+      "userAgent": "Mozilla/5.0 (Linux; Android 15; SM-F741B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+      "verified": false,
+      "_note": "Deliberately absurd. The canary for pages that break below ~320px. Runs only with --include-edge."
+    },
+    {
+      "id": "xiaomi-15", "label": "Xiaomi 15", "engine": "chromium",
+      "platform": "android", "tier": "primary", "playwrightDevice": "Galaxy S24",
+      "viewport": { "width": 393, "height": 873 }, "deviceScaleFactor": 2.75,
+      "isMobile": true, "hasTouch": true,
+      "userAgent": "Mozilla/5.0 (Linux; Android 15; 24129PN74G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+      "verified": false
+    },
+    {
+      "id": "galaxy-tab-s10-plus", "label": "Galaxy Tab S10+", "engine": "chromium",
+      "platform": "android", "tier": "primary", "playwrightDevice": "Galaxy Tab S9",
+      "viewport": { "width": 840, "height": 1345 }, "deviceScaleFactor": 2.4,
+      "isMobile": true, "hasTouch": true,
+      "userAgent": "Mozilla/5.0 (Linux; Android 15; SM-X826B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "verified": false
+    },
+    {
+      "id": "desktop-1440-chrome", "label": "Desktop 1440 (Chrome)", "engine": "chromium",
+      "platform": "desktop", "tier": "primary", "playwrightDevice": null,
+      "viewport": { "width": 1440, "height": 900 }, "deviceScaleFactor": 1,
+      "isMobile": false, "hasTouch": false, "userAgent": null, "verified": true
+    },
+    {
+      "id": "desktop-1440-firefox", "label": "Desktop 1440 (Firefox)", "engine": "firefox",
+      "platform": "desktop", "tier": "primary", "playwrightDevice": null,
+      "viewport": { "width": 1440, "height": 900 }, "deviceScaleFactor": 1,
+      "isMobile": false, "hasTouch": false, "userAgent": null, "verified": true
+    },
+    {
+      "id": "desktop-1440-safari", "label": "Desktop 1440 (Safari)", "engine": "webkit",
+      "platform": "desktop", "tier": "primary", "playwrightDevice": null,
+      "viewport": { "width": 1440, "height": 900 }, "deviceScaleFactor": 1,
+      "isMobile": false, "hasTouch": false, "userAgent": null, "verified": true
+    }
+  ]
+}
