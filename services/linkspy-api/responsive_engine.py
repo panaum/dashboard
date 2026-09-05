@@ -119,6 +119,17 @@ RESPONSIVE_JS = """(vw) => {
     }
     return false;
   };
+  // Only auto/scroll — a strip the visitor can scroll sideways is meant to
+  // extend past the edge. Deliberately NOT hidden/clip: content clipped at the
+  // viewport edge is the bug the edge check exists to find.
+  const scrollableAnc = (el) => {
+    let n = el.parentElement;
+    while (n && n !== document.documentElement) {
+      if (/auto|scroll/.test(getComputedStyle(n).overflowX)) return true;
+      n = n.parentElement;
+    }
+    return false;
+  };
 
   const SLIDERS = '[class*="splide"],[class*="swiper"],[class*="slick"],[class*="carousel"],'
     + '[class*="slider"],[class*="glide"],[class*="flickity"],[class*="marquee"],'
@@ -183,7 +194,16 @@ RESPONSIVE_JS = """(vw) => {
     const cut = Math.max(cutR, cutL);
     if (cut < 8) continue;
     if (r.right <= 0 || r.left >= vw) continue;          // wholly off screen
+    // A horizontally SCROLLABLE strip is meant to extend past the edge — a
+    // filter bar of trades reported every off-screen chip as cut content. Only
+    // auto/scroll qualifies: an ancestor with overflow:hidden is exactly the
+    // case this check exists for (a photo clipped at the viewport edge), so
+    // reusing clipped() here silently undid that.
+    if (scrollableAnc(el)) continue;
     const frac = Math.round((cut / Math.max(1, r.width)) * 100);
+    // Barely-visible slivers are off-canvas by design (carousel neighbours,
+    // decorative art), not content someone is losing.
+    if (frac >= 90) continue;
     edge.push({ sel: sel(el), tag: el.tagName, cut, frac,
                 side: cutR >= cutL ? 'right' : 'left', text: snippet(el) });
     if (edge.length >= 8) break;
@@ -259,6 +279,21 @@ RESPONSIVE_JS = """(vw) => {
     // A footer newsletter box is always below the fold, so letting it win made
     // the whole check vacuous — it beat the hero CTA on a contact page.
     if (el.closest('footer, [class*="footer" i], [id*="footer" i]')) continue;
+    // One of many identical siblings is a list or a nav, not THE call to
+    // action. A lesson-list item won on a course page purely by being large and
+    // near the top. A hero CTA is singular; excluding repeats keeps the header
+    // CTA that legitimately sits in a nav bar.
+    // A repeated item inside a list or nav is navigation, not THE call to
+    // action. Both conditions are required. Counting same-tag siblings alone
+    // was too blunt: an Unbounce mobile layout puts every anchor under one flat
+    // root, so seven unrelated siblings excluded every real CTA on the page and
+    // left an email address in the footer as the only survivor.
+    const par = el.parentElement;
+    if (par && el.closest('nav,ul,ol,[role="list"],[role="navigation"],[role="menu"],[role="tablist"]')) {
+      let twins = 0;
+      for (const sib of par.children) if (sib !== el && sib.tagName === el.tagName) twins++;
+      if (twins >= 3) continue;
+    }
     const s = getComputedStyle(el);
     const filled = !/^rgba?\\(0, 0, 0, 0\\)$|transparent/.test(s.backgroundColor || '');
     const top = Math.round(r.top + window.scrollY);
@@ -436,10 +471,19 @@ def responsive_findings(r: dict) -> list[dict]:
         if fold:
             below.append(wd["width"])
     if rows:
-        out.append(F_("cta", "INFO", "Primary CTA position",
-                      (f"Below the fold at {_ranges(below)}." if below
-                       else "Within the first screen at every width.")
-                      + " Position is reported, not judged.", rows))
+        seen_w = [wd["width"] for wd in r["widths"] if wd.get("cta")]
+        visible = [w for w in seen_w if w not in below]
+        # Whether someone sees the call to action without scrolling is the point
+        # of measuring its position, so the finding leads with that answer
+        # rather than making the reader derive it from a table of pixels.
+        if below:
+            detail = (f"Not visible until you scroll at {_ranges(below)}."
+                      + (f" Visible without scrolling at {_ranges(visible)}." if visible
+                         else " It is below the fold at every width."))
+        else:
+            detail = "Visible without scrolling at every width."
+        out.append(F_("cta", "WARN" if below else "PASS", "Is the CTA visible before scrolling?",
+                      detail, rows))
 
     if r.get("shots"):
         out.append(F_("shots", "INFO", "Screenshots",
@@ -454,7 +498,7 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
     travel through the dashboard proxy."""
     started = time.time()
     say = on_progress or (lambda _m: None)
-    out = {"widths": [], "errors": [], "hits": [], "blocked": 0}
+    out = {"widths": [], "errors": [], "hits": [], "blocked": 0, "final_url": None}
     shots: dict[int, bytes] = {}
     target = with_params(url)
 
@@ -483,6 +527,8 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
                         page.wait_for_load_state("networkidle", timeout=10000)
                     except PWTimeout:
                         pass
+                    if out["final_url"] is None:
+                        out["final_url"] = page.url
                     page.wait_for_timeout(1200)
                     prev = _eval(page.main_frame, RESPONSIVE_JS, None, w)
                     cur = prev
@@ -494,7 +540,15 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
                         prev = cur
                     data = _settle(prev, cur)
                     try:
-                        shots[w] = page.screenshot(full_page=True, type="jpeg", quality=72)
+                        # Viewport WIDTH, full height. A plain full-page capture
+                        # widens to the scrollWidth, which hid a 190px overflow
+                        # by showing content the visitor cannot reach.
+                        ph = int((data or {}).get("pageHeight") or 0)
+                        shots[w] = (page.screenshot(full_page=True, type="jpeg", quality=72,
+                                                    clip={"x": 0, "y": 0, "width": w,
+                                                          "height": min(ph, 30000)})
+                                    if ph > 0 else
+                                    page.screenshot(full_page=True, type="jpeg", quality=72))
                     except PWError as exc:
                         out["errors"].append(f"{w}px screenshot: {str(exc)[:120]}")
                     if data:
@@ -517,5 +571,14 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
 
     out["elapsed"] = round(time.time() - started, 1)
     out["findings"] = responsive_findings(out)
+    landed = out.get("final_url")
+    if landed:
+        want, got = urlsplit(url).path.rstrip("/"), urlsplit(landed).path.rstrip("/")
+        if want != got:
+            out["findings"].insert(0, F(
+                "redirect", "WARN", "Landed on a different page",
+                f"{url} ended up at {landed}. Every finding below describes that "
+                "page, not the one you asked for.",
+                [f"asked for  {want or '/'}", f"ended at   {got or '/'}"]))
     out["shot_widths"] = sorted(shots)
     return out, shots

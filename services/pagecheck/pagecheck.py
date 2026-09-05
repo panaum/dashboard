@@ -559,6 +559,17 @@ def build_report(url: str, a: dict, b: dict) -> dict:
     searches = len([f for f in forms if f.get("fields") and _is_search(f)])
     add(F("platform", "INFO", "Platform", plat + (f" · {plugin}" if plugin else "")))
 
+    # Landed somewhere else? Everything below describes whatever page we ended
+    # up on, so a silent redirect makes the whole report about the wrong thing.
+    # blace.com/venue/carondelet-house/ answers 200 and then redirects to the
+    # homepage in JavaScript — a clean bill of health for a page that is gone.
+    want, got = urlsplit(url), urlsplit(a["final_url"] or url)
+    if want.path.rstrip("/") != got.path.rstrip("/"):
+        add(F("redirect", "WARN", "Landed on a different page",
+              f"{url} ended up at {a['final_url']}. Every finding below describes "
+              "that page, not the one you asked for.",
+              [f"asked for  {want.path or '/'}", f"ended at   {got.path or '/'}"]))
+
     # 2 · forms
     in_frame = [f for f in real if f.get("frame") != "main"]
     if not real:
@@ -821,6 +832,12 @@ def check_url(browser, url: str, outdir: Path | None = None, pw=None,
               responsive: bool = False, cross: bool = False) -> dict:
     t0 = time.time()
     a = run_pass(browser, url, accept_consent=False)
+    # One retry on a transport failure. In a batch run a page failed to load
+    # once and was honestly reported as "cannot verify" — but a page skipped for
+    # a transient reason is a page nobody checked, which is the same cost as a
+    # miss. A blocked or challenged page is NOT retried: that is a real answer.
+    if a["outcome"] in ("load_failed", "timeout"):
+        a = run_pass(browser, url, accept_consent=False)
     b = (run_pass(browser, url, accept_consent=True) if a["outcome"] == "ok"
          else {**a, "consent_button": None})
     rep = build_report(url, a, b)
@@ -917,6 +934,17 @@ RESPONSIVE_JS = """(vw) => {
     }
     return false;
   };
+  // Only auto/scroll — a strip the visitor can scroll sideways is meant to
+  // extend past the edge. Deliberately NOT hidden/clip: content clipped at the
+  // viewport edge is the bug the edge check exists to find.
+  const scrollableAnc = (el) => {
+    let n = el.parentElement;
+    while (n && n !== document.documentElement) {
+      if (/auto|scroll/.test(getComputedStyle(n).overflowX)) return true;
+      n = n.parentElement;
+    }
+    return false;
+  };
 
   const SLIDERS = '[class*="splide"],[class*="swiper"],[class*="slick"],[class*="carousel"],'
     + '[class*="slider"],[class*="glide"],[class*="flickity"],[class*="marquee"],'
@@ -981,7 +1009,16 @@ RESPONSIVE_JS = """(vw) => {
     const cut = Math.max(cutR, cutL);
     if (cut < 8) continue;
     if (r.right <= 0 || r.left >= vw) continue;          // wholly off screen
+    // A horizontally SCROLLABLE strip is meant to extend past the edge — a
+    // filter bar of trades reported every off-screen chip as cut content. Only
+    // auto/scroll qualifies: an ancestor with overflow:hidden is exactly the
+    // case this check exists for (a photo clipped at the viewport edge), so
+    // reusing clipped() here silently undid that.
+    if (scrollableAnc(el)) continue;
     const frac = Math.round((cut / Math.max(1, r.width)) * 100);
+    // Barely-visible slivers are off-canvas by design (carousel neighbours,
+    // decorative art), not content someone is losing.
+    if (frac >= 90) continue;
     edge.push({ sel: sel(el), tag: el.tagName, cut, frac,
                 side: cutR >= cutL ? 'right' : 'left', text: snippet(el) });
     if (edge.length >= 8) break;
@@ -1057,6 +1094,21 @@ RESPONSIVE_JS = """(vw) => {
     // A footer newsletter box is always below the fold, so letting it win made
     // the whole check vacuous — it beat the hero CTA on a contact page.
     if (el.closest('footer, [class*="footer" i], [id*="footer" i]')) continue;
+    // One of many identical siblings is a list or a nav, not THE call to
+    // action. A lesson-list item won on a course page purely by being large and
+    // near the top. A hero CTA is singular; excluding repeats keeps the header
+    // CTA that legitimately sits in a nav bar.
+    // A repeated item inside a list or nav is navigation, not THE call to
+    // action. Both conditions are required. Counting same-tag siblings alone
+    // was too blunt: an Unbounce mobile layout puts every anchor under one flat
+    // root, so seven unrelated siblings excluded every real CTA on the page and
+    // left an email address in the footer as the only survivor.
+    const par = el.parentElement;
+    if (par && el.closest('nav,ul,ol,[role="list"],[role="navigation"],[role="menu"],[role="tablist"]')) {
+      let twins = 0;
+      for (const sib of par.children) if (sib !== el && sib.tagName === el.tagName) twins++;
+      if (twins >= 3) continue;
+    }
     const s = getComputedStyle(el);
     const filled = !/^rgba?\\(0, 0, 0, 0\\)$|transparent/.test(s.backgroundColor || '');
     const top = Math.round(r.top + window.scrollY);
@@ -1175,7 +1227,19 @@ def run_responsive(browser, url: str, outdir: Path) -> dict:
             data = _settle(reads[-2], reads[-1]) if len(reads) > 1 else reads[0]
             shot = outdir / f"w{w:04d}.png"
             try:
-                page.screenshot(path=str(shot), full_page=True)
+                # Clipped to the viewport WIDTH, full height. A plain full-page
+                # capture widens to the scrollWidth, so a page that overflows
+                # produced a 958px-wide image for a 768px viewport — showing
+                # content the visitor cannot see without scrolling sideways, and
+                # hiding the very bug the run had just found.
+                ph = int((data or {}).get("pageHeight") or 0)
+                if ph > 0:
+                    # full_page AND clip together: clip alone is relative to the
+                    # viewport and silently truncated every capture to one screen.
+                    page.screenshot(path=str(shot), full_page=True,
+                                    clip={"x": 0, "y": 0, "width": w, "height": min(ph, 30000)})
+                else:
+                    page.screenshot(path=str(shot), full_page=True)
                 out["shots"].append({"width": w, "path": str(shot)})
             except PWError as exc:
                 out["errors"].append(f"{w}px screenshot failed: {str(exc)[:120]}")
@@ -1301,10 +1365,19 @@ def responsive_findings(r: dict) -> list[dict]:
         if fold:
             below.append(wd["width"])
     if rows:
-        out.append(F_("cta", "INFO", "Primary CTA position",
-                      (f"Below the fold at {_ranges(below)}." if below
-                       else "Within the first screen at every width.")
-                      + " Position is reported, not judged.", rows))
+        seen_w = [wd["width"] for wd in r["widths"] if wd.get("cta")]
+        visible = [w for w in seen_w if w not in below]
+        # Whether someone sees the call to action without scrolling is the point
+        # of measuring its position, so the finding leads with that answer
+        # rather than making the reader derive it from a table of pixels.
+        if below:
+            detail = (f"Not visible until you scroll at {_ranges(below)}."
+                      + (f" Visible without scrolling at {_ranges(visible)}." if visible
+                         else " It is below the fold at every width."))
+        else:
+            detail = "Visible without scrolling at every width."
+        out.append(F_("cta", "WARN" if below else "PASS", "Is the CTA visible before scrolling?",
+                      detail, rows))
 
     if r.get("shots"):
         out.append(F_("shots", "INFO", "Screenshots",
@@ -1642,8 +1715,16 @@ def main() -> int:
 
     urls = list(args.urls)
     if args.file:
+        # A line starting with ./ resolves against the list file's own directory
+        # and becomes a file:// URL, so a checked-in fixture can sit beside the
+        # list and the set stays runnable from anywhere.
+        base = Path(args.file).resolve().parent
         with open(args.file) as fh:
-            urls += [ln.strip() for ln in fh if ln.strip() and not ln.startswith("#")]
+            for ln in fh:
+                ln = ln.strip()
+                if not ln or ln.startswith("#"):
+                    continue
+                urls.append((base / ln).resolve().as_uri() if ln.startswith("./") else ln)
     urls = list(dict.fromkeys(urls))
     if not urls:
         ap.error("give at least one URL")
