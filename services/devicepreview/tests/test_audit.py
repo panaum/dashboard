@@ -396,6 +396,44 @@ class Report(unittest.TestCase):
                 b.close()
 
 
+class BotWalls(unittest.TestCase):
+    """A page served instead of the site must never count as the site passing."""
+
+    def test_a_block_page_is_blocked_not_passed(self):
+        from playwright.sync_api import sync_playwright
+        out = Path(tempfile.mkdtemp(prefix="dp-test-"))
+        proc = subprocess.run([sys.executable, str(ROOT / "devicepreview.py"), (FIX / "blocked.html").resolve().as_uri(),
+                               "--devices", DESKTOP, "--no-self-check", "--out", str(out), "--json"],
+                              capture_output=True, text=True, timeout=180)
+        rep = json.loads((out / "report.json").read_text())
+        d = rep["devices"][0]
+        self.assertEqual(d["status"], "blocked", d)
+        self.assertIn("cf-", d["error"])
+        self.assertEqual(d["findings"], [], "nothing on a wall is a finding about the site")
+        self.assertTrue((out / d["images"]["fold"]).is_file(), "the wall is kept as evidence")
+        self.assertFalse(any("attempt" in n for n in d["notes"]), "a wall is an answer; it is not retried")
+        self.assertEqual(rep["summary"]["devicesBlocked"], [DESKTOP])
+        self.assertEqual(rep["summary"]["devicesPassed"], 0)
+        self.assertEqual(proc.returncode, 2, "a run that never saw the site cannot vouch for it")
+        with sync_playwright() as p:
+            b = p.chromium.launch()
+            try:
+                pg = b.new_page(); pg.goto((out / "report.html").resolve().as_uri()); pg.wait_for_selector(".card")
+                self.assertIn("blocked", pg.inner_text(".card .badges").lower())
+                self.assertIn("blocked", pg.inner_text("header").lower())
+            finally:
+                b.close()
+
+    def test_default_chromium_profile_does_not_announce_headless(self):
+        # The desktop profile has no UA of its own. Headless Chromium's default
+        # says "HeadlessChrome", which Cloudflare walls on sight; the mobile
+        # profile with a descriptor UA sailed through the same site.
+        _, rep = run("clean.html", DESKTOP)
+        ua = rep["devices"][0]["page"]["userAgent"]
+        self.assertNotIn("Headless", ua, ua)
+        self.assertIn("Chrome/", ua, ua)
+
+
 class ImageSizeThresholds(unittest.TestCase):
     def test_a_2x_asset_on_a_3x_screen_is_not_soft(self):
         # The iPhone 16 profile is 3x. A 1x pixel stretched 240 wide IS soft

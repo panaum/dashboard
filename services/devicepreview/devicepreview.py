@@ -152,7 +152,7 @@ class CaptureResult:
     backend: str
     url: str
     final_url: str | None = None
-    status: str = "ok"                    # ok | failed
+    status: str = "ok"                    # ok | failed | blocked (a bot wall or error page was served instead)
     error: str | None = None
     viewport: dict[str, int] = field(default_factory=dict)
     device_scale_factor: float = 1.0
@@ -204,15 +204,17 @@ FONTS_JS = """async () => {
     await new Promise(r => setTimeout(r, 200));
   }
   // Judge what the visitor SEES, stack by stack. For every distinct
-  // font-family/weight/style that some element's OWN text is set in, drop two
-  // hidden probes inside one such element: one inheriting the stack as it is,
-  // one with the page's @font-face families struck out of it. If both measure
-  // the same, the webfonts contributed nothing and that text is in a fallback.
-  // Neither FontFace status nor document.fonts.check() is trusted as evidence
-  // of failure: WebKit reported both declarations of Poppins-Regular in
-  // "error" on a run whose screenshot showed Poppins in every paragraph.
-  // Containers are skipped — a div whose innerText comes from children with
-  // their own font-family draws no glyphs — which is how 52 wrappers once made
+  // font-family/weight/style that some element's OWN text is set in, take the
+  // text already painted in one such element — a Range over its first text
+  // run, on one line — and measure the same characters, inheriting everything
+  // but font-family, in the stack with the page's @font-face families struck
+  // out. Equal widths mean the painted glyphs ARE the fallback. This is the
+  // only honest witness: on WebKit a fresh probe run in the same stack once
+  // measured as the fallback, and every FontFace of the family read "error",
+  // while the screenshot — and the painted paragraphs — were unmistakably the
+  // webfont. What is on screen is what the visitor sees; measure that.
+  // Containers are skipped (a div whose innerText comes from children with
+  // their own font-family draws no glyphs), which is how 52 wrappers once made
   // a family look "used" that no text ever asked for.
   const declared = new Set();
   try { for (const f of document.fonts) declared.add(String(f.family).replace(/^["']|["']$/g, '').toLowerCase()); } catch (e) {}
@@ -234,17 +236,35 @@ FONTS_JS = """async () => {
       st.elements++; stacks.set(key, st);
     }
   } catch (e) {}
-  const PROBE = 'mmmmmmmmmmlliIWw0';
-  const measure = (host, ff) => {
+  // The painted witness: the first text run of the element that sits on one
+  // line (a Range across a soft wrap returns one rect per line, so shrink
+  // until there is exactly one). Returns the characters and their painted width.
+  const painted = (el) => {
+    for (const n of el.childNodes) {
+      if (n.nodeType !== 3) continue;
+      const txt = n.textContent, m = txt.match(/\\S[^\\n]{5,}/);
+      if (!m) continue;
+      const start = m.index;
+      for (let len = Math.min(m[0].length, 40); len >= 6; len = Math.floor(len * 0.7)) {
+        const r = document.createRange(); r.setStart(n, start); r.setEnd(n, start + len);
+        const rects = r.getClientRects();
+        if (rects.length === 1 && rects[0].width > 0) return { text: txt.slice(start, start + len), width: rects[0].width };
+      }
+    }
+    return null;
+  };
+  // The same characters, inheriting size, weight, style, spacing and
+  // transform from the element, in a different family list.
+  const measure = (host, ff, text) => {
     const sp = document.createElement('span');
-    sp.textContent = PROBE;
-    sp.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:nowrap;'
-      + 'font-size:inherit;font-weight:inherit;font-style:inherit;letter-spacing:0;word-spacing:0;text-transform:none;font-family:' + ff;
+    sp.textContent = text;
+    sp.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:nowrap;font-family:' + ff;
     host.appendChild(sp);
     const w = sp.getBoundingClientRect().width;
     sp.remove();
     return w;
   };
+  const PROBE = 'mmmmmmmmmmlliIWw0';
   const stackOut = [];
   for (const st of stacks.values()) {
     const decl = st.families.filter(f => declared.has(bare(f)));
@@ -252,10 +272,23 @@ FONTS_JS = """async () => {
     // A stack with no generic tail falls to the UA default face; compare
     // against serif, which is that default in every engine we run.
     if (!without.some(f => GENERIC.test(bare(f)))) without.push('serif');
-    let renders = null;
+    let renders = null, run = null, freshMatchesPainted = null;
     try {
-      const w = measure(st.el, 'inherit'), wo = measure(st.el, without.join(', '));
-      renders = (w > 0 && wo > 0) ? Math.abs(w - wo) >= 0.5 : null;
+      run = painted(st.el);
+      if (run) {
+        const wo = measure(st.el, without.join(', '), run.text);
+        const tol = Math.max(1, run.width * 0.01);
+        renders = wo > 0 ? Math.abs(run.width - wo) >= tol : null;
+        // Diagnostic only: would text laid out NOW get the same face as the
+        // text already on screen? False is the WebKit state described above.
+        const wi = measure(st.el, 'inherit', run.text);
+        freshMatchesPainted = wi > 0 ? Math.abs(run.width - wi) < tol : null;
+      } else {
+        // No single-line run to witness (text split across many nodes):
+        // fall back to comparing two fresh probe runs.
+        const w = measure(st.el, 'inherit', PROBE), wo = measure(st.el, without.join(', '), PROBE);
+        renders = (w > 0 && wo > 0) ? Math.abs(w - wo) >= 0.5 : null;
+      }
     } catch (e) {}
     const status = {};
     try { for (const f of document.fonts) { const k = bare(String(f.family)); if (decl.some(d => bare(d) === k)) (status[k] = status[k] || []).push(f.status); } } catch (e) {}
@@ -264,7 +297,8 @@ FONTS_JS = """async () => {
     stackOut.push({ stack: st.stack, weight: st.weight, style: st.style, elements: st.elements,
       sample: (el.tagName.toLowerCase() + (el.id ? '#' + el.id : cls)).slice(0, 60),
       text: (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40),
-      declared: decl.map(d => d.trim().replace(/^["']|["']$/g, '')), status, renders });
+      declared: decl.map(d => d.trim().replace(/^["']|["']$/g, '')), status, renders,
+      witness: run ? run.text.slice(0, 40) : null, freshMatchesPainted });
   }
   // Per-face view for the report: a family is "used" when some text's stack
   // names it, and "renders" when a stack that leads with it measured as drawn.
@@ -767,10 +801,35 @@ AUDIT_JS = """(cfg) => {
 
 PAGE_JS = """() => ({
   title: (document.title || '').slice(0, 200),
+  userAgent: navigator.userAgent,
   scrollWidth: document.documentElement.scrollWidth,
   scrollHeight: document.documentElement.scrollHeight,
   innerWidth: window.innerWidth, innerHeight: window.innerHeight,
 })"""
+
+
+# A bot wall or an error page is not the site. Auditing one produced "2 info,
+# passed" for a Cloudflare "Sorry, you have been blocked" page on the first
+# real gallery run — the exact false PASS this tool exists to prevent. The
+# body-text test applies only to short pages, so an article that mentions
+# "access denied" is not mistaken for one.
+BLOCK_JS = """() => {
+  const t = (document.title || '').toLowerCase();
+  const b = ((document.body && document.body.innerText) || '').slice(0, 4000).toLowerCase().replace(/\\s+/g, ' ');
+  const hit = document.querySelector('#cf-error-details, #cf-wrapper, .cf-error-overview, #challenge-running, '
+    + '#challenge-form, #challenge-stage, iframe[src*="challenges.cloudflare.com"], #px-captcha, #_pxCaptcha, '
+    + '.h-captcha, #captcha-container, #sec-cpt-if, #distil_ident_block, #ddg-challenge, iframe[src*="_Incapsula_Resource"]');
+  const titleHit = /just a moment|attention required|you have been blocked|access denied|are you a robot|verify you are human|security check|checking your browser|pardon our interruption|bot verification|ddos-guard|request unsuccessful/.test(t);
+  const bodyHit = b.length < 2500 && /sorry, you have been blocked|you have been blocked|verify you are human|checking if the site connection is secure|enable javascript and cookies to continue|pardon our interruption|incapsula incident|request blocked|access denied|performing a security check/.test(b);
+  if (!hit && !titleHit && !bodyHit) return { blocked: false };
+  const why = hit ? 'matched ' + (hit.id ? '#' + hit.id : (hit.className || hit.tagName.toLowerCase()))
+            : titleHit ? 'title "' + (document.title || '').slice(0, 60) + '"' : 'the body text reads as a block page';
+  return { blocked: true, why };
+}"""
+
+
+class _Blocked(Exception):
+    """Raised inside a capture when the served page is a wall, not the site."""
 
 
 # ── backends ────────────────────────────────────────────────────────────────
@@ -797,6 +856,7 @@ class LocalBackend(Backend):
     def __init__(self, pw: Playwright):
         self._pw = pw
         self._browsers: dict[str, Browser] = {}
+        self._ua: dict[str, str] = {}
 
     def _browser(self, engine: str) -> Browser:
         if engine not in self._browsers:
@@ -804,10 +864,35 @@ class LocalBackend(Backend):
             self._browsers[engine] = launcher.launch()
         return self._browsers[engine]
 
+    def _default_ua(self, engine: str) -> str | None:
+        """The engine's own user agent, with "HeadlessChrome" renamed to "Chrome".
+
+        Cloudflare served the desktop-1440-chrome profile a block page on its
+        first real run: a null-UA profile announces HeadlessChrome, while the
+        mobile Chromium profile, whose descriptor carries a real UA, got
+        through. Read once per engine from the running browser rather than
+        pinned in devices.json, so the version never rots. Only Chromium marks
+        itself headless; Firefox and WebKit are left as they are."""
+        if engine != "chromium":
+            return None
+        if engine not in self._ua:
+            ctx = self._browser(engine).new_context()
+            try:
+                ua = ctx.new_page().evaluate("navigator.userAgent")
+            finally:
+                ctx.close()
+            self._ua[engine] = ua.replace("HeadlessChrome", "Chrome")
+        return self._ua[engine]
+
     @contextmanager
     def _context(self, profile: Profile, options: CaptureOptions) -> Iterator[BrowserContext]:
+        ctx_opts = profile.context_options(options.landscape)
+        if "user_agent" not in ctx_opts:
+            ua = self._default_ua(profile.engine)
+            if ua:
+                ctx_opts["user_agent"] = ua
         ctx = self._browser(profile.engine).new_context(
-            **profile.context_options(options.landscape),
+            **ctx_opts,
             locale=options.locale,
             timezone_id=options.timezone_id,
             color_scheme=options.color_scheme,
@@ -838,6 +923,8 @@ class LocalBackend(Backend):
         )
         t_start = time.time()
         font_requests: list[dict[str, Any]] = []
+        suffix = ("-landscape" if options.landscape else "") + (
+            "-dark" if options.color_scheme == "dark" else "")
 
         try:
             with self._context(profile, options) as ctx:
@@ -853,7 +940,7 @@ class LocalBackend(Backend):
                     if rq.resource_type == "font" else None)
 
                 t0 = time.time()
-                page.goto(url, wait_until="domcontentloaded", timeout=options.timeout_s * 1000)
+                response = page.goto(url, wait_until="domcontentloaded", timeout=options.timeout_s * 1000)
                 try:
                     page.wait_for_load_state("networkidle", timeout=options.timeout_s * 1000)
                 except PWTimeout:
@@ -864,6 +951,21 @@ class LocalBackend(Backend):
                                      f"settled {options.settle_ms}ms instead")
                 res.timings_ms["navigate"] = int((time.time() - t0) * 1000)
                 res.final_url = page.url
+
+                # Is this the site, or a wall in front of it? Decide before any
+                # audit runs: findings about a block page are findings about
+                # nothing. The wall itself is kept as evidence.
+                main_status = response.status if response is not None else None
+                wall = page.evaluate(BLOCK_JS) or {}
+                if wall.get("blocked") or main_status in (403, 429, 503):
+                    out = options.out_dir / profile.id
+                    out.mkdir(parents=True, exist_ok=True)
+                    fold = out / f"fold{suffix}.png"
+                    page.screenshot(path=str(fold))
+                    res.images["fold"] = _rel(fold, options.out_dir)
+                    res.page = page.evaluate(PAGE_JS) or {}
+                    why = wall.get("why") or f"HTTP {main_status} for the main document"
+                    raise _Blocked(why)
 
                 fonts = page.evaluate(FONTS_JS) or {}
                 res.fonts = {
@@ -910,8 +1012,6 @@ class LocalBackend(Backend):
                 t2 = time.time()
                 out = options.out_dir / profile.id
                 out.mkdir(parents=True, exist_ok=True)
-                suffix = ("-landscape" if options.landscape else "") + (
-                    "-dark" if options.color_scheme == "dark" else "")
                 fold = out / f"fold{suffix}.png"
                 full = out / f"full{suffix}.png"
                 page.screenshot(path=str(fold))
@@ -943,6 +1043,9 @@ class LocalBackend(Backend):
                     res.notes.append("no thumbnail: Pillow not importable; gallery will scale "
                                      "the fold capture instead")
                 res.timings_ms["screenshots"] = int((time.time() - t2) * 1000)
+        except _Blocked as exc:
+            res.status = "blocked"
+            res.error = f"a bot wall or error page was served instead of the site ({exc}); nothing was audited"
         except PWTimeout as exc:
             res.status, res.error = "failed", f"timeout: {str(exc)[:200]}"
         except PWError as exc:
@@ -1132,8 +1235,8 @@ def _capture_with_retry(backend: Backend, url: str, profile: Profile,
     """One retry, with double the timeout. A single flaky navigation must not
     fail a fifteen-device run; a page that fails twice has genuinely failed."""
     first = backend.capture(url, profile, options)
-    if first.status == "ok":
-        return first
+    if first.status != "failed":
+        return first                       # ok, or blocked — a wall is an answer, not a flake
     say(f"  {profile.label}: retrying with {options.timeout_s * 2:.0f}s timeout — {first.error}")
     second = backend.capture(url, profile, replace(options, timeout_s=options.timeout_s * 2))
     if second.status == "ok":
@@ -1197,9 +1300,12 @@ def summarise(results: list[CaptureResult]) -> dict[str, Any]:
     with_errors: list[str] = []
     with_warnings: list[str] = []
     failed: list[str] = []
+    blocked: list[str] = []
     for r in results:
-        if r.status != "ok":
+        if r.status == "failed":
             failed.append(r.profile_id)
+        elif r.status == "blocked":
+            blocked.append(r.profile_id)
         if any(f["severity"] == "error" for f in r.findings):
             with_errors.append(r.profile_id)
         elif any(f["severity"] == "warn" for f in r.findings):
@@ -1211,7 +1317,7 @@ def summarise(results: list[CaptureResult]) -> dict[str, Any]:
     passed = [r.profile_id for r in results if r.status == "ok" and r.profile_id not in with_errors]
     return {"errors": sev["error"], "warnings": sev["warn"], "infos": sev["info"],
             "devicesWithErrors": with_errors, "devicesWithWarnings": with_warnings,
-            "devicesFailed": failed, "devicesPassed": len(passed)}
+            "devicesFailed": failed, "devicesBlocked": blocked, "devicesPassed": len(passed)}
 
 
 def load_rules(disable: str) -> dict[str, bool]:
@@ -1349,18 +1455,20 @@ const ms = v => v >= 1000 ? (v / 1000).toFixed(1) + 's' : v + 'ms';
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 
 { // header
-  const s = R.summary, failed = devs.filter(d => d.status !== 'ok').length;
+  const s = R.summary, failed = devs.filter(d => d.status === 'failed').length, blocked = devs.filter(d => d.status === 'blocked').length;
   $('#head').innerHTML = `<div><h1><a href="${esc(R.url)}" target="_blank" rel="noopener">${esc(R.url)}</a></h1>
     <div class="meta">${esc(new Date(R.startedAt).toLocaleString())} · ${ms(R.timing.wallMs)} wall · backend ${esc(R.backend)} · devicepreview ${esc(R.tool.version)}</div></div>
     <div class="stats"><span class="stat${s.errors ? ' err' : ''}">${plural(s.errors, 'error')}</span>
     <span class="stat${s.warnings ? ' warn' : ''}">${plural(s.warnings, 'warning')}</span>
     <span class="stat ok">${s.devicesPassed}/${devs.length} devices passed</span>
+    ${blocked ? `<span class="stat fail">${plural(blocked, 'device')} blocked by bot protection</span>` : ''}
     ${failed ? `<span class="stat fail">${plural(failed, 'capture')} failed</span>` : ''}</div>`;
 }
 
 const card = d => {
   const img = d.images.thumb || d.images.fold, c = d._c;
-  const badges = d.status !== 'ok' ? '<span class="b fail">capture failed</span>'
+  const badges = d.status === 'blocked' ? '<span class="b fail">blocked — bot protection</span>'
+    : d.status !== 'ok' ? '<span class="b fail">capture failed</span>'
     : (c.error || c.warn || c.info)
       ? (c.error ? `<span class="b err">${plural(c.error, 'error')}</span>` : '')
         + (c.warn ? `<span class="b warn">${plural(c.warn, 'warning')}</span>` : '')
@@ -1398,7 +1506,8 @@ const openDetail = key => {
     <div class="shot"><div class="wrap" style="--w:${d.viewport.width}px">${
       full ? `<img id="dshot" src="${esc(full)}" alt="${esc(d.label)}, full page">` : `<div class="nope">${esc(d.error || 'no capture')}</div>`}</div></div>
     <aside class="side">
-      ${d.status !== 'ok' ? `<h4>Capture failed</h4><p class="note">${esc(d.error)}</p>` : ''}
+      ${d.status === 'blocked' ? `<h4>Blocked</h4><p class="note">${esc(d.error)}</p><p class="note">What you see is the wall, kept as evidence. Nothing on it was audited and this device is not counted as passed.</p>`
+        : d.status !== 'ok' ? `<h4>Capture failed</h4><p class="note">${esc(d.error)}</p>` : ''}
       <h4>Findings (${fs.length})</h4>
       ${fs.length ? fs.map(f => `<div class="f ${f.severity === 'error' ? 'err' : esc(f.severity)}" data-f="${f._i}">
           <div class="rule">${esc(f.severity)} · ${esc(f.rule)}</div><div>${esc(f.message)}</div>${f.selector ? `<code>${esc(f.selector)}</code>` : ''}</div>`).join('')
@@ -1601,14 +1710,17 @@ def main() -> int:
     write_report_html(report, out_dir)
 
     failed = [r for r in results if r.status != "ok"]
+    blocked = [r for r in results if r.status == "blocked"]
     summary = report["summary"]
     if args.json:
         print(out_dir / "report.json")
     else:
-        say(f"\n  {len(results)} capture(s), {len(failed)} failed, "
+        say(f"\n  {len(results)} capture(s), {len(failed) - len(blocked)} failed, {len(blocked)} blocked, "
             f"{summary['errors']} error(s), {summary['warnings']} warning(s), "
             f"{timing['wallMs'] / 1000:.1f}s wall → {out_dir}/report.json")
         say(f"  gallery: {out_dir}/report.html")
+        for r in blocked:
+            say(f"    {r.label:26} BLOCKED        {(r.error or '')[:90]}")
         for r in results:
             for f in r.findings:
                 if f["severity"] == "error":
