@@ -255,3 +255,46 @@ class CleanPageAllRules(unittest.TestCase):
             for f in d["findings"]:
                 self.assertEqual(f["severity"], "info", f)
         self.assertEqual(code, 0)
+
+
+# ── real-page lessons: negative controls ─────────────────────────────────────
+
+class MarqueeIsNotADefect(unittest.TestCase):
+    def test_carousel_track_and_its_items_stay_silent(self):
+        _, rep = run("marquee.html", TOUCH)
+        fired = rules_fired(rep, TOUCH) - {"cls"}
+        self.assertNotIn("element-wider", fired, "a marquee track is meant to be wider than its frame")
+        self.assertNotIn("offscreen", fired, "marquee items scroll into view on their own")
+        self.assertEqual(fired, set(), f"nothing else should fire either: {fired}")
+
+
+class WebfontSibling(unittest.TestCase):
+    def test_failed_declaration_with_a_loaded_twin_is_not_reported(self):
+        # Chromium fetches the missing file (an error request), WebKit refuses
+        # before the network (an unloaded face); on both, the family still
+        # renders through its local() twin, so nothing is wrong for the visitor.
+        for dev in (ANDROID, TOUCH):
+            with self.subTest(device=dev):
+                code, rep = run("webfont-sibling.html", dev)
+                d = next(x for x in rep["devices"])
+                errors = [f for f in d["findings"] if f["rule"] == "webfont" and f["severity"] == "error"]
+                self.assertEqual(errors, [], f"{dev}: family renders via its twin, yet an ERROR: {errors}")
+                # Chromium sees the 404 — a dead declaration is worth a warning
+                # that says the family still loaded, and must not fail the run.
+                for f in d["findings"]:
+                    if f["rule"] == "webfont" and f["severity"] == "warn":
+                        self.assertIn("still loaded", f["message"])
+                self.assertEqual(code, 0)
+                twins = [f for f in d["fonts"]["faces"] if f["family"].strip('"') == "Twin Sans"]
+                self.assertTrue(any(f["status"] == "loaded" for f in twins), twins)
+
+
+class ImageSizeThresholds(unittest.TestCase):
+    def test_a_2x_asset_on_a_3x_screen_is_not_soft(self):
+        # The iPhone 16 profile is 3x. A 1x pixel stretched 240 wide IS soft
+        # (fixture image-size.html). This checks the other side: the tool must
+        # not call every 2x asset soft just because the screen is 3x.
+        _, rep = run("image-size-2x.html", TOUCH)
+        d = next(x for x in rep["devices"])
+        soft = [f for f in d["findings"] if f["rule"] == "image-size" and f["severity"] == "warn"]
+        self.assertEqual(soft, [], f"a 2x asset is the universal practice and is not soft: {soft}")

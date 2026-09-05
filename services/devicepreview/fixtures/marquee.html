@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: marquee is not a defect</title><link rel="stylesheet" href="_base.css">
+<style>
+  .frame { overflow: hidden; width: 100%; }
+  .marquee-track { display: flex; gap: 32px; width: 2400px; animation: none; }
+  .marquee-track span { white-space: nowrap; }
+</style></head>
+<body>
+<p>A negative control for two rules. The strip below is a marquee: its track is 2400px wide inside a clipped frame and most of its items sit off screen. That is how a marquee works — element-wider and offscreen must both stay silent.</p>
+<div class="frame"><div class="marquee-track" id="track">
+  <span>Fixed teeth</span><span>Better chewing</span><span>Natural look</span><span>Confidence</span><span>No adhesives</span><span>Long lasting</span><span>Easy care</span><span>Fewer visits</span><span>Full smile</span><span>Eat anything</span>
+</div></div>
+</body></html>

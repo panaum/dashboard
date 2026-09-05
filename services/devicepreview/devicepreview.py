@@ -342,6 +342,13 @@ AUDIT_JS = """(cfg) => {
   };
   const all = [...document.querySelectorAll('body *')];
   const docOverflow = Math.max(0, doc.scrollWidth - doc.clientWidth);
+  // A carousel or marquee track is meant to be wider than the frame and to hold
+  // items off screen: that is how it works, not a defect. On a real page an
+  // animated benefits ticker produced two "clipped" warnings and six
+  // "offscreen" notes for content that scrolls into view on its own.
+  const SLIDER = '[class*="splide"],[class*="swiper"],[class*="slick"],[class*="carousel"],[class*="slider"],'
+    + '[class*="glide"],[class*="flickity"],[class*="marquee"],[class*="ticker"],[class*="track"],[id*="track"],[class*="loop"]';
+  const inSlider = (el) => !!el.closest(SLIDER);
 
   // ── overflow: the page scrolls sideways ────────────────────────────────
   if (rules.overflow && docOverflow > 1) {
@@ -374,6 +381,7 @@ AUDIT_JS = """(cfg) => {
       const r = el.getBoundingClientRect();
       if (r.width <= vw + 1) continue;
       if (r.right <= 0 || r.left >= vw) continue;         // wholly off screen: off-canvas by design
+      if (inSlider(el)) continue;
       const clip = clippedBy(el);
       if (!clip) continue;                                // unclipped → that is the overflow rule's job
       if (/auto|scroll/.test(getComputedStyle(clip).overflowX)) continue; // a scrollable strip is meant to extend
@@ -500,6 +508,7 @@ AUDIT_JS = """(cfg) => {
       if (s.textOverflow === 'ellipsis') continue;
       if (s.webkitLineClamp && s.webkitLineClamp !== 'none') continue;
       if (el.clientWidth < 8 || el.clientHeight < 8) continue;
+      if (inSlider(el)) continue;
       if (el.closest('[aria-expanded="false"], [aria-hidden="true"], [hidden]')) continue;
       const dx = el.scrollWidth - el.clientWidth, dy = el.scrollHeight - el.clientHeight;
       if (!((hidX && dx >= 4) || (hidY && dy >= 2))) continue;
@@ -583,6 +592,7 @@ AUDIT_JS = """(cfg) => {
       const off = r.right <= 0 || r.left >= vw;
       if (!off) continue;
       if (!(el.innerText || '').trim()) continue;
+      if (inSlider(el)) continue;
       if (el.closest('nav, dialog, [role="dialog"], [role="menu"], [aria-hidden="true"], [hidden], [class*="menu" i], [class*="drawer" i], [class*="offcanvas" i], [class*="off-canvas" i], [class*="sidebar" i], [class*="sr-only" i], [class*="visually-hidden" i]')) continue;
       const p = el.parentElement;
       if (p && p !== document.body) { const pr = p.getBoundingClientRect(); if (pr.right <= 0 || pr.left >= vw) continue; }
@@ -595,22 +605,35 @@ AUDIT_JS = """(cfg) => {
 
   // ── image-size: served resolution vs rendered size at this DPR ─────────
   if (rules['image-size']) {
-    let n = 0;
+    // Sharpness is judged against min(dpr, 2): a 2x asset on a 3x phone is the
+    // universal practice and is not visibly soft, while a 1x asset is. Waste
+    // is judged against the true dpr. Identical geometry (a gallery of
+    // same-sized images) collapses to one finding with a count.
+    const groups = new Map();
     for (const img of document.querySelectorAll('img')) {
       if (!vis(img) || !img.complete || !img.naturalWidth) continue;
       if (/\\.svg(\\?|$)/i.test(img.currentSrc || img.src || '')) continue;
       const r = img.getBoundingClientRect();
       if (r.width < 40 || r.height < 40) continue;
-      const need = r.width * dpr;
-      if (img.naturalWidth < need * 0.9) {
-        findings.push({ severity: 'warn', rule: 'image-size',
-          message: sel(img) + ' is ' + img.naturalWidth + 'px wide but drawn at ' + Math.round(r.width) + 'px on a ' + dpr + 'x screen (' + Math.round(need) + 'px needed) — it will look soft',
-          selector: sel(img), box: box(r) });
-      } else if (img.naturalWidth > need * 2) {
-        findings.push({ severity: 'info', rule: 'image-size',
-          message: sel(img) + ' is ' + img.naturalWidth + 'px wide for a ' + Math.round(need) + 'px slot — more than 2× the pixels this device can show',
-          selector: sel(img), box: box(r) });
-      } else continue;
+      const cssW = Math.round(r.width);
+      const sharpNeed = cssW * Math.min(dpr, 2), wasteNeed = cssW * dpr;
+      let kind = null;
+      if (img.naturalWidth < sharpNeed * 0.9) kind = 'soft';
+      else if (img.naturalWidth > wasteNeed * 2) kind = 'waste';
+      if (!kind) continue;
+      const key = kind + '|' + img.naturalWidth + '|' + cssW;
+      if (!groups.has(key)) groups.set(key, { kind, natural: img.naturalWidth, cssW, need: kind === 'soft' ? sharpNeed : wasteNeed, first: img, r, count: 0 });
+      groups.get(key).count++;
+    }
+    let n = 0;
+    for (const g of groups.values()) {
+      const more = g.count > 1 ? ' (and ' + (g.count - 1) + ' more the same size)' : '';
+      if (g.kind === 'soft') findings.push({ severity: 'warn', rule: 'image-size',
+        message: sel(g.first) + ' is served at ' + g.natural + 'px for a ' + g.cssW + 'px slot on a ' + dpr + 'x screen — under ' + Math.round(g.need) + 'px it will look soft' + more,
+        selector: sel(g.first), box: box(g.r), count: g.count });
+      else findings.push({ severity: 'info', rule: 'image-size',
+        message: sel(g.first) + ' is served at ' + g.natural + 'px for a ' + g.cssW + 'px slot on a ' + dpr + 'x screen — more than twice the ' + Math.round(g.need) + 'px this device can show' + more,
+        selector: sel(g.first), box: box(g.r), count: g.count });
       if (++n >= 8) break;
     }
   }
@@ -824,37 +847,72 @@ class LocalBackend(Backend):
 
 
 def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, Any]]:
-    """A webfont that 404s is invisible in a screenshot when the fallback looks
-    plausible; the network is the only honest record. Failed requests are
-    errors; a FontFace that ended in status "error" without a failed request
-    (a bad file, a CORS refusal) is a warning; Apple-system substitution is info
-    so the reader knows the type is not authentic."""
+    """Webfont findings from the network record and the settled FontFace list.
+
+    Judged per FAMILY, not per declaration. Sites routinely declare a family
+    twice (theme + plugin); if any declaration loaded, the visitor sees the
+    family and the redundant twin is not a finding. A used family with every
+    declaration in "error" while every request succeeded means this engine
+    downloaded the files and rejected them — a real, engine-specific failure
+    (WebKit is stricter about font tables than Blink) that renders text in a
+    fallback and is invisible in a screenshot. A used family still "unloaded"
+    after being asked to load was refused before the network (origin, policy).
+    Apple-system substitution is info, so the reader knows the type is not
+    authentic."""
     out: list[dict[str, Any]] = []
     whole = {"x": 0, "y": 0, "width": vw, "height": vh}
+    families: dict[str, list[dict[str, Any]]] = {}
+    for f in fonts.get("faces") or []:
+        families.setdefault(str(f.get("family", "")).strip('"\' '), []).append(f)
+    # Does the visitor actually see a fallback anywhere? Only if a family the
+    # page uses has no declaration that loaded.
+    unserved = [fam for fam, faces in families.items()
+                if fam and any(f.get("used") for f in faces)
+                and not any(f.get("status") in ("loaded", "loading") for f in faces)]
+
     failed = (fonts.get("failed_requests") or [])[:6]
     for r in failed:
         why = r.get("failure") or (f"HTTP {r['status']}" if r.get("status") else "failed")
         name = r["url"].rsplit("/", 1)[-1][:60]
-        out.append({"severity": "error", "rule": "webfont",
-                    "message": f"Webfont failed to load: {name} — {why}",
-                    "selector": "head", "box": whole, "url": r["url"]})
-    faces = fonts.get("faces") or []
-    # A face in "error" is the same fact as a failed request when one exists;
-    # report it separately only when the network saw nothing (a bad file that
-    # downloaded fine, a CORS refusal).
-    if not failed:
-        for f in [f for f in faces if f.get("status") == "error"][:4]:
+        if unserved:
+            # A file failed AND text is rendering in a fallback: that is the
+            # failure, and it fails the run.
+            out.append({"severity": "error", "rule": "webfont",
+                        "message": f"Webfont failed to load: {name} — {why}",
+                        "selector": "head", "box": whole, "url": r["url"]})
+        else:
+            # A file failed but every family the page uses still loaded from
+            # another declaration. A dead source is worth fixing; it is not a
+            # rendering defect, and must not fail a build.
             out.append({"severity": "warn", "rule": "webfont",
-                        "message": f"Font face {f['family']} ({f.get('weight', '')} {f.get('style', '')}) "
-                                   "ended in an error state and no request for it was seen — blocked before the network?",
-                        "selector": "head", "box": whole})
-    # Used by rendered text, yet never loaded even when asked to: the visitor is
-    # reading a fallback. WebKit can refuse a font without any network event.
-    for f in [f for f in faces if f.get("status") == "unloaded" and f.get("used")][:4]:
-        out.append({"severity": "warn", "rule": "webfont",
-                    "message": f"Font face {f['family']} is used by the page but was never loaded — "
-                               "text renders in a fallback face (no request was made; blocked by origin or policy?)",
-                    "selector": "body", "box": whole})
+                        "message": f"Declared webfont source {name} failed ({why}), but every font "
+                                   "family the page uses still loaded — a dead declaration, not a fallback",
+                        "selector": "head", "box": whole, "url": r["url"]})
+    n = 0
+    for fam, faces in families.items():
+        if not fam or not any(f.get("used") for f in faces):
+            continue                       # nobody sees a family no text asks for
+        statuses = {f.get("status") for f in faces}
+        if "loaded" in statuses or "loading" in statuses:
+            continue                       # served: a failed twin is redundant, not broken
+        if n >= 4:
+            break
+        decl = f"{len(faces)} declaration{'s' if len(faces) > 1 else ''}"
+        if statuses == {"error"}:
+            if failed:
+                continue                   # already reported as the failed request(s)
+            out.append({"severity": "warn", "rule": "webfont",
+                        "message": f"{fam} downloaded but this engine rejected the font file ({decl} all in "
+                                   "error, every request succeeded) — text renders in a fallback face here",
+                        "selector": "body", "box": whole, "family": fam})
+            n += 1
+        elif statuses <= {"unloaded", "error"}:
+            out.append({"severity": "warn", "rule": "webfont",
+                        "message": f"{fam} is used by the page but was never loaded ({decl}) — no request "
+                                   "was made, so it was refused before the network; text renders in a fallback",
+                        "selector": "body", "box": whole, "family": fam})
+            n += 1
+
     if fonts.get("appleSystemFontRequested"):
         out.append({"severity": "info", "rule": "webfont",
                     "message": "Page requests Apple's system font (-apple-system / SF Pro); it is "
@@ -1071,6 +1129,9 @@ def main() -> int:
     ap.add_argument("--concurrency", type=int, default=min(os.cpu_count() or 1, 4),
                     help="parallel engines; default min(cpu_count, 4)")
     ap.add_argument("--timeout", type=float, default=30.0, help="seconds")
+    ap.add_argument("--max-scroll-viewports", type=int, default=5, metavar="N",
+                    help="lazy-load trigger: scroll at most N viewport heights (default 5; a "
+                         "12000px page on a 750px phone needs about 16 to load everything)")
     ap.add_argument("--out", help="default: ./runs/<timestamp>")
     ap.add_argument("--json", action="store_true", help="print report.json path only")
     ap.add_argument("--list-devices", action="store_true")
@@ -1122,6 +1183,7 @@ def main() -> int:
     chosen = select_profiles(profiles, args.devices, args.tier, args.include_edge)
     schemes = ["light", "dark"] if args.color_scheme == "both" else [args.color_scheme]
     base_opts = CaptureOptions(out_dir=out_dir, landscape=args.landscape, timeout_s=args.timeout,
+                               max_scroll_viewports=args.max_scroll_viewports,
                                rules=load_rules(args.disable_rule))
 
     started = datetime.now(timezone.utc)
