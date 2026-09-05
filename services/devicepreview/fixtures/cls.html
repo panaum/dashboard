@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: layout shift</title><link rel="stylesheet" href="_base.css">
+<style>#late { background: #fdd; }</style></head>
+<body>
+<div id="late"></div>
+<p>Exactly one defect: half a second after load, a 420px block is inserted above this paragraph and everything below it jumps. That is cumulative layout shift, and only Chromium can measure it.</p>
+<p>More content so the shifted area is large.</p>
+<script>setTimeout(() => { const d = document.getElementById('late'); d.style.height = '420px'; d.textContent = 'Late banner'; }, 500);</script>
+</body></html>

@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: clipped text</title><link rel="stylesheet" href="_base.css">
+<style>.clip { width: 220px; height: 44px; overflow: hidden; background: #eef; padding: 4px; }</style></head>
+<body>
+<p>Exactly one defect: the box below is 44px tall with overflow hidden, and its sentence needs several lines — the glyphs leave the box and are cut.</p>
+<div class="clip" id="culprit">This sentence is far too long for its small fixed-height box and the lower lines are genuinely cut off by overflow hidden.</div>
+</body></html>

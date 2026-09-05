@@ -111,15 +111,6 @@ class TapSeverity(unittest.TestCase):
         self.assertIn("24px WCAG AA", f["message"])
 
 
-class CleanPage(unittest.TestCase):
-    def test_negative_control_has_no_findings(self):
-        code, rep = run("clean.html", f"{TOUCH},{DESKTOP}")
-        for d in rep["devices"]:
-            self.assertEqual(d["findings"], [], f"{d['profile_id']} should be clean: {d['findings']}")
-        self.assertEqual(code, 0)
-        self.assertEqual(rep["summary"]["devicesPassed"], 2)
-
-
 class RuleConfig(unittest.TestCase):
     def test_disable_rule_switches_it_off(self):
         code, rep = run("overflow.html", TOUCH, "--disable-rule", "overflow")
@@ -137,3 +128,130 @@ class RuleConfig(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── step 4 rules ──────────────────────────────────────────────────────────────
+
+ANDROID = "galaxy-s25"  # chromium: the only engine that can measure layout shift
+
+
+def one(rep: dict, device: str, rule: str) -> dict:
+    dev = next(d for d in rep["devices"] if d["profile_id"] == device)
+    hits = [f for f in dev["findings"] if f["rule"] == rule]
+    assert hits, f"{rule} did not fire on {device}: {[f['rule'] for f in dev['findings']]}"
+    return hits[0]
+
+
+class ClippedTextRule(unittest.TestCase):
+    def test_text_cut_by_overflow_hidden(self):
+        _, rep = run("clipped-text.html", TOUCH)
+        f = one(rep, TOUCH, "clipped-text")
+        self.assertTrue(f["selector"].startswith("div#culprit"))
+        self.assertIn("below its box", f["message"])
+        self.assertEqual(rules_fired(rep, TOUCH) - {"cls"}, {"clipped-text"})
+
+
+class TextSmallRule(unittest.TestCase):
+    def test_ten_px_text_on_mobile(self):
+        _, rep = run("text-small.html", TOUCH)
+        f = one(rep, TOUCH, "text-small")
+        self.assertTrue(f["selector"].startswith("p#culprit"))
+        self.assertIn("10.0px", f["message"])
+
+    def test_silent_on_desktop(self):
+        _, rep = run("text-small.html", DESKTOP)
+        self.assertNotIn("text-small", rules_fired(rep, DESKTOP))
+
+
+class FixedChromeRule(unittest.TestCase):
+    def test_bars_over_a_quarter_of_the_viewport(self):
+        _, rep = run("fixed-chrome.html", TOUCH)
+        f = one(rep, TOUCH, "fixed-chrome")
+        self.assertIn("40%", f["message"])
+        self.assertEqual(rules_fired(rep, TOUCH) - {"cls"}, {"fixed-chrome"})
+
+
+class ViewportMetaRule(unittest.TestCase):
+    def test_missing_meta_is_an_error_on_mobile(self):
+        code, rep = run("viewport-meta-missing.html", TOUCH)
+        f = one(rep, TOUCH, "viewport-meta")
+        self.assertEqual(f["severity"], "error")
+        self.assertIn("No <meta", f["message"])
+        self.assertEqual(code, 1)
+
+    def test_zoom_blocked_is_a_warning(self):
+        code, rep = run("viewport-meta-noscale.html", TOUCH)
+        f = one(rep, TOUCH, "viewport-meta")
+        self.assertEqual(f["severity"], "warn")
+        self.assertIn("WCAG 1.4.4", f["message"])
+        self.assertEqual(code, 0)
+
+
+class WebfontRule(unittest.TestCase):
+    def test_missing_font_file_is_an_error_where_the_network_saw_it(self):
+        code, rep = run("webfont.html", ANDROID)
+        dev = next(d for d in rep["devices"])
+        hits = [f for f in dev["findings"] if f["rule"] == "webfont"]
+        self.assertEqual(len(hits), 1, f"one fact, one finding: {hits}")
+        self.assertEqual(hits[0]["severity"], "error")
+        self.assertIn("missing-font.woff2", hits[0]["message"])
+        self.assertEqual(code, 1)
+        self.assertTrue(dev["fonts"]["failed_requests"], "the network record must carry the failure")
+
+    def test_never_loaded_face_is_still_reported_when_no_request_happens(self):
+        # WebKit refuses the file:// font before the network, so there is no
+        # request to fail; the used-but-unloaded face must not pass silently.
+        _, rep = run("webfont.html", TOUCH)
+        dev = next(d for d in rep["devices"])
+        hits = [f for f in dev["findings"] if f["rule"] == "webfont"]
+        self.assertTrue(hits, f"webfont stayed silent on webkit: {dev['fonts']}")
+        self.assertIn("Missing Sans", hits[0]["message"])
+        face = next(f for f in dev["fonts"]["faces"] if f["family"].strip('"') == "Missing Sans")
+        self.assertTrue(face["used"], "the fixture's paragraph uses this family")
+
+
+class OffscreenRule(unittest.TestCase):
+    def test_parked_text_is_info(self):
+        code, rep = run("offscreen.html", TOUCH)
+        f = one(rep, TOUCH, "offscreen")
+        self.assertEqual(f["severity"], "info")
+        self.assertTrue(f["selector"].startswith("div#ghost"))
+        self.assertEqual(code, 0)
+        self.assertNotIn("element-wider", rules_fired(rep, TOUCH), "wholly off screen is not 'wider than viewport'")
+
+
+class ImageSizeRule(unittest.TestCase):
+    def test_upscaled_image_is_a_warning(self):
+        _, rep = run("image-size.html", TOUCH)
+        f = one(rep, TOUCH, "image-size")
+        self.assertEqual(f["severity"], "warn")
+        self.assertIn("look soft", f["message"])
+        self.assertTrue(f["selector"].startswith("img#culprit"))
+
+
+class ClsRule(unittest.TestCase):
+    def test_late_insert_shifts_layout_on_chromium(self):
+        _, rep = run("cls.html", ANDROID)
+        f = one(rep, ANDROID, "cls")
+        self.assertIn(f["severity"], ("warn", "error"), f["message"])
+        dev = next(d for d in rep["devices"])
+        self.assertIsNotNone(dev["page"]["cls"])
+        self.assertGreater(dev["page"]["cls"], 0.1)
+
+    def test_not_measurable_on_webkit_says_so_instead_of_faking_zero(self):
+        _, rep = run("cls.html", TOUCH)
+        dev = next(d for d in rep["devices"])
+        self.assertIsNone(dev["page"]["cls"])
+        self.assertNotIn("cls", rules_fired(rep, TOUCH))
+        self.assertTrue(any("not measurable" in n for n in dev["notes"]))
+
+
+class CleanPageAllRules(unittest.TestCase):
+    def test_negative_control_only_reports_cls_info(self):
+        code, rep = run("clean.html", f"{ANDROID},{TOUCH},{DESKTOP}")
+        for d in rep["devices"]:
+            rules = {f["rule"] for f in d["findings"]}
+            self.assertLessEqual(rules, {"cls"}, f"{d['profile_id']} fired {rules}")
+            for f in d["findings"]:
+                self.assertEqual(f["severity"], "info", f)
+        self.assertEqual(code, 0)

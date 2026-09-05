@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """devicepreview — how a URL renders across a fixed matrix of device profiles.
 
-Build steps 1–3: the device matrix, the capture interface, the `local` backend
-with engine parallelism, and the audit probe's first rules (overflow, element
-wider than viewport, tap target too small, tap targets too close). No gallery
-yet (step 5), no baseline diffing (step 6).
+Build steps 1–4: the device matrix, the capture interface, the `local` backend
+with engine parallelism, and the full twelve-rule audit probe. No gallery yet
+(step 5), no baseline diffing (step 6).
 
 One interface, swappable backends:
 
@@ -182,8 +181,25 @@ FREEZE_CSS = """
 
 FONTS_JS = """async () => {
   try { await document.fonts.ready; } catch (e) {}
+  // Force every declared face to settle. Font loading is lazy — a face is only
+  // fetched when glyphs using it paint — and WebKit under some origins never
+  // fetches at all, leaving status "unloaded" with no network event to record.
+  // load() rejects on failure, so each is caught; afterwards status is
+  // loaded, error, or still unloaded (blocked before the network).
+  try { await Promise.all([...document.fonts].map(f => f.status === 'unloaded' ? f.load().then(() => 1, () => 0) : 1)); } catch (e) {}
+  // Which families does rendered text actually ask for first? A declared but
+  // unused weight staying unloaded is normal; a used one is a fallback in disguise.
+  const used = new Set();
+  try {
+    for (const el of document.querySelectorAll('body, body *')) {
+      if (!el.innerText || !el.innerText.trim()) continue;
+      const first = (getComputedStyle(el).fontFamily || '').split(',')[0].trim().replace(/^["']|["']$/g, '').toLowerCase();
+      if (first) used.add(first);
+    }
+  } catch (e) {}
   const faces = [];
-  try { for (const f of document.fonts) faces.push({ family: f.family, status: f.status, weight: f.weight, style: f.style }); }
+  try { for (const f of document.fonts) faces.push({ family: f.family, status: f.status, weight: f.weight, style: f.style,
+    used: used.has(String(f.family).replace(/^["']|["']$/g, '').toLowerCase()) }); }
   catch (e) {}
   // A page asking for Apple's system face will be substituted on Linux. That is
   // a fidelity note the reader needs, not a defect in the page.
@@ -254,7 +270,30 @@ FIXED_CHROME_JS = """() => {
 
 DEFAULT_RULES: dict[str, bool] = {
     "overflow": True, "element-wider": True, "tap-small": True, "tap-close": True,
+    "clipped-text": True, "text-small": True, "fixed-chrome": True, "viewport-meta": True,
+    "webfont": True, "offscreen": True, "image-size": True, "cls": True,
 }
+
+# Registered before any page script runs. Only Chromium implements the
+# layout-shift entry type; elsewhere the observer throws, __dpCLS stays null,
+# and the rule says "not measurable" rather than reporting a fake zero.
+CLS_INIT_JS = """(() => {
+  window.__dpCLS = null;
+  // Ask, don't trust the throw. WebKit accepts an unknown entry type without
+  // complaint, so a try/catch left __dpCLS at 0 on an engine that measured
+  // nothing — a fake zero, the exact outcome this null is meant to prevent.
+  try {
+    const ok = typeof PerformanceObserver !== 'undefined'
+      && Array.isArray(PerformanceObserver.supportedEntryTypes)
+      && PerformanceObserver.supportedEntryTypes.includes('layout-shift');
+    if (ok) {
+      window.__dpCLS = 0;
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) if (!e.hadRecentInput) window.__dpCLS += e.value;
+      }).observe({ type: 'layout-shift', buffered: true });
+    }
+  } catch (e) { window.__dpCLS = null; }
+})();"""
 
 AUDIT_JS = """(cfg) => {
   const rules = cfg.rules || {};
@@ -426,7 +465,172 @@ AUDIT_JS = """(cfg) => {
     }
   }
 
-  return { docOverflow, findings };
+  const isMobile = !!cfg.isMobile;
+  const dpr = cfg.dpr || 1;
+  const textRects = (el) => {
+    const out = [];
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let n, budget = 200;
+    while ((n = w.nextNode()) && budget-- > 0) {
+      if (!n.textContent.trim()) continue;
+      const rg = document.createRange(); rg.selectNodeContents(n);
+      for (const r of rg.getClientRects()) if (r.width > 1 && r.height > 1) out.push(r);
+    }
+    return out;
+  };
+  const ownText = (el) => {
+    for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim().length > 1) return true;
+    return false;
+  };
+  const rollup = (rule, sev, count, what) => findings.push({ severity: sev, rule,
+    message: count + ' more ' + what + ' not listed', selector: 'body', box: { x: 0, y: 0, width: vw, height: vh } });
+
+  // ── clipped-text: text cut off by overflow:hidden ──────────────────────
+  // Ellipsis and line-clamp are deliberate. A box under 8px has nothing
+  // visible to clip (collapsed accordion, screen-reader-only link). And the
+  // GLYPHS must leave the box: a pulsing button reported 236px of hidden
+  // overflow mid-animation while its label sat perfectly inside.
+  if (rules['clipped-text']) {
+    let n = 0, extra = 0;
+    for (const el of all) {
+      if (!vis(el) || !ownText(el)) continue;
+      const s = getComputedStyle(el);
+      const hidX = /hidden|clip/.test(s.overflowX), hidY = /hidden|clip/.test(s.overflowY);
+      if (!hidX && !hidY) continue;
+      if (s.textOverflow === 'ellipsis') continue;
+      if (s.webkitLineClamp && s.webkitLineClamp !== 'none') continue;
+      if (el.clientWidth < 8 || el.clientHeight < 8) continue;
+      if (el.closest('[aria-expanded="false"], [aria-hidden="true"], [hidden]')) continue;
+      const dx = el.scrollWidth - el.clientWidth, dy = el.scrollHeight - el.clientHeight;
+      if (!((hidX && dx >= 4) || (hidY && dy >= 2))) continue;
+      const r = el.getBoundingClientRect();
+      let outR = 0, outB = 0;
+      for (const tr of textRects(el)) { outR = Math.max(outR, tr.right - r.right); outB = Math.max(outB, tr.bottom - r.bottom); }
+      if (outR < 2 && outB < 2) continue;
+      if (n >= 8) { extra++; continue; }
+      findings.push({ severity: 'warn', rule: 'clipped-text',
+        message: sel(el) + ' hides ' + (outB >= 2 ? Math.round(outB) + 'px of text below its box' : Math.round(outR) + 'px of text past its right edge'),
+        selector: sel(el), box: box(r), text: snippet(el) });
+      n++;
+    }
+    if (extra) rollup('clipped-text', 'warn', extra, 'clipped text block(s)');
+  }
+
+  // ── text-small: body text under 12px on mobile ─────────────────────────
+  if (rules['text-small'] && isMobile) {
+    let n = 0, extra = 0;
+    for (const el of all) {
+      if (!vis(el) || !ownText(el)) continue;
+      if (el.closest('sup, sub, script, style')) continue;
+      const size = parseFloat(getComputedStyle(el).fontSize);
+      if (!(size < 12)) continue;
+      if ((el.innerText || '').trim().length < 3) continue;
+      if (n >= 10) { extra++; continue; }
+      findings.push({ severity: 'warn', rule: 'text-small',
+        message: sel(el) + ' is set at ' + size.toFixed(1) + 'px; body text under 12px is hard to read on a phone',
+        selector: sel(el), box: box(el.getBoundingClientRect()), text: snippet(el) });
+      n++;
+    }
+    if (extra) rollup('text-small', 'warn', extra, 'small-text block(s)');
+  }
+
+  // ── fixed-chrome: pinned bars eating the viewport ──────────────────────
+  // vis() already drops off-canvas drawers, which is what made a hidden mobile
+  // menu look like an 852px-tall fixed header.
+  if (rules['fixed-chrome']) {
+    let topH = 0, botH = 0; const parts = [];
+    for (const el of all) {
+      const s = getComputedStyle(el);
+      if (s.position !== 'fixed' && s.position !== 'sticky') continue;
+      if (!vis(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < vw * 0.5 || r.height < 10) continue;        // a bar spans the screen
+      if (r.top <= 2 && r.bottom > 0) { topH = Math.max(topH, r.bottom); parts.push(sel(el)); }
+      else if (r.bottom >= vh - 2 && r.top < vh) { botH = Math.max(botH, vh - r.top); parts.push(sel(el)); }
+    }
+    const share = (topH + botH) / vh;
+    if (share > 0.25) findings.push({ severity: 'warn', rule: 'fixed-chrome',
+      message: 'Fixed bars take ' + Math.round(share * 100) + '% of the viewport (' + Math.round(topH) + 'px top, ' + Math.round(botH) + 'px bottom of ' + vh + 'px)',
+      selector: parts[0] || 'body', box: { x: 0, y: sy, width: vw, height: Math.round(topH) }, related: parts.slice(1).join(', ') });
+  }
+
+  // ── viewport-meta ──────────────────────────────────────────────────────
+  if (rules['viewport-meta']) {
+    const meta = document.querySelector('meta[name="viewport"]');
+    const content = (meta && meta.getAttribute('content') || '').toLowerCase().replace(/\\s+/g, '');
+    if (!meta) {
+      findings.push({ severity: isMobile ? 'error' : 'warn', rule: 'viewport-meta',
+        message: 'No <meta name="viewport">: phones lay the page out at desktop width and shrink it',
+        selector: 'head', box: { x: 0, y: 0, width: vw, height: 1 } });
+    } else if (/user-scalable=(no|0)/.test(content) || /maximum-scale=1(\\.0*)?(,|$)/.test(content)) {
+      findings.push({ severity: 'warn', rule: 'viewport-meta',
+        message: 'Viewport meta blocks zoom (' + content.slice(0, 80) + '); that fails WCAG 1.4.4 for low-vision users',
+        selector: 'meta[name="viewport"]', box: { x: 0, y: 0, width: vw, height: 1 } });
+    }
+  }
+
+  // ── offscreen: content parked outside the viewport ─────────────────────
+  // Ambiguous by nature — left:-9999px is a common accessibility pattern — so
+  // this is info, skips screen-reader shapes and anything inside a drawer or
+  // menu, and reports only the outermost offscreen element.
+  if (rules.offscreen) {
+    let n = 0;
+    for (const el of all) {
+      const s = getComputedStyle(el);
+      if (s.display === 'none' || s.visibility === 'hidden') continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 20 || r.height < 10) continue;                 // sr-only 1px shapes
+      const off = r.right <= 0 || r.left >= vw;
+      if (!off) continue;
+      if (!(el.innerText || '').trim()) continue;
+      if (el.closest('nav, dialog, [role="dialog"], [role="menu"], [aria-hidden="true"], [hidden], [class*="menu" i], [class*="drawer" i], [class*="offcanvas" i], [class*="off-canvas" i], [class*="sidebar" i], [class*="sr-only" i], [class*="visually-hidden" i]')) continue;
+      const p = el.parentElement;
+      if (p && p !== document.body) { const pr = p.getBoundingClientRect(); if (pr.right <= 0 || pr.left >= vw) continue; }
+      findings.push({ severity: 'info', rule: 'offscreen',
+        message: sel(el) + ' sits entirely off screen (x ' + Math.round(r.left) + ' to ' + Math.round(r.right) + ') and is not marked hidden',
+        selector: sel(el), box: box(r), text: snippet(el) });
+      if (++n >= 6) break;
+    }
+  }
+
+  // ── image-size: served resolution vs rendered size at this DPR ─────────
+  if (rules['image-size']) {
+    let n = 0;
+    for (const img of document.querySelectorAll('img')) {
+      if (!vis(img) || !img.complete || !img.naturalWidth) continue;
+      if (/\\.svg(\\?|$)/i.test(img.currentSrc || img.src || '')) continue;
+      const r = img.getBoundingClientRect();
+      if (r.width < 40 || r.height < 40) continue;
+      const need = r.width * dpr;
+      if (img.naturalWidth < need * 0.9) {
+        findings.push({ severity: 'warn', rule: 'image-size',
+          message: sel(img) + ' is ' + img.naturalWidth + 'px wide but drawn at ' + Math.round(r.width) + 'px on a ' + dpr + 'x screen (' + Math.round(need) + 'px needed) — it will look soft',
+          selector: sel(img), box: box(r) });
+      } else if (img.naturalWidth > need * 2) {
+        findings.push({ severity: 'info', rule: 'image-size',
+          message: sel(img) + ' is ' + img.naturalWidth + 'px wide for a ' + Math.round(need) + 'px slot — more than 2× the pixels this device can show',
+          selector: sel(img), box: box(r) });
+      } else continue;
+      if (++n >= 8) break;
+    }
+  }
+
+  // ── cls: cumulative layout shift, from the observer armed before load ───
+  let cls = null;
+  if (rules.cls) {
+    cls = (typeof window.__dpCLS === 'number') ? Math.round(window.__dpCLS * 1000) / 1000 : null;
+    if (cls === null) {
+      // not a finding: the engine cannot measure it, and a fake 0 would be a lie
+    } else if (cls > 0.25) {
+      findings.push({ severity: 'error', rule: 'cls', message: 'Cumulative layout shift ' + cls + ' — content jumps around while loading (poor is above 0.25)', selector: 'html', box: { x: 0, y: 0, width: vw, height: vh } });
+    } else if (cls > 0.1) {
+      findings.push({ severity: 'warn', rule: 'cls', message: 'Cumulative layout shift ' + cls + ' — some content moves while loading (good is 0.1 or under)', selector: 'html', box: { x: 0, y: 0, width: vw, height: vh } });
+    } else {
+      findings.push({ severity: 'info', rule: 'cls', message: 'Cumulative layout shift ' + cls + ' — stable while loading', selector: 'html', box: { x: 0, y: 0, width: vw, height: vh } });
+    }
+  }
+
+  return { docOverflow, cls, findings };
 }"""
 
 PAGE_JS = """() => ({
@@ -505,6 +709,7 @@ class LocalBackend(Backend):
         try:
             with self._context(profile, options) as ctx:
                 page = ctx.new_page()
+                page.add_init_script(CLS_INIT_JS)
                 # Font files that fail are invisible in a screenshot when the
                 # fallback looks plausible. The network is the only honest record.
                 page.on("response", lambda r: font_requests.append(
@@ -535,8 +740,7 @@ class LocalBackend(Backend):
                                         if r.get("status") is None or r["status"] >= 400],
                 }
                 if fonts.get("requestsAppleSystemFont"):
-                    res.notes.append("page requests Apple system font (-apple-system / SF Pro); "
-                                     "substituted on this backend, typography is not authentic")
+                    res.fonts["appleSystemFontRequested"] = True
 
                 page.add_style_tag(content=FREEZE_CSS)
 
@@ -556,10 +760,17 @@ class LocalBackend(Backend):
 
                 t_audit = time.time()
                 audit = page.evaluate(AUDIT_JS, {
-                    "rules": options.rules,
+                    "rules": options.rules, "dpr": profile.device_scale_factor,
                     "hasTouch": profile.has_touch, "isMobile": profile.is_mobile,
                 }) or {}
                 res.findings = audit.get("findings", [])
+                res.page["cls"] = audit.get("cls")
+                if options.rules.get("cls") and audit.get("cls") is None:
+                    res.notes.append("layout shift (CLS) is not measurable in this engine; "
+                                     "see the Chromium profiles for that number")
+                # Webfont findings need the network, which only Python saw.
+                if options.rules.get("webfont"):
+                    res.findings.extend(_font_findings(res.fonts, w, h))
                 res.timings_ms["audit"] = int((time.time() - t_audit) * 1000)
 
                 t2 = time.time()
@@ -610,6 +821,46 @@ class LocalBackend(Backend):
             except PWError:
                 pass
         self._browsers.clear()
+
+
+def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, Any]]:
+    """A webfont that 404s is invisible in a screenshot when the fallback looks
+    plausible; the network is the only honest record. Failed requests are
+    errors; a FontFace that ended in status "error" without a failed request
+    (a bad file, a CORS refusal) is a warning; Apple-system substitution is info
+    so the reader knows the type is not authentic."""
+    out: list[dict[str, Any]] = []
+    whole = {"x": 0, "y": 0, "width": vw, "height": vh}
+    failed = (fonts.get("failed_requests") or [])[:6]
+    for r in failed:
+        why = r.get("failure") or (f"HTTP {r['status']}" if r.get("status") else "failed")
+        name = r["url"].rsplit("/", 1)[-1][:60]
+        out.append({"severity": "error", "rule": "webfont",
+                    "message": f"Webfont failed to load: {name} — {why}",
+                    "selector": "head", "box": whole, "url": r["url"]})
+    faces = fonts.get("faces") or []
+    # A face in "error" is the same fact as a failed request when one exists;
+    # report it separately only when the network saw nothing (a bad file that
+    # downloaded fine, a CORS refusal).
+    if not failed:
+        for f in [f for f in faces if f.get("status") == "error"][:4]:
+            out.append({"severity": "warn", "rule": "webfont",
+                        "message": f"Font face {f['family']} ({f.get('weight', '')} {f.get('style', '')}) "
+                                   "ended in an error state and no request for it was seen — blocked before the network?",
+                        "selector": "head", "box": whole})
+    # Used by rendered text, yet never loaded even when asked to: the visitor is
+    # reading a fallback. WebKit can refuse a font without any network event.
+    for f in [f for f in faces if f.get("status") == "unloaded" and f.get("used")][:4]:
+        out.append({"severity": "warn", "rule": "webfont",
+                    "message": f"Font face {f['family']} is used by the page but was never loaded — "
+                               "text renders in a fallback face (no request was made; blocked by origin or policy?)",
+                    "selector": "body", "box": whole})
+    if fonts.get("appleSystemFontRequested"):
+        out.append({"severity": "info", "rule": "webfont",
+                    "message": "Page requests Apple's system font (-apple-system / SF Pro); it is "
+                               "substituted on this backend, so the typography is not authentic",
+                    "selector": "body", "box": whole})
+    return out
 
 
 def _thumbnail(src: Path, dst: Path, width: int) -> Path | None:
@@ -881,7 +1132,7 @@ def main() -> int:
 
     report = {
         "schemaVersion": SCHEMA_VERSION,
-        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 3},
+        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 4},
         "url": url,
         "startedAt": started.isoformat(timespec="seconds"),
         "finishedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
