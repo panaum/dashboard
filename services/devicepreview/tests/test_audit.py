@@ -32,6 +32,12 @@ def run(fixture: str, devices: str, *extra: str) -> tuple[int, dict]:
            "--devices", devices, "--no-self-check", "--out", str(out), "--json", *extra]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     report = json.loads((out / "report.json").read_text())
+    # A capture that failed must not be mistaken for a page with no findings.
+    # A crash inside the probe surfaces here as its error text, not as a
+    # puzzling "rule did not fire".
+    for d in report["devices"]:
+        if d["status"] != "ok":
+            raise AssertionError(f"{d['profile_id']} capture failed: {d['error']}\n{proc.stderr[-800:]}")
     return proc.returncode, report
 
 
@@ -298,3 +304,15 @@ class ImageSizeThresholds(unittest.TestCase):
         d = next(x for x in rep["devices"])
         soft = [f for f in d["findings"] if f["rule"] == "image-size" and f["severity"] == "warn"]
         self.assertEqual(soft, [], f"a 2x asset is the universal practice and is not soft: {soft}")
+
+
+class EdgeCutRule(unittest.TestCase):
+    def test_ordinary_width_element_positioned_past_the_edge(self):
+        # Narrower than the viewport, so the spec's "width exceeds viewport"
+        # wording would never catch it — yet 80px of it is clipped and unreachable.
+        code, rep = run("edge-cut.html", TOUCH)
+        f = one(rep, TOUCH, "element-wider")
+        self.assertTrue(f["selector"].startswith("div#culprit"), f)
+        self.assertIn("past the right edge", f["message"])
+        self.assertNotIn("overflow", rules_fired(rep, TOUCH), "the page does not scroll")
+        self.assertEqual(code, 0)

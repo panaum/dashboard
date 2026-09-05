@@ -186,7 +186,17 @@ FONTS_JS = """async () => {
   // fetches at all, leaving status "unloaded" with no network event to record.
   // load() rejects on failure, so each is caught; afterwards status is
   // loaded, error, or still unloaded (blocked before the network).
-  try { await Promise.all([...document.fonts].map(f => f.status === 'unloaded' ? f.load().then(() => 1, () => 0) : 1)); } catch (e) {}
+  const settle = async () => { try { await Promise.all([...document.fonts].map(f => f.status === 'unloaded' ? f.load().then(() => 1, () => 0) : 1)); } catch (e) {} };
+  await settle();
+  // A face can read "error" while the browser's own load of the same CSS
+  // face is still in flight — on WebKit this flipped between identical runs
+  // (error/error, loaded/loaded, loaded/error). Wait, ask once more, and only
+  // then believe an error. A finding that changes between runs is not a finding.
+  if ([...document.fonts].some(f => f.status === 'error')) {
+    await new Promise(r => setTimeout(r, 600));
+    try { await Promise.all([...document.fonts].map(f => f.status === 'error' ? f.load().then(() => 1, () => 0) : 1)); } catch (e) {}
+    await new Promise(r => setTimeout(r, 200));
+  }
   // Which families does rendered text actually ask for first? A declared but
   // unused weight staying unloaded is normal; a used one is a fallback in disguise.
   const used = new Set();
@@ -350,6 +360,31 @@ AUDIT_JS = """(cfg) => {
     + '[class*="glide"],[class*="flickity"],[class*="marquee"],[class*="ticker"],[class*="track"],[id*="track"],[class*="loop"]';
   const inSlider = (el) => !!el.closest(SLIDER);
 
+  // Every helper a rule may call is declared HERE, above the first rule. These
+  // three once lived below element-wider; const is hoisted only into a
+  // temporal dead zone, so the first page with content past the edge threw a
+  // ReferenceError, the whole probe died, and the capture came back with an
+  // empty findings list that looked like a clean page.
+  const isMobile = !!cfg.isMobile;
+  const dpr = cfg.dpr || 1;
+  const textRects = (el) => {
+    const out = [];
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let n, budget = 200;
+    while ((n = w.nextNode()) && budget-- > 0) {
+      if (!n.textContent.trim()) continue;
+      const rg = document.createRange(); rg.selectNodeContents(n);
+      for (const r of rg.getClientRects()) if (r.width > 1 && r.height > 1) out.push(r);
+    }
+    return out;
+  };
+  const ownText = (el) => {
+    for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim().length > 1) return true;
+    return false;
+  };
+  const rollup = (rule, sev, count, what) => findings.push({ severity: sev, rule,
+    message: count + ' more ' + what + ' not listed', selector: 'body', box: { x: 0, y: 0, width: vw, height: vh } });
+
   // ── overflow: the page scrolls sideways ────────────────────────────────
   if (rules.overflow && docOverflow > 1) {
     findings.push({ severity: 'error', rule: 'overflow',
@@ -371,7 +406,13 @@ AUDIT_JS = """(cfg) => {
     }
   }
 
-  // ── element-wider: wider than the viewport, but clipped so the page does not scroll ──
+  // ── element-wider: content clipped at the viewport edge (the page does not scroll) ──
+  // Two shapes of the same visitor-facing symptom. An element WIDER than the
+  // viewport, and an element of ordinary width POSITIONED past the edge — a
+  // 291px photo sitting at x=768 in a 1024px viewport loses 35px, and is not
+  // "wider than the viewport" by any reading. The width-only wording missed
+  // the exact bug that motivated this rule. Only content counts: images and
+  // text-bearing elements, never decorative bleed.
   if (rules['element-wider']) {
     let n = 0;
     for (const el of all) {
@@ -379,17 +420,28 @@ AUDIT_JS = """(cfg) => {
       const s = getComputedStyle(el);
       if (s.position === 'fixed') continue;
       const r = el.getBoundingClientRect();
-      if (r.width <= vw + 1) continue;
+      const wider = r.width > vw + 1;
+      const pastR = Math.round(r.right - vw), pastL = Math.round(-r.left);
+      const past = Math.max(pastR, pastL);
+      if (!wider && past < 8) continue;
       if (r.right <= 0 || r.left >= vw) continue;         // wholly off screen: off-canvas by design
       if (inSlider(el)) continue;
+      const isImg = el.tagName === 'IMG' || el.tagName === 'PICTURE';
+      if (!wider && !isImg && !ownText(el)) continue;    // positioned decoration bleeding is a design choice
       const clip = clippedBy(el);
       if (!clip) continue;                                // unclipped → that is the overflow rule's job
       if (/auto|scroll/.test(getComputedStyle(clip).overflowX)) continue; // a scrollable strip is meant to extend
       const p = el.parentElement;
-      if (p && p !== clip && p.getBoundingClientRect().width > vw + 1) continue; // outermost offender only
-      const cut = Math.round(Math.max(r.right - vw, -r.left));
+      if (p && p !== clip) {
+        const pr = p.getBoundingClientRect();
+        if (pr.width > vw + 1 || pr.right - vw >= 8 || -pr.left >= 8) continue; // outermost offender only
+      }
+      const frac = Math.round((past / Math.max(1, r.width)) * 100);
+      if (!wider && frac >= 90) continue;                 // a sliver on screen is a carousel neighbour
       findings.push({ severity: 'warn', rule: 'element-wider',
-        message: sel(el) + ' is ' + Math.round(r.width) + 'px wide in a ' + vw + 'px viewport; ' + cut + 'px is clipped and cannot be seen',
+        message: wider
+          ? sel(el) + ' is ' + Math.round(r.width) + 'px wide in a ' + vw + 'px viewport; ' + past + 'px is clipped and cannot be seen'
+          : sel(el) + ' extends ' + past + 'px past the ' + (pastR >= pastL ? 'right' : 'left') + ' edge (' + frac + '% of it is clipped and cannot be seen)',
         selector: sel(el), box: box(r), text: snippet(el) });
       if (++n >= 8) break;
     }
@@ -473,25 +525,6 @@ AUDIT_JS = """(cfg) => {
     }
   }
 
-  const isMobile = !!cfg.isMobile;
-  const dpr = cfg.dpr || 1;
-  const textRects = (el) => {
-    const out = [];
-    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-    let n, budget = 200;
-    while ((n = w.nextNode()) && budget-- > 0) {
-      if (!n.textContent.trim()) continue;
-      const rg = document.createRange(); rg.selectNodeContents(n);
-      for (const r of rg.getClientRects()) if (r.width > 1 && r.height > 1) out.push(r);
-    }
-    return out;
-  };
-  const ownText = (el) => {
-    for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim().length > 1) return true;
-    return false;
-  };
-  const rollup = (rule, sev, count, what) => findings.push({ severity: sev, rule,
-    message: count + ' more ' + what + ' not listed', selector: 'body', box: { x: 0, y: 0, width: vw, height: vh } });
 
   // ── clipped-text: text cut off by overflow:hidden ──────────────────────
   // Ellipsis and line-clamp are deliberate. A box under 8px has nothing
@@ -902,8 +935,8 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, An
             if failed:
                 continue                   # already reported as the failed request(s)
             out.append({"severity": "warn", "rule": "webfont",
-                        "message": f"{fam} downloaded but this engine rejected the font file ({decl} all in "
-                                   "error, every request succeeded) — text renders in a fallback face here",
+                        "message": f"{fam} reported in error by this engine on two attempts ({decl}, every "
+                                   "request succeeded) — text is rendering in a fallback face here",
                         "selector": "body", "box": whole, "family": fam})
             n += 1
         elif statuses <= {"unloaded", "error"}:
