@@ -13,6 +13,7 @@ Slow-ish (a browser per engine), so it is a test file, not something on every sa
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -537,6 +538,153 @@ class BaselineDiff(unittest.TestCase):
                 self.assertEqual(pg.locator("#detail .diffimg").count(), 1)
             finally:
                 br.close()
+
+
+class MacOSBackendTests(unittest.TestCase):
+    """The same engines on a Mac: one name, one fact (Apple fonts are real)."""
+
+    @unittest.skipUnless(sys.platform == "darwin", "the macos backend only runs on a Mac")
+    def test_macos_backend_captures_and_does_not_call_apple_fonts_substituted(self):
+        _, local = run("apple-font.html", TOUCH)
+        self.assertTrue(any("Apple's system font" in f["message"] for f in local["devices"][0]["findings"]),
+                        "the local backend notes the substitution")
+        code, mac = run("apple-font.html", TOUCH, "--backend", "macos")
+        d = mac["devices"][0]
+        self.assertEqual(mac["backend"], "macos"); self.assertEqual(d["backend"], "macos"); self.assertEqual(d["status"], "ok")
+        self.assertFalse(any("Apple's system font" in f["message"] for f in d["findings"]), "authentic on a Mac")
+        self.assertIn("Apple's real font stack", mac["fidelityNote"]); self.assertEqual(mac["host"]["platform"], "darwin")
+        self.assertEqual(code, 0)
+
+    def test_macos_backend_refuses_other_platforms(self):
+        mod = _module()
+        real = mod.sys.platform
+        try:
+            mod.sys.platform = "linux"
+            with self.assertRaises(SystemExit) as cm:
+                mod.make_backend("macos", None)
+            self.assertIn("macOS host", str(cm.exception))
+        finally:
+            mod.sys.platform = real
+
+
+def _module():
+    import importlib.util
+    if "devicepreview" in sys.modules:
+        return sys.modules["devicepreview"]
+    spec = importlib.util.spec_from_file_location("devicepreview", ROOT / "devicepreview.py")
+    mod = importlib.util.module_from_spec(spec); sys.modules["devicepreview"] = mod; spec.loader.exec_module(mod)
+    return mod
+
+
+class FakeBrowserStack:
+    """The Screenshots API as documented, without the network."""
+
+    def __init__(self, available, polls_until_done=2, image_png=b""):
+        self.available, self.polls_until_done, self.png = available, polls_until_done, image_png
+        self.calls, self.job, self._polls = [], None, 0
+
+    def __call__(self, method, url, body=None, raw=False):
+        self.calls.append((method, url, body))
+        if url.endswith("/screenshots/browsers.json"):
+            return 200, self.available
+        if method == "POST" and url.endswith("/screenshots"):
+            self.job = {"job_id": "job-1", "state": "pending",
+                        "screenshots": [{**b, "id": f"s{i}", "state": "pending", "url": body["url"]} for i, b in enumerate(body["browsers"])]}
+            return 200, self.job
+        if url.endswith("/screenshots/job-1.json"):
+            self._polls += 1
+            done = self._polls >= self.polls_until_done
+            return 200, {"id": "job-1", "state": "done" if done else "queued",
+                         "screenshots": [{**sh, "state": "done" if done else "processing",
+                                          "image_url": f"https://img.test/{sh['id']}.png", "thumb_url": f"https://img.test/{sh['id']}-t.png"}
+                                         for sh in self.job["screenshots"]]}
+        if url.startswith("https://img.test/"):
+            return 200, self.png
+        return 404, {"message": "not found"}
+
+
+AVAILABLE = [
+    {"os": "ios", "os_version": "18", "browser": "Mobile Safari", "browser_version": None, "device": "iPhone 16"},
+    {"os": "ios", "os_version": "27 Beta", "browser": "Mobile Safari", "browser_version": None, "device": "iPhone 16 Pro Max"},
+    {"os": "ios", "os_version": "17", "browser": "Mobile Safari", "browser_version": None, "device": "iPhone 16 Pro Max"},
+    {"os": "android", "os_version": "15.0", "browser": "Android Browser", "browser_version": None, "device": "Galaxy S25"},
+    {"os": "Windows", "os_version": "11", "browser": "chrome", "browser_version": "128.0", "device": None},
+    {"os": "Windows", "os_version": "11", "browser": "chrome", "browser_version": "131.0", "device": None},
+    {"os": "OS X", "os_version": "Sequoia", "browser": "safari", "browser_version": "18.0", "device": None},
+]
+
+
+class BrowserStackBackendTests(unittest.TestCase):
+    """The Screenshots API, driven exactly as documented, against a fake."""
+
+    def setUp(self):
+        self.mod = _module()
+        from PIL import Image
+        import io
+        buf = io.BytesIO(); Image.new("RGB", (1179, 5000), (200, 30, 30)).save(buf, "PNG"); self.png = buf.getvalue()
+
+    def _profiles(self, *ids):
+        return [p for p in self.mod.load_devices(None) if p.id in ids]
+
+    def _say(self, *a, **k):
+        pass
+
+    def test_missing_credentials_explain_how_to_enable(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("BROWSERSTACK")}
+        self.assertIsNone(self.mod.browserstack_credentials(env))
+        self.assertEqual(self.mod.browserstack_credentials({**env, "BROWSERSTACK_KEY": "me:secret"}), ("me", "secret"))
+        self.assertEqual(self.mod.browserstack_credentials({**env, "BROWSERSTACK_USERNAME": "me", "BROWSERSTACK_ACCESS_KEY": "s"}), ("me", "s"))
+        self.assertIn("BROWSERSTACK_USERNAME", self.mod.BROWSERSTACK_HOWTO); self.assertIn("--backend browserstack", self.mod.BROWSERSTACK_HOWTO)
+
+    def test_mappings_resolve_against_the_live_list_with_fallbacks(self):
+        r = self.mod.resolve_browserstack
+        entry, note = r({"os": "ios", "os_version": "18", "device": "iPhone 16"}, AVAILABLE)
+        self.assertEqual((entry["device"], entry["os_version"], note), ("iPhone 16", "18", None))
+        entry, note = r({"os": "ios", "os_version": "18", "device": "iPhone 16 Pro Max"}, AVAILABLE)
+        self.assertEqual(entry["os_version"], "17", "prefer the latest non-beta version when the asked one is gone"); self.assertIn("not 18", note)
+        entry, note = r({"os": "Windows", "os_version": "11", "browser": "chrome", "browser_version": "latest"}, AVAILABLE)
+        self.assertEqual(entry["browser_version"], "131.0")
+        entry, note = r({"os": "ios", "os_version": "18", "device": "iPhone 17"}, AVAILABLE)
+        self.assertIsNone(entry); self.assertIn("closest", note); self.assertIn("iPhone 16", note)
+        entry, note = r(None, AVAILABLE)
+        self.assertIsNone(entry); self.assertIn("null", note)
+
+    def test_one_job_per_run_polled_to_done_and_images_laid_out_like_local(self):
+        fake = FakeBrowserStack(AVAILABLE, polls_until_done=2, image_png=self.png)
+        be = self.mod.BrowserStackBackend(("me", "secret"), http=fake, poll_s=0, sleep=lambda s: None)
+        out = Path(tempfile.mkdtemp(prefix="dp-bs-"))
+        opts = self.mod.CaptureOptions(out_dir=out)
+        profiles = self._profiles("iphone-16", "galaxy-s25", "galaxy-z-flip-open")
+        be.prepare("https://example.test/", profiles, opts, self._say)
+        posts = [c for c in fake.calls if c[0] == "POST"]
+        self.assertEqual(len(posts), 1, "one job for the whole matrix")
+        body = posts[0][2]
+        self.assertEqual(body["url"], "https://example.test/"); self.assertEqual(body["orientation"], "portrait")
+        self.assertEqual([b["device"] for b in body["browsers"]], ["iPhone 16", "Galaxy S25"], "the unmapped profile is not sent")
+        self.assertEqual(sum(1 for c in fake.calls if c[1].endswith("job-1.json")), 2, "polled until done")
+        res = {p.id: be.capture("https://example.test/", p, opts) for p in profiles}
+        ok = res["iphone-16"]
+        self.assertEqual(ok.status, "ok"); self.assertEqual(ok.backend, "browserstack")
+        self.assertEqual(set(ok.images), {"full", "fold", "thumb"})
+        for rel in ok.images.values():
+            self.assertTrue((out / rel).is_file(), rel)
+        self.assertEqual(ok.device_scale_factor, 3.0, "1179px wide for a 393px viewport is a 3x device")
+        self.assertEqual(ok.findings, []); self.assertTrue(any("no DOM access" in n for n in ok.notes))
+        self.assertEqual(ok.page["browserstack"]["device"], "iPhone 16")
+        skipped = res["galaxy-z-flip-open"]
+        self.assertEqual(skipped.status, "failed"); self.assertIn("null", skipped.error)
+        # identical shape to a local result
+        from dataclasses import asdict
+        local_keys = set(asdict(self.mod.CaptureResult(profile_id="x", label="x", engine="webkit", platform="ios", tier="primary", verified=False, backend="local", url="u")))
+        self.assertEqual(set(asdict(ok)), local_keys)
+
+    def test_bad_credentials_and_refused_jobs_stop_with_a_reason(self):
+        def unauthorized(method, url, body=None, raw=False):
+            return 401, {"message": "Unauthorized"}
+        be = self.mod.BrowserStackBackend(("me", "wrong"), http=unauthorized, poll_s=0, sleep=lambda s: None)
+        with self.assertRaises(SystemExit) as cm:
+            be.prepare("https://example.test/", self._profiles("iphone-16"), self.mod.CaptureOptions(out_dir=Path(tempfile.mkdtemp())), self._say)
+        self.assertIn("401", str(cm.exception)); self.assertIn("BROWSERSTACK_USERNAME", str(cm.exception))
 
 
 class ImageSizeThresholds(unittest.TestCase):

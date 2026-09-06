@@ -30,9 +30,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from html import escape as html_escape
+import base64
+import difflib
+import platform as _platform
+import re
 import shlex
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -64,6 +70,7 @@ class Profile:
     user_agent: str | None
     verified: bool
     playwright_device: str | None = None
+    browserstack: dict[str, Any] | None = None   # os / os_version / device / browser, or None if not offered
 
     def context_options(self, landscape: bool) -> dict[str, Any]:
         w, h = self.viewport["width"], self.viewport["height"]
@@ -107,6 +114,7 @@ def load_devices(pw: Playwright | None, path: Path = HERE / "devices.json") -> l
             user_agent=p["userAgent"] if p.get("userAgent") else base.get("user_agent"),
             verified=bool(p.get("verified", False)),
             playwright_device=name,
+            browserstack=p.get("browserstack"),
         ))
     return out
 
@@ -903,6 +911,11 @@ class _Blocked(Exception):
 
 class Backend:
     name = "abstract"
+    authentic_apple_fonts = False   # does -apple-system resolve to Apple's real face here?
+
+    def prepare(self, url: str, profiles: list[Profile], options: CaptureOptions, say) -> None:
+        """Called once per scheme with every profile this backend will capture.
+        Batching backends submit one job here; the local ones need nothing."""
 
     def capture(self, url: str, profile: Profile, options: CaptureOptions) -> CaptureResult:
         raise NotImplementedError
@@ -1101,7 +1114,7 @@ class LocalBackend(Backend):
                                      "see the Chromium profiles for that number")
                 # Webfont findings need the network, which only Python saw.
                 if options.rules.get("webfont"):
-                    res.findings.extend(_font_findings(res.fonts, w, h))
+                    res.findings.extend(_font_findings(res.fonts, w, h, apple_authentic=self.authentic_apple_fonts))
                 # A finding about the document (viewport meta, layout shift,
                 # a font, the page scrolling sideways) has no place on the
                 # page to point at; a viewport-sized box drawn over the fold
@@ -1165,7 +1178,7 @@ class LocalBackend(Backend):
         self._browsers.clear()
 
 
-def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, Any]]:
+def _font_findings(fonts: dict[str, Any], vw: int, vh: int, apple_authentic: bool = False) -> list[dict[str, Any]]:
     """Webfont findings from the network record and the measured font stacks.
 
     The unit is a STACK — the font-family/weight/style some element's own text
@@ -1243,7 +1256,7 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, An
                                    f"though every request succeeded); {where} measure as their fallback face",
                         "selector": g["sample"] or "body", "box": whole, "family": fam})
 
-    if fonts.get("appleSystemFontRequested"):
+    if fonts.get("appleSystemFontRequested") and not apple_authentic:
         out.append({"severity": "info", "rule": "webfont",
                     "message": "Page requests Apple's system font (-apple-system / SF Pro); it is "
                                "substituted on this backend, so the typography is not authentic",
@@ -1287,27 +1300,269 @@ def _thumbnail(src: Path, dst: Path, width: int) -> Path | None:
         return None
 
 
-class NotBuiltYetBackend(Backend):
-    def __init__(self, name: str, step: int, how: str):
-        self.name, self._step, self._how = name, step, how
+class MacOSBackend(LocalBackend):
+    """The local code on a macOS host. Nothing branches on it except the name
+    and one fact: WebKit here draws -apple-system with Apple's real font stack,
+    so the "system font substituted" note that the Linux container earns does
+    not apply. Device metrics are still emulated — a real phone is step 7's
+    other backend."""
+    name = "macos"
+    authentic_apple_fonts = True
 
-    def capture(self, url, profile, options):
-        raise SystemExit(f"backend {self.name!r} is build step {self._step} and is not "
-                         f"implemented yet. {self._how}")
+
+BROWSERSTACK_API = "https://www.browserstack.com"
+BROWSERSTACK_HOWTO = (
+    "backend 'browserstack' takes real-device screenshots through BrowserStack's Screenshots "
+    "REST API and needs credentials. Set BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY "
+    "(Account → Settings on browserstack.com; the Screenshots API is included in Automate plans "
+    "that include browsers), or BROWSERSTACK_KEY as 'username:accesskey'. Then re-run with "
+    "--backend browserstack.")
 
 
-def make_backend(name: str, pw: Playwright) -> Backend:
+def browserstack_credentials(env: dict[str, str] | None = None) -> tuple[str, str] | None:
+    env = os.environ if env is None else env
+    if env.get("BROWSERSTACK_USERNAME") and env.get("BROWSERSTACK_ACCESS_KEY"):
+        return env["BROWSERSTACK_USERNAME"], env["BROWSERSTACK_ACCESS_KEY"]
+    key = env.get("BROWSERSTACK_KEY", "")
+    if ":" in key:
+        user, _, secret = key.partition(":")
+        if user and secret:
+            return user, secret
+    return None
+
+
+def _http(user: str, secret: str):
+    """The one place the network is touched, so tests can hand in a fake."""
+    token = base64.b64encode(f"{user}:{secret}".encode()).decode()
+
+    def call(method: str, url: str, body: dict[str, Any] | None = None, raw: bool = False):
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(url, data=data, method=method,
+                                     headers={"Authorization": f"Basic {token}", "Accept": "application/json",
+                                              **({"Content-Type": "application/json"} if data else {})})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                payload = r.read()
+                return r.status, (payload if raw else json.loads(payload or b"null"))
+        except urllib.error.HTTPError as e:
+            payload = e.read()
+            try:
+                return e.code, json.loads(payload)
+            except ValueError:
+                return e.code, {"message": payload.decode(errors="replace")[:300]}
+    return call
+
+
+def _version_key(v: str) -> tuple:
+    nums = re.findall(r"\d+", str(v))
+    return tuple(int(n) for n in nums) if nums else (-1,)
+
+
+def resolve_browserstack(mapping: dict[str, Any] | None, available: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str | None]:
+    """Turn a profile's mapping into an entry BrowserStack accepts today.
+
+    Device names and OS versions on BrowserStack drift; the mapping in
+    devices.json is a starting point, checked against their live list. A
+    device present under another OS version is used with a note; one that is
+    not there at all is skipped with the closest names, so the fix is a
+    one-line edit rather than a guess."""
+    if not mapping:
+        return None, "not offered on BrowserStack (mapping is null in devices.json)"
+    if mapping.get("device"):
+        want = mapping["device"].lower()
+        cands = [b for b in available if (b.get("device") or "").lower() == want]
+        if not cands:
+            names = sorted({b["device"] for b in available if b.get("device")})
+            close = difflib.get_close_matches(mapping["device"], names, n=3, cutoff=0.5)
+            return None, (f"device {mapping['device']!r} is not in BrowserStack's list"
+                          + (f"; closest: {', '.join(close)}" if close else ""))
+        exact = [b for b in cands if str(b.get("os_version")) == str(mapping.get("os_version"))]
+        if exact:
+            return dict(exact[0]), None
+        stable = [b for b in cands if "beta" not in str(b.get("os_version")).lower()] or cands
+        pick = max(stable, key=lambda b: _version_key(b.get("os_version")))
+        return dict(pick), f"{mapping['device']} is offered on {pick['os']} {pick['os_version']}, not {mapping.get('os_version')}"
+    want_os, want_browser = str(mapping.get("os", "")).lower(), str(mapping.get("browser", "")).lower()
+    cands = [b for b in available if not b.get("device") and str(b.get("os", "")).lower() == want_os
+             and str(b.get("browser", "")).lower() == want_browser]
+    if not cands:
+        return None, f"no {mapping.get('browser')} on {mapping.get('os')} in BrowserStack's list"
+    same_os = [b for b in cands if str(b.get("os_version")) == str(mapping.get("os_version"))]
+    pool = same_os or cands
+    note = None if same_os else f"{mapping.get('os')} {mapping.get('os_version')} is not offered; using {pool[0]['os_version']}"
+    if str(mapping.get("browser_version", "latest")).lower() == "latest":
+        pick = max(pool, key=lambda b: _version_key(b.get("browser_version")))
+    else:
+        match = [b for b in pool if str(b.get("browser_version")) == str(mapping["browser_version"])]
+        pick = match[0] if match else max(pool, key=lambda b: _version_key(b.get("browser_version")))
+        if not match:
+            note = f"{mapping['browser']} {mapping['browser_version']} is not offered; using {pick['browser_version']}"
+    return dict(pick), note
+
+
+class BrowserStackBackend(Backend):
+    """Real devices, by way of BrowserStack's Screenshots REST API: one job per
+    run with every profile in it, polled until done, images downloaded into
+    the same layout the local backend writes. No DOM is reachable, so a
+    capture from here carries images and nothing else — no findings, fonts,
+    layout shift or landmarks — and says so. The point of this backend is the
+    pixels a physical phone produces; the audit belongs to the local run."""
+    name = "browserstack"
+    POLL_S = 5
+
+    def __init__(self, creds: tuple[str, str], http=None, poll_s: float | None = None, sleep=time.sleep):
+        self._http = http or _http(*creds)
+        self._sleep = sleep
+        self._poll = poll_s if poll_s is not None else self.POLL_S
+        self._available: list[dict[str, Any]] | None = None
+        self._jobs: dict[str, dict[str, Any]] = {}      # profile_id -> screenshot record
+        self._skips: dict[str, str] = {}                 # profile_id -> why
+        self._notes: dict[str, list[str]] = {}
+        self._job_meta: dict[str, Any] = {}
+
+    def _browsers(self) -> list[dict[str, Any]]:
+        if self._available is None:
+            status, body = self._http("GET", f"{BROWSERSTACK_API}/screenshots/browsers.json")
+            if status == 401:
+                raise SystemExit("BrowserStack rejected the credentials (401). " + BROWSERSTACK_HOWTO)
+            if status != 200 or not isinstance(body, list):
+                raise SystemExit(f"BrowserStack browsers.json returned HTTP {status}: {str(body)[:200]}")
+            self._available = body
+        return self._available
+
+    def prepare(self, url: str, profiles: list[Profile], options: CaptureOptions, say) -> None:
+        available = self._browsers()
+        entries: list[tuple[Profile, dict[str, Any]]] = []
+        for p in profiles:
+            entry, note = resolve_browserstack(p.browserstack, available)
+            if entry is None:
+                self._skips[p.id] = note or "not available"
+                say(f"  {p.label:28} browserstack skipped — {note}")
+                continue
+            if note:
+                self._notes.setdefault(p.id, []).append(note)
+            entries.append((p, entry))
+        if not entries:
+            return
+        if options.color_scheme == "dark":
+            for p, _ in entries:
+                self._notes.setdefault(p.id, []).append("BrowserStack screenshots cannot force a dark colour scheme; this is the light rendering")
+        body = {"url": url, "browsers": [e for _, e in entries],
+                "orientation": "landscape" if options.landscape else "portrait",
+                "quality": "original", "wait_time": 10, "win_res": "1280x1024", "mac_res": "1920x1080"}
+        status, job = self._http("POST", f"{BROWSERSTACK_API}/screenshots", body)
+        if status == 401:
+            raise SystemExit("BrowserStack rejected the credentials (401). " + BROWSERSTACK_HOWTO)
+        if status not in (200, 201, 202) or not isinstance(job, dict) or not job.get("job_id"):
+            raise SystemExit(f"BrowserStack refused the screenshot job (HTTP {status}): {str(job)[:300]}")
+        self._job_meta = {"job_id": job["job_id"], "submitted": len(entries)}
+        say(f"  browserstack job {job['job_id']} submitted for {len(entries)} device(s); polling every {self._poll:.0f}s")
+        deadline = time.time() + max(180.0, options.timeout_s * 6)
+        shots: list[dict[str, Any]] = job.get("screenshots") or []
+        state = str(job.get("state") or "pending")
+        while state != "done" and time.time() < deadline:
+            self._sleep(self._poll)
+            status, poll = self._http("GET", f"{BROWSERSTACK_API}/screenshots/{job['job_id']}.json")
+            if status != 200 or not isinstance(poll, dict):
+                continue
+            state = str(poll.get("state") or "pending"); shots = poll.get("screenshots") or shots
+            if state != "done" and all(str(sh.get("state")) in ("done", "error", "timed-out") for sh in shots) and shots:
+                state = "done"
+        # Match screenshots back to profiles by what we asked for.
+        for p, entry in entries:
+            match = next((sh for sh in shots if _same_browser(sh, entry)), None)
+            if match is None:
+                self._skips[p.id] = "BrowserStack returned no screenshot for this device"
+                continue
+            if state != "done" and str(match.get("state")) not in ("done", "error", "timed-out"):
+                match = {**match, "state": "timed-out"}
+            self._jobs[p.id] = match
+
+    def capture(self, url: str, profile: Profile, options: CaptureOptions) -> CaptureResult:
+        w, h = profile.viewport["width"], profile.viewport["height"]
+        if options.landscape:
+            w, h = h, w
+        res = CaptureResult(
+            profile_id=profile.id, label=profile.label, engine=profile.engine, platform=profile.platform,
+            tier=profile.tier, verified=profile.verified, backend=self.name, url=url, final_url=url,
+            viewport={"width": w, "height": h}, device_scale_factor=profile.device_scale_factor,
+            landscape=options.landscape, color_scheme=options.color_scheme,
+            is_mobile=profile.is_mobile, has_touch=profile.has_touch,
+        )
+        t0 = time.time()
+        res.notes.append("real device via BrowserStack's Screenshots API: no DOM access, so audit rules, "
+                         "webfont checks, layout shift and change attribution are not available here — "
+                         "run the local backend for those")
+        res.notes.extend(self._notes.get(profile.id, []))
+        if profile.id in self._skips:
+            res.status, res.error = "failed", f"skipped: {self._skips[profile.id]}"
+            res.timings_ms["total"] = int((time.time() - t0) * 1000)
+            return res
+        shot = self._jobs.get(profile.id)
+        if not shot:
+            res.status, res.error = "failed", "no screenshot was produced (prepare() did not run or the job was empty)"
+        elif str(shot.get("state")) != "done" or not shot.get("image_url"):
+            res.status, res.error = "failed", f"BrowserStack screenshot state {shot.get('state')!r} — no image"
+        else:
+            try:
+                status, png = self._http("GET", shot["image_url"], raw=True)
+                if status != 200 or not png:
+                    raise RuntimeError(f"image download returned HTTP {status}")
+                out = options.out_dir / profile.id
+                out.mkdir(parents=True, exist_ok=True)
+                suffix = ("-landscape" if options.landscape else "") + ("-dark" if options.color_scheme == "dark" else "")
+                full = out / f"full{suffix}.png"; full.write_bytes(png)
+                res.images["full"] = _rel(full, options.out_dir)
+                res.page = {"browserstack": {k: shot.get(k) for k in ("os", "os_version", "browser", "browser_version", "device", "id")}}
+                fold = out / f"fold{suffix}.png"
+                dims = _fold_from_full(full, fold, w, h)
+                if dims:
+                    res.images["fold"] = _rel(fold, options.out_dir)
+                    iw, ih = dims
+                    res.device_scale_factor = round(iw / w, 3) if w else profile.device_scale_factor
+                    res.page.update(imageWidth=iw, imageHeight=ih, scrollHeight=int(ih / max(res.device_scale_factor, 0.01)))
+                    thumb = _thumbnail(fold, out / f"thumb{suffix}.png", options.thumb_width)
+                    if thumb:
+                        res.images["thumb"] = _rel(thumb, options.out_dir)
+            except Exception as exc:  # noqa: BLE001 — one device must not take the run down
+                res.status, res.error = "failed", f"{type(exc).__name__}: {_first_line(exc)}"
+        res.timings_ms["total"] = int((time.time() - t0) * 1000)
+        return res
+
+
+def _same_browser(shot: dict[str, Any], entry: dict[str, Any]) -> bool:
+    keys = ("os", "os_version", "browser", "browser_version", "device")
+    return all(str(shot.get(k) or "").lower() == str(entry.get(k) or "").lower() for k in keys)
+
+
+def _fold_from_full(full: Path, fold: Path, vw: int, vh: int) -> tuple[int, int] | None:
+    """Cut the above-the-fold image out of the full capture. The image's own
+    width says what scale the device drew at; the fold is vh at that scale."""
+    try:
+        from PIL import Image
+        with Image.open(full) as im:
+            iw, ih = im.size
+            scale = iw / vw if vw else 1
+            im.crop((0, 0, iw, min(ih, int(vh * scale)))).save(fold)
+            return iw, ih
+    except Exception:  # noqa: BLE001 — no Pillow, or an odd file: the full image still stands
+        return None
+
+
+def make_backend(name: str, pw: Playwright | None) -> Backend:
     if name == "local":
         return LocalBackend(pw)
     if name == "macos":
-        return NotBuiltYetBackend("macos", 7, "It will run this same code on a macOS host so "
-                                 "WebKit uses Apple's real font stack.")
+        if sys.platform != "darwin":
+            raise SystemExit(f"backend 'macos' runs this same Playwright code on a macOS host so WebKit "
+                             f"uses Apple's real font stack; this machine is {sys.platform!r}. Run it on a "
+                             "Mac or a macOS CI runner, or use --backend local.")
+        return MacOSBackend(pw)
     if name == "browserstack":
-        if not os.environ.get("BROWSERSTACK_KEY"):
-            raise SystemExit("backend 'browserstack' needs BROWSERSTACK_KEY (and "
-                             "BROWSERSTACK_USER) set in the environment. It is also build "
-                             "step 7 and not implemented yet.")
-        return NotBuiltYetBackend("browserstack", 7, "It will use the Screenshots REST API.")
+        creds = browserstack_credentials()
+        if not creds:
+            raise SystemExit(BROWSERSTACK_HOWTO)
+        return BrowserStackBackend(creds)
     raise SystemExit(f"unknown backend {name!r}; choose local, macos or browserstack")
 
 
@@ -1395,6 +1650,7 @@ def run_engine(engine: str, profiles: list[Profile], url: str, schemes: list[str
         try:
             for scheme in schemes:
                 opts = replace(base_opts, color_scheme=scheme)
+                backend.prepare(url, profiles, opts, say)
                 for p in profiles:
                     r = _capture_with_retry(backend, url, p, opts, say)
                     say(f"  {p.label:28} {engine:8} {scheme:5} {r.status:6} "
@@ -1409,7 +1665,9 @@ def run_matrix(url: str, chosen: list[Profile], schemes: list[str], base_opts: C
                backend_name: str, concurrency: int, say) -> tuple[list[CaptureResult], dict]:
     by_engine: dict[str, list[Profile]] = {}
     for p in chosen:
-        by_engine.setdefault(p.engine, []).append(p)
+        # One lane per engine for local browsers; BrowserStack takes the whole
+        # matrix in a single job, so it gets a single lane.
+        by_engine.setdefault("browserstack" if backend_name == "browserstack" else p.engine, []).append(p)
     workers = max(1, min(concurrency, len(by_engine)))
     t0 = time.time()
     results: list[CaptureResult] = []
@@ -2177,6 +2435,19 @@ def write_report_html(report: dict[str, Any], out_dir: Path) -> Path:
     return path
 
 
+FIDELITY_NOTES = {
+    "local": ("The local backend uses real browser engines, not real devices. Layout, breakpoints and "
+              "overflow are accurate; font rasterisation, scroll physics and OS animation timing are not. "
+              "See LIMITATIONS.md."),
+    "macos": ("The macos backend runs the same engines on a Mac, so WebKit draws Apple's real font stack "
+              "and -apple-system is authentic. Device metrics are still emulated: this is not a physical "
+              "phone. See LIMITATIONS.md."),
+    "browserstack": ("Screenshots come from physical devices on BrowserStack, so pixels, fonts and vendor "
+                     "browsers are real. There is no DOM access on this backend: no audit rules, webfont "
+                     "checks, layout shift or change attribution. See LIMITATIONS.md."),
+}
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
 
@@ -2252,6 +2523,14 @@ def main() -> int:
     out_dir = Path(args.out) if args.out else Path("runs") / datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
     chosen = select_profiles(profiles, args.devices, args.tier, args.include_edge)
+    if args.backend == "browserstack":
+        unavailable = [p for p in chosen if not p.browserstack]
+        for p in unavailable:
+            say(f"  {p.label:28} not offered on BrowserStack — skipped")
+        chosen = [p for p in chosen if p.browserstack]
+        if not chosen:
+            raise SystemExit("none of the selected profiles is offered on BrowserStack; see the "
+                             "'browserstack' field in devices.json")
     schemes = ["light", "dark"] if args.color_scheme == "both" else [args.color_scheme]
     ignore = [x.strip() for x in args.ignore_regions.split(",") if x.strip()]
     base_opts = CaptureOptions(out_dir=out_dir, landscape=args.landscape, timeout_s=args.timeout,
@@ -2294,9 +2573,8 @@ def main() -> int:
         "summary": summarise(results),
         "devices": [asdict(r) for r in results],
         "unverifiedProfiles": sorted({r.profile_id for r in results if not r.verified}),
-        "fidelityNote": ("The local backend uses real browser engines, not real devices. "
-                         "Layout, breakpoints and overflow are accurate; font rasterisation, "
-                         "scroll physics and OS animation timing are not. See LIMITATIONS.md."),
+        "host": {"platform": sys.platform, "release": _platform.mac_ver()[0] if sys.platform == "darwin" else _platform.release()},
+        "fidelityNote": FIDELITY_NOTES[args.backend],
     }
     (out_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     write_report_html(report, out_dir)
