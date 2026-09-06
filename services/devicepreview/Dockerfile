@@ -25,4 +25,8 @@ ENV PYTHONUNBUFFERED=1
 # three engines and exits 2 if proportional text comes out monospace.
 RUN python devicepreview.py --self-check
 
-ENTRYPOINT ["python", "devicepreview.py"]
+# The service the Dashboard talks to. Runs are kept under RUNS_DIR; mount a
+# persistent volume there on Railway so galleries survive a redeploy.
+ENV RUNS_DIR=/app/runs
+CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# The CLI is still there for one-off use: docker run <image> python devicepreview.py <url>

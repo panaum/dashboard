@@ -108,6 +108,16 @@ tool measured, tried, or learned the hard way; none is hypothetical.
   all pixels in a full-page capture; on a very tall page a real but small
   change can sit under it. Read the diff image, not just the number.
 
+## As a service
+
+- Runs live on the service's disk under `RUNS_DIR`. Without a persistent
+  volume mounted there, a redeploy discards every gallery; the Dashboard keeps
+  each run's report and a JPEG of each fold, so verdicts survive, but the
+  full-page images and the ability to diff against that run do not.
+- One run at a time (`MAX_RUNNING`), because three browser engines on a
+  small instance are enough; a second request gets `429 run_capacity` and the
+  caller retries later rather than queueing.
+
 ## Not built
 
 - `--record-motion` (video + trace) from the CLI specification is not

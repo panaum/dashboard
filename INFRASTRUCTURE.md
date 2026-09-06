@@ -395,15 +395,26 @@ Door registry (`app/go/[app]/route.ts:7-10`, evaluated at module load):
 
 ---
 
-### 1.5 Not deployed — `services/devicepreview` (cross-device preview, local/CI tool)
+### 1.5 Railway — `devicepreview` service (cross-device preview) — TO BE CREATED
 
-One Python file run by hand or in CI; no hosted surface. Its `Dockerfile`
-installs fonts and Playwright's three engines and fails the build if font
-fallback is broken. Not built on the development machine (no Docker there).
-Reads no `.env`; every variable below is taken from the process environment.
+`services/devicepreview/`: the CLI plus `server.py` (FastAPI, same stack as the
+LinkSpy backend), started by its `Dockerfile` (`uvicorn server:app --port $PORT`).
+The Dockerfile installs fonts and Playwright's three engines and fails the build
+if font fallback is broken. Railway builds it from the repo with **root
+directory `services/devicepreview`**. Attach a **volume at `/app/runs`** so run
+galleries survive redeploys. Reads no `.env`; every variable is process
+environment. **Fails closed:** with `DEVICEPREVIEW_KEY` unset every request is
+`503`, so this surface does not join the fail-open list in D13.
 
 | Variable | Purpose | Type | Shared with | Currently required |
 |---|---|---|---|---|
+| `DEVICEPREVIEW_KEY` | The one service key; `Authorization: Bearer` or `X-Api-Key`, constant-time compare (`server.py` `_gate`) | secret | Vercel dashboard (`DEVICEPREVIEW_KEY`, piece 2) | **Yes** — unset ⇒ 503 on every route |
+| `RUNS_DIR` | Run storage; the volume mount point | tuning | — | No — default `/app/runs` (set in the Dockerfile) |
+| `RETAIN_RUNS` | Newest runs kept; older pruned after each run | tuning | — | No — default `40` |
+| `RUN_TIMEOUT_S` | Hard stop per run | tuning | — | No — default `900` |
+| `DEVICEPREVIEW_CONCURRENCY` | Engines in parallel inside a run; lower on a small instance | tuning | — | No — default `2` |
+| `MAX_RUNNING` | Runs accepted at once; more get `429 run_capacity` | tuning | — | No — default `1` |
+| `PORT` | Injected by Railway; consumed by the Dockerfile `CMD` | platform | — | Injected |
 | `BROWSERSTACK_USERNAME` | Basic-auth user for the Screenshots REST API (`devicepreview.py` `browserstack_credentials`) | secret | — | Only with `--backend browserstack`; unset ⇒ the backend stops and prints how to enable it |
 | `BROWSERSTACK_ACCESS_KEY` | Basic-auth key for the same | secret | — | As above |
 | `BROWSERSTACK_KEY` | Alternative single value `user:key` (the spec's name) | secret | — | Alternative to the pair |

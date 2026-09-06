@@ -163,6 +163,43 @@ Add a profile to `devices.json`:
    starts firing on a page it used to ignore is a false positive nobody
    asked for.
 
+## Running as a service (what the Dashboard talks to)
+
+`server.py` wraps the CLI in the same start → poll → fetch shape the LinkSpy
+service uses, so the Dashboard can drive it the way it drives Layout checks.
+Each run is the CLI in its own process; a run that hangs is killed at
+`RUN_TIMEOUT_S`. The `Dockerfile` starts it.
+
+```bash
+DEVICEPREVIEW_KEY=$(openssl rand -hex 24) ../pagecheck/.venv/bin/python server.py   # http://localhost:8000
+```
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `DEVICEPREVIEW_KEY` | The service key callers must present (`Authorization: Bearer` or `X-Api-Key`). Unset ⇒ every request is refused with 503 | — |
+| `RUNS_DIR` | Where runs are kept. Mount a persistent volume here on Railway or galleries vanish on redeploy | `./runs` |
+| `RETAIN_RUNS` | Newest runs kept on disk; older ones are pruned after each run | `40` |
+| `RUN_TIMEOUT_S` | Hard stop for one run | `900` |
+| `DEVICEPREVIEW_CONCURRENCY` | Engines run in parallel inside a run; lower it on a small instance | `2` |
+| `MAX_RUNNING` | Runs accepted at once; more get `429 run_capacity` | `1` |
+
+```
+POST /api/devicepreview/run      {url, devices?: [...] | "all", tier?, include_edge?, landscape?,
+                                  color_scheme?, ignore_regions?: [...], baseline?: run_id, timeout?}
+                                  → {run_id, status: "running", baseline?, baseline_missing?}
+GET  /api/devicepreview/status   ?run_id=   → {status: running|done|failed, progress{done,total,message}, summary, exit_code, error}
+GET  /api/devicepreview/report   ?run_id=   → report.json
+GET  /api/devicepreview/file     ?run_id=&path=report.html | <profile>/full.png | <profile>/diff.png …
+GET  /api/devicepreview/image    ?run_id=&profile=&kind=fold|full|thumb|diff&max_width=1400   → JPEG, downscaled
+GET  /api/devicepreview/runs     ?url=      → retained runs for that page, newest first
+GET  /health                                → {ok, running, retained, configured}
+```
+
+`status` reports `done` whenever a report was written, with the CLI's exit
+code alongside (0 clean, 1 errors or regressions, 2 a capture failed or was
+blocked) — the report says which device and why. `failed` means no report at
+all. Tests: `../pagecheck/.venv/bin/python -m unittest tests.test_server`.
+
 ## Tests
 
 ```bash
