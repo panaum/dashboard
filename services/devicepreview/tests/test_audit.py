@@ -476,6 +476,69 @@ class WebfontWording(unittest.TestCase):
         self.assertEqual([f for f in out if f["severity"] != "info"], [])
 
 
+class BaselineDiff(unittest.TestCase):
+    """--baseline diffs each capture against the same profile in a previous run."""
+
+    def test_two_runs_of_a_static_page_differ_by_nothing(self):
+        _, a = run("clean.html", ANDROID)
+        code, b = run("clean.html", ANDROID, "--baseline", a["_out"])
+        d = b["devices"][0]["diff"]
+        self.assertEqual(d["percent"], 0, d); self.assertFalse(d["regressed"]); self.assertEqual(d["engine"], "pillow")
+        self.assertTrue((Path(b["_out"]) / d["image"]).is_file(), "a diff image is written even when nothing changed")
+        self.assertEqual(b["baseline"]["dir"], a["_out"]); self.assertEqual(b["summary"]["devicesRegressed"], [])
+        self.assertEqual(code, 0)
+
+    def test_a_region_that_changes_is_regressed_unless_masked(self):
+        _, a = run("dynamic.html", ANDROID)
+        code, b = run("dynamic.html", ANDROID, "--baseline", a["_out"])
+        d = b["devices"][0]["diff"]
+        self.assertTrue(d["regressed"], d); self.assertGreater(d["percent"], 0.1)
+        self.assertEqual(b["summary"]["devicesRegressed"], [ANDROID]); self.assertEqual(code, 1, "a regression fails the run like an error")
+        self.assertTrue(any("visual regression" in n for n in b["devices"][0]["notes"]))
+        hot = d.get("hotspots") or []
+        self.assertTrue(hot and hot[0]["selector"].startswith("div#clock"), f"the change should be attributed to the clock: {hot}")
+        self.assertGreater(hot[0]["shareOfChange"], 90)
+        code2, c = run("dynamic.html", ANDROID, "--baseline", a["_out"], "--ignore-regions", "#clock")
+        d2 = c["devices"][0]["diff"]
+        self.assertFalse(d2["regressed"], d2); self.assertEqual(d2["percent"], 0); self.assertEqual(d2["maskedBoxes"], 2)
+        self.assertEqual(c["devices"][0]["ignore_regions"][0]["selector"], "#clock"); self.assertEqual(code2, 0)
+
+    def test_a_profile_missing_from_the_baseline_is_noted_not_regressed(self):
+        _, a = run("clean.html", TOUCH)
+        code, b = run("clean.html", ANDROID, "--baseline", a["_out"])
+        d = b["devices"][0]
+        self.assertEqual(d["diff"], {"missing": True}); self.assertTrue(any("no baseline" in n for n in d["notes"]))
+        self.assertEqual(code, 0)
+
+    def test_odiff_is_used_when_given(self):
+        import shutil as _sh
+        if not _sh.which("npx"):
+            self.skipTest("npx not available; odiff path untested here")
+        _, a = run("dynamic.html", ANDROID)
+        _, b = run("dynamic.html", ANDROID, "--baseline", a["_out"], "--odiff", "npx -y odiff-bin")
+        d = b["devices"][0]["diff"]
+        self.assertEqual(d["engine"], "odiff", d); self.assertTrue(d["regressed"]); self.assertGreater(d["percent"], 0.1)
+        self.assertTrue((Path(b["_out"]) / d["image"]).is_file())
+        _, c = run("clean.html", ANDROID)
+        _, e = run("clean.html", ANDROID, "--baseline", c["_out"], "--odiff", "npx -y odiff-bin")
+        self.assertEqual(e["devices"][0]["diff"]["engine"], "odiff"); self.assertEqual(e["devices"][0]["diff"]["percent"], 0)
+
+    def test_gallery_shows_the_regression(self):
+        from playwright.sync_api import sync_playwright
+        _, a = run("dynamic.html", ANDROID)
+        _, b = run("dynamic.html", ANDROID, "--baseline", a["_out"])
+        with sync_playwright() as p:
+            br = p.chromium.launch()
+            try:
+                pg = br.new_page(); pg.goto((Path(b["_out"]) / "report.html").resolve().as_uri()); pg.wait_for_selector(".card")
+                self.assertIn("regressed", pg.inner_text(".card .badges").lower())
+                self.assertIn("regression", pg.inner_text("header h1").lower())
+                pg.click(".card .open"); pg.wait_for_selector("#detail.open")
+                self.assertEqual(pg.locator("#detail .diffimg").count(), 1)
+            finally:
+                br.close()
+
+
 class ImageSizeThresholds(unittest.TestCase):
     def test_a_2x_asset_on_a_3x_screen_is_not_soft(self):
         # The iPhone 16 profile is 3x. A 1x pixel stretched 240 wide IS soft

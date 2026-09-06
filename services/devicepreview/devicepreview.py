@@ -30,6 +30,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from html import escape as html_escape
+import shlex
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -133,11 +136,12 @@ class CaptureOptions:
     color_scheme: str = "light"          # light | dark
     timeout_s: float = 30.0
     settle_ms: int = 1500                 # used when networkidle never arrives
-    max_scroll_viewports: int = 5         # lazy-load trigger cap; infinite pages stop here
+    max_scroll_viewports: int = 40        # lazy-load trigger cap; only infinite pages reach it
     locale: str = "en-AU"
     timezone_id: str = "Australia/Sydney"
     thumb_width: int = 280
     rules: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_RULES))
+    ignore_regions: list[str] = field(default_factory=list)   # CSS selectors masked before diffing
 
 
 @dataclass
@@ -167,8 +171,9 @@ class CaptureResult:
     page: dict[str, Any] = field(default_factory=dict)      # scrollWidth, scrollHeight, title
     notes: list[str] = field(default_factory=list)
     findings: list[dict[str, Any]] = field(default_factory=list)   # step 3
-    # Baseline comparison (step 6) fills this; reserved now so report.json's
-    # shape does not change when it lands.
+    ignore_regions: list[dict[str, Any]] = field(default_factory=list)   # selector -> boxes, recorded at capture
+    landmarks: list[dict[str, Any]] = field(default_factory=list)        # containers a diff can be attributed to
+    # Baseline comparison (step 6): percent, regressed, image, engine, …
     diff: dict[str, Any] | None = None
 
 
@@ -186,21 +191,27 @@ FREEZE_CSS = """
 """
 
 FONTS_JS = """async () => {
-  try { await document.fonts.ready; } catch (e) {}
+  // Every await here has a deadline. A FontFace.load() whose request never
+  // completes never settles, and page.evaluate has no timeout of its own: one
+  // WebKit capture sat at 0% CPU for 76 minutes on exactly that. A verdict
+  // reached late is worth less than a run that finishes.
+  const within = (ms, p) => Promise.race([p, new Promise(r => setTimeout(() => r('__timeout__'), ms))]);
+  const timedOut = [];
+  if (await within(8000, document.fonts.ready.catch(() => 0)) === '__timeout__') timedOut.push('fonts.ready');
   // Force every declared face to settle. Font loading is lazy — a face is only
   // fetched when glyphs using it paint — and WebKit under some origins never
   // fetches at all, leaving status "unloaded" with no network event to record.
   // load() rejects on failure, so each is caught; afterwards status is
   // loaded, error, or still unloaded (blocked before the network).
   const settle = async () => { try { await Promise.all([...document.fonts].map(f => f.status === 'unloaded' ? f.load().then(() => 1, () => 0) : 1)); } catch (e) {} };
-  await settle();
+  if (await within(8000, settle()) === '__timeout__') timedOut.push('load()');
   // A face can read "error" while the browser's own load of the same CSS
   // face is still in flight — on WebKit this flipped between identical runs
   // (error/error, loaded/loaded, loaded/error). Wait, ask once more, and only
   // then believe an error. A finding that changes between runs is not a finding.
   if ([...document.fonts].some(f => f.status === 'error')) {
     await new Promise(r => setTimeout(r, 600));
-    try { await Promise.all([...document.fonts].map(f => f.status === 'error' ? f.load().then(() => 1, () => 0) : 1)); } catch (e) {}
+    await within(4000, Promise.all([...document.fonts].map(f => f.status === 'error' ? f.load().then(() => 1, () => 0) : 1)).catch(() => 0));
     await new Promise(r => setTimeout(r, 200));
   }
   // Judge what the visitor SEES, stack by stack. For every distinct
@@ -324,22 +335,36 @@ FONTS_JS = """async () => {
       if (/-apple-system|sf pro|san francisco|blinkmacsystemfont/.test(ff)) { apple = true; break; }
     }
   } catch (e) {}
-  return { faces, stacks: stackOut, requestsAppleSystemFont: apple };
+  return { faces, stacks: stackOut, requestsAppleSystemFont: apple, timedOut };
 }"""
 
 LAZY_SCROLL_JS = """async (maxViewports) => {
+  // Scroll the WHOLE page, not a fixed number of viewports. A cap of five
+  // stopped mid-way through a portfolio grid on a real page, and which of its
+  // lazy thumbnails had loaded by capture time was down to timing: two runs
+  // seconds apart differed by 1–3% of pixels, all of it images the tool had
+  // half-triggered. The cap that remains (--max-scroll-viewports, default 40)
+  // is for pages that grow forever. Then wait for every image to finish, so
+  // the capture shows what loaded, not what was in flight.
   const step = Math.max(200, Math.floor(window.innerHeight * 0.9));
   const limit = window.innerHeight * maxViewports;
+  const started = Date.now();
   let y = 0;
-  while (y < document.documentElement.scrollHeight && y < limit) {
+  while (y < document.documentElement.scrollHeight && y < limit && Date.now() - started < 20000) {
     y += step;
     window.scrollTo(0, y);
     await new Promise(r => setTimeout(r, 120));
   }
+  const capped = y < document.documentElement.scrollHeight;
+  const pending = [...document.images].filter(i => !i.complete);
+  const settled = await Promise.race([
+    Promise.all(pending.map(i => new Promise(r => { i.addEventListener('load', r, { once: true }); i.addEventListener('error', r, { once: true }); }))).then(() => true),
+    new Promise(r => setTimeout(() => r(false), 6000)),
+  ]);
   window.scrollTo(0, 0);
   await new Promise(r => setTimeout(r, 200));
-  return { scrolledTo: Math.min(y, document.documentElement.scrollHeight),
-           capped: y >= limit && y < document.documentElement.scrollHeight };
+  return { scrolledTo: Math.min(y, document.documentElement.scrollHeight), capped,
+           imagesAwaited: pending.length, imagesSettled: settled };
 }"""
 
 # Fixed and sticky elements that sit across the top of the viewport. Some
@@ -808,6 +833,47 @@ PAGE_JS = """() => ({
 })"""
 
 
+# Containers a change can be attributed to. Recorded at capture so a diff can
+# say "91% of the changed pixels are inside section.portfolio" and offer the
+# selector to --ignore-regions, instead of leaving the tester to guess which
+# of forty red patches is the carousel.
+LANDMARKS_JS = """() => {
+  const sy = window.scrollY, vw = window.innerWidth, vh = window.innerHeight, minArea = vw * vh * 0.005;
+  const sel = (el) => {
+    if (el.id) return el.tagName.toLowerCase() + '#' + el.id;
+    const cls = (typeof el.className === 'string' && el.className.trim()) ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '';
+    let nth = '';
+    const p = el.parentElement;
+    if (p) { const same = [...p.children].filter(c => c.tagName === el.tagName); if (same.length > 1) nth = ':nth-of-type(' + (same.indexOf(el) + 1) + ')'; }
+    return (el.tagName.toLowerCase() + cls + nth).slice(0, 90);
+  };
+  const q = 'body > *, main > *, section, header, footer, nav, article, aside, figure, iframe, video, canvas, '
+    + '[class*="slide"], [class*="carousel"], [class*="swiper"], [class*="marquee"], [class*="ticker"], [class*="testimonial"], [class*="review"], [class*="logo"]';
+  const out = [];
+  for (const el of document.querySelectorAll(q)) {
+    const r = el.getBoundingClientRect();
+    if (r.width * r.height < minArea) continue;
+    out.push({ selector: sel(el), box: { x: Math.round(r.left), y: Math.round(r.top + sy), width: Math.round(r.width), height: Math.round(r.height) } });
+    if (out.length >= 400) break;
+  }
+  return out;
+}"""
+
+# Known-dynamic areas (a clock, a carousel, a chat bubble, an ad slot) are
+# masked before diffing. Their boxes are recorded at capture time, in document
+# coordinates, because the baseline run may have laid them out elsewhere.
+IGNORE_JS = """(sels) => {
+  const sy = window.scrollY, out = [];
+  for (const sel of sels) {
+    let els = [];
+    try { els = [...document.querySelectorAll(sel)]; } catch (e) { out.push({ selector: sel, error: 'invalid selector', boxes: [] }); continue; }
+    const boxes = els.map(el => el.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0)
+      .map(r => ({ x: Math.floor(r.left), y: Math.floor(r.top + sy), width: Math.ceil(r.width), height: Math.ceil(r.height) }));
+    out.push({ selector: sel, boxes });
+  }
+  return out;
+}"""
+
 # A bot wall or an error page is not the site. Auditing one produced "2 info,
 # passed" for a Cloudflare "Sorry, you have been blocked" page on the first
 # real gallery run — the exact false PASS this tool exists to prevent. The
@@ -979,7 +1045,12 @@ class LocalBackend(Backend):
                     res.page = page.evaluate(PAGE_JS) or {}
                     raise _Blocked(wall_why or wall.get("why"))
 
+                t_fonts = time.time()
                 fonts = page.evaluate(FONTS_JS) or {}
+                res.timings_ms["fonts"] = int((time.time() - t_fonts) * 1000)
+                if fonts.get("timedOut"):
+                    res.notes.append("font loading did not settle within its deadline "
+                                     f"({', '.join(fonts['timedOut'])}); face statuses may be incomplete")
                 res.fonts = {
                     "faces": fonts.get("faces", []),
                     "stacks": fonts.get("stacks", []),
@@ -998,6 +1069,9 @@ class LocalBackend(Backend):
                 if scrolled.get("capped"):
                     res.notes.append(f"lazy-load scroll capped at {options.max_scroll_viewports} "
                                      "viewport heights — page may continue (infinite scroll?)")
+                if scrolled.get("imagesAwaited") and not scrolled.get("imagesSettled"):
+                    res.notes.append(f"{scrolled['imagesAwaited']} image(s) were still loading 6s after the "
+                                     "scroll; the capture may show placeholders")
                 try:
                     page.wait_for_load_state("networkidle", timeout=8000)
                 except PWTimeout:
@@ -1006,6 +1080,14 @@ class LocalBackend(Backend):
 
                 res.fixed_chrome = page.evaluate(FIXED_CHROME_JS) or []
                 res.page = page.evaluate(PAGE_JS) or {}
+                res.landmarks = page.evaluate(LANDMARKS_JS) or []
+                if options.ignore_regions:
+                    res.ignore_regions = page.evaluate(IGNORE_JS, options.ignore_regions) or []
+                    for reg in res.ignore_regions:
+                        if reg.get("error"):
+                            res.notes.append(f"--ignore-regions: {reg['selector']!r} is not a valid selector")
+                        elif not reg.get("boxes"):
+                            res.notes.append(f"--ignore-regions: {reg['selector']!r} matched nothing on this device")
 
                 t_audit = time.time()
                 audit = page.evaluate(AUDIT_JS, {
@@ -1366,10 +1448,13 @@ def summarise(results: list[CaptureResult]) -> dict[str, Any]:
             sev[f["severity"]] = sev.get(f["severity"], 0) + 1
     # A capture that failed vouches for nothing, so it is neither passed nor
     # counted against the page; it is listed on its own.
-    passed = [r.profile_id for r in results if r.status == "ok" and r.profile_id not in with_errors]
+    regressed = [r.profile_id for r in results if r.diff and r.diff.get("regressed")]
+    passed = [r.profile_id for r in results if r.status == "ok" and r.profile_id not in with_errors
+              and r.profile_id not in regressed]
     return {"errors": sev["error"], "warnings": sev["warn"], "infos": sev["info"],
             "devicesWithErrors": with_errors, "devicesWithWarnings": with_warnings,
-            "devicesFailed": failed, "devicesBlocked": blocked, "devicesPassed": len(passed)}
+            "devicesFailed": failed, "devicesBlocked": blocked, "devicesRegressed": regressed,
+            "devicesPassed": len(passed)}
 
 
 def load_rules(disable: str) -> dict[str, bool]:
@@ -1391,6 +1476,202 @@ def load_rules(disable: str) -> dict[str, bool]:
             raise SystemExit(f"--disable-rule: unknown rule {k!r}. Known: {', '.join(rules)}")
         rules[k] = False
     return rules
+
+
+# ── baseline diffing (step 6) ────────────────────────────────────────────────
+
+PIXEL_TOLERANCE = 25          # per-channel delta (0–255) below which a pixel is "the same"
+PAD_CURRENT = (255, 0, 255, 255)   # colours nothing renders in, so a page that grew or
+PAD_BASELINE = (0, 255, 255, 255)  # shrank counts the new or lost strip as changed
+MASK_FILL = (128, 128, 128, 255)
+
+
+def resolve_odiff(spec: str | None) -> list[str] | None:
+    """The odiff command, if there is one. `--odiff` may name a binary or a
+    command such as "npx -y odiff-bin"; with nothing given, an `odiff` on PATH
+    is used; otherwise Pillow does the work."""
+    if spec:
+        parts = shlex.split(spec)
+        if not parts or (len(parts) == 1 and not Path(parts[0]).exists() and not shutil.which(parts[0])):
+            raise SystemExit(f"--odiff: {spec!r} is neither a file nor a command on PATH")
+        return parts
+    found = shutil.which("odiff")
+    return [found] if found else None
+
+
+def _mask(img, regions: list[dict[str, Any]], dpr: float) -> int:
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(img); n = 0
+    for reg in regions or []:
+        for b in reg.get("boxes") or []:
+            # Two device pixels of margin: the box is CSS px rounded outward, the
+            # element's edge is anti-aliased, and a differently coloured element
+            # leaves a sliver at the edge that a 3×3 opening does not remove.
+            # Without it the masked clock still differed by 0.09%.
+            x0, y0 = max(0, int(b["x"] * dpr) - 2), max(0, int(b["y"] * dpr) - 2)
+            x1, y1 = int((b["x"] + b["width"]) * dpr + 0.999) + 2, int((b["y"] + b["height"]) * dpr + 0.999) + 2
+            draw.rectangle([x0, y0, min(x1, img.width), min(y1, img.height)], fill=MASK_FILL); n += 1
+    return n
+
+
+def _run_odiff(cmd: list[str], base: Path, cur: Path, mask_out: Path) -> bool:
+    """Ask odiff for a mask — changed pixels over transparency — and nothing
+    else. Pillow then draws the readable diff and attributes the change to
+    containers from that mask, so both engines produce the same report and
+    odiff only contributes what it is good at: fast, anti-aliasing-aware
+    counting. Exit codes: 0 identical, 22 pixels differ; anything else is
+    left to Pillow."""
+    try:
+        r = subprocess.run([*cmd, str(base), str(cur), str(mask_out), "--threshold", "0.1", "--antialiasing",
+                            "--diff-mask", "--parsable-stdout"], capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if r.returncode == 0:
+        mask_out.unlink(missing_ok=True)
+        return True                    # identical: no mask file is written
+    return r.returncode == 22 and mask_out.is_file()
+
+
+def diff_images(current: Path, baseline: Path, out: Path, *, dpr: float,
+                cur_regions: list[dict[str, Any]], base_regions: list[dict[str, Any]],
+                odiff: list[str] | None, landmarks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Compare two full-page captures; write a diff image; return the numbers.
+
+    odiff (SIMD, anti-aliasing aware) runs when available and the images
+    need no preparation. Pillow handles the rest: masks, size changes, and
+    the fallback — per-channel tolerance, then a 3×3 opening that drops the
+    one-pixel speckle anti-aliasing produces between two renders of the same
+    thing. Real changes are wider than a pixel; a hairline that moves is not
+    a regression anyone would act on."""
+    from PIL import Image, ImageChops, ImageFilter
+    a = Image.open(current).convert("RGBA"); b = Image.open(baseline).convert("RGBA")
+    cur_size, base_size = list(a.size), list(b.size)
+    size_changed = a.size != b.size
+    W, H = max(a.width, b.width), max(a.height, b.height)
+    if size_changed:
+        a2 = Image.new("RGBA", (W, H), PAD_CURRENT); a2.paste(a, (0, 0)); a = a2
+        b2 = Image.new("RGBA", (W, H), PAD_BASELINE); b2.paste(b, (0, 0)); b = b2
+    masked = 0
+    if cur_regions or base_regions:
+        masked = _mask(a, cur_regions, dpr) + _mask(b, base_regions or cur_regions, dpr)
+    result: dict[str, Any] = {"engine": "pillow", "sizeChanged": size_changed, "maskedBoxes": masked,
+                              "currentSize": cur_size, "baselineSize": base_size}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    mask = None
+    if odiff:
+        # odiff reads files, so padded or masked images go through temp files.
+        tmp_cur, tmp_base, tmp_mask = out.with_name(out.stem + ".cur.tmp.png"), out.with_name(out.stem + ".base.tmp.png"), out.with_name(out.stem + ".mask.tmp.png")
+        try:
+            if size_changed or masked:
+                a.save(tmp_cur); b.save(tmp_base); src_cur, src_base = tmp_cur, tmp_base
+            else:
+                src_cur, src_base = current, baseline
+            if _run_odiff(odiff, src_base, src_cur, tmp_mask):
+                result["engine"] = "odiff"
+                if tmp_mask.is_file():
+                    mask = Image.open(tmp_mask).convert("RGBA").split()[-1].point(lambda v: 255 if v > 0 else 0)
+                else:
+                    mask = Image.new("L", (W, H), 0)
+        finally:
+            for f in (tmp_cur, tmp_base, tmp_mask):
+                f.unlink(missing_ok=True)
+    if mask is None:
+        diff = ImageChops.difference(a.convert("RGB"), b.convert("RGB"))
+        r_, g_, b_ = diff.split()
+        mask = ImageChops.lighter(ImageChops.lighter(r_, g_), b_).point(lambda v: 255 if v > PIXEL_TOLERANCE else 0)
+        mask = mask.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3))
+    changed = mask.histogram()[255]
+    grey = b.convert("L").point(lambda v: 165 + v * 90 // 255).convert("RGB")
+    Image.composite(Image.new("RGB", (W, H), (229, 72, 77)), grey, mask).save(out)
+    result.update(changedPixels=changed, totalPixels=W * H, percent=round(changed / (W * H) * 100, 4),
+                  hotspots=_hotspots(mask, landmarks or [], dpr, changed))
+    return result
+
+
+def _hotspots(mask, landmarks: list[dict[str, Any]], dpr: float, changed: int, cell: int = 24) -> list[dict[str, Any]]:
+    """Attribute changed pixels to the smallest recorded container that holds
+    them, on a coarse grid. Returns the top containers by share of the change."""
+    from PIL import Image
+    if not changed or not landmarks:
+        return []
+    W, H = mask.size
+    small = mask.resize((max(1, W // cell), max(1, H // cell)), Image.BOX)
+    px = small.load()
+    lms = sorted(landmarks, key=lambda l: l["box"]["width"] * l["box"]["height"])
+    share: dict[str, float] = {}; unattributed = 0.0
+    for cy in range(small.height):
+        for cx in range(small.width):
+            v = px[cx, cy]
+            if v < 20:
+                continue
+            weight = v / 255 * cell * cell
+            x, y = (cx + 0.5) * cell / dpr, (cy + 0.5) * cell / dpr
+            for l in lms:
+                b = l["box"]
+                if b["x"] <= x <= b["x"] + b["width"] and b["y"] <= y <= b["y"] + b["height"]:
+                    share[l["selector"]] = share.get(l["selector"], 0) + weight
+                    break
+            else:
+                unattributed += weight
+    total = sum(share.values()) + unattributed
+    if not total:
+        return []
+    top = sorted(share.items(), key=lambda kv: -kv[1])[:5]
+    return [{"selector": k, "shareOfChange": round(v / total * 100, 1)} for k, v in top if v / total >= 0.03]
+
+
+def diff_run(results: list[CaptureResult], baseline_dir: Path, out_dir: Path, threshold: float,
+             odiff: list[str] | None, say) -> dict[str, Any]:
+    rep_path = baseline_dir / "report.json"
+    if not rep_path.is_file():
+        raise SystemExit(f"--baseline: {rep_path} not found — point at a previous run directory")
+    base = json.loads(rep_path.read_text(encoding="utf-8"))
+    index = {(d["profile_id"], d.get("color_scheme", "light"), bool(d.get("landscape"))): d for d in base.get("devices", [])}
+    engines: set[str] = set()
+    for r in results:
+        if r.status != "ok" or "full" not in r.images:
+            continue
+        bd = index.get((r.profile_id, r.color_scheme, r.landscape))
+        bfull = (bd or {}).get("images", {}).get("full")
+        bpath = (Path(bfull) if bfull and Path(bfull).is_absolute() else baseline_dir / bfull) if bfull else None
+        if bpath is None or not bpath.is_file():
+            r.diff = {"missing": True}
+            r.notes.append("no baseline capture for this profile — nothing to compare against")
+            continue
+        suffix = ("-landscape" if r.landscape else "") + ("-dark" if r.color_scheme == "dark" else "")
+        out = out_dir / r.profile_id / f"diff{suffix}.png"
+        t0 = time.time()
+        d = diff_images(out_dir / r.images["full"], bpath, out, dpr=r.device_scale_factor,
+                        cur_regions=r.ignore_regions, base_regions=(bd or {}).get("ignore_regions") or [],
+                        odiff=odiff, landmarks=r.landmarks)
+        d.update(image=_rel(out, out_dir), baseline=str(bpath), threshold=threshold,
+                 regressed=d["percent"] > threshold)
+        # Did the two runs draw text in different faces? On a site with
+        # font-display: optional one run in four keeps the fallback; the diff
+        # then counts every line set in that family, and should say so.
+        cur_r = {st["stack"]: st.get("renders") for st in r.fonts.get("stacks", [])}
+        base_r = {st["stack"]: st.get("renders") for st in (bd or {}).get("fonts", {}).get("stacks", [])}
+        fonts_differ = sorted({(st.get("declared") or ["?"])[0] for st in r.fonts.get("stacks", [])
+                               if st["stack"] in base_r and cur_r[st["stack"]] is not None
+                               and base_r[st["stack"]] is not None and cur_r[st["stack"]] != base_r[st["stack"]]})
+        d["fontsDiffer"] = fonts_differ
+        if d["sizeChanged"]:
+            d["heightDeltaCss"] = round((d["currentSize"][1] - d["baselineSize"][1]) / r.device_scale_factor)
+        r.timings_ms["diff"] = int((time.time() - t0) * 1000)
+        r.diff = d; engines.add(d["engine"])
+        if d["regressed"]:
+            extra = []
+            if d["sizeChanged"]:
+                dh = d["heightDeltaCss"]; extra.append(f"the page is {abs(dh)}px {'taller' if dh > 0 else 'shorter'} than the baseline")
+            if fonts_differ:
+                extra.append(f"webfont rendering differed between the runs ({', '.join(fonts_differ)})")
+            if d.get("hotspots"):
+                h = d["hotspots"][0]; extra.append(f"{h['shareOfChange']:.0f}% of the change is inside <{h['selector']}>")
+            r.notes.append(f"visual regression: {d['percent']:.2f}% of pixels differ from the baseline "
+                           f"(threshold {threshold}%)" + (" — " + "; ".join(extra) if extra else ""))
+        say(f"  {r.label:28} diff {d['percent']:6.2f}%  {'REGRESSED' if d['regressed'] else 'ok':9} {d['engine']}")
+    return {"dir": str(baseline_dir), "url": base.get("url"), "startedAt": base.get("startedAt"),
+            "threshold": threshold, "engines": sorted(engines)}
 
 
 # ── report.html ─────────────────────────────────────────────────────────────
@@ -1593,8 +1874,9 @@ const ENGINE = {webkit: 'WebKit', chromium: 'Chromium', firefox: 'Firefox'};
 const count = d => { const c = {error: 0, warn: 0, info: 0}; for (const f of d.findings || []) c[f.severity] = (c[f.severity] || 0) + 1; return c; };
 // Worst first. A blocked or failed capture outranks everything: it cannot
 // vouch for the page at all. Then errors, warnings, infos; ties keep matrix order.
-const score = d => { const c = count(d); return (d.status !== 'ok' ? 1e9 : 0) + c.error * 1e6 + c.warn * 1e3 + c.info; };
-const worstSev = d => d.status === 'blocked' ? 'wall' : d.status !== 'ok' ? 'fail' : d._c.error ? 'error' : d._c.warn ? 'warn' : d._c.info ? 'info' : 'ok';
+const score = d => { const c = count(d); return (d.status !== 'ok' ? 1e9 : 0) + (d.diff && d.diff.regressed ? 5e5 : 0) + c.error * 1e6 + c.warn * 1e3 + c.info; };
+const regressed = d => !!(d.diff && d.diff.regressed);
+const worstSev = d => d.status === 'blocked' ? 'wall' : d.status !== 'ok' ? 'fail' : (d._c.error || regressed(d)) ? 'error' : d._c.warn ? 'warn' : d._c.info ? 'info' : 'ok';
 const devs = R.devices.map((d, i) => { const c = count(d); return {...d, _i: i, _c: c, _s: score(d),
   _key: d.profile_id + (d.color_scheme !== 'light' ? '-' + d.color_scheme : '') + (d.landscape ? '-landscape' : ''),
   _variant: [d.color_scheme !== 'light' ? d.color_scheme : '', d.landscape ? 'landscape' : ''].filter(Boolean).join(' · '),
@@ -1610,8 +1892,11 @@ const state = {sev: 'all', platforms: new Set(platforms), sort: 'worst', picks: 
 {
   const s = R.summary, errDev = new Set(devs.filter(d => d._c.error).map(d => d.profile_id)).size;
   const blocked = devs.filter(d => d.status === 'blocked').length, failed = devs.filter(d => d.status === 'failed').length;
+  const nReg = devs.filter(regressed).length;
   let tone, mark, line;
-  if (s.errors) { tone = 'err'; mark = '!'; line = `${plural(s.errors, 'ship-blocking issue')} on ${errDev} of ${nDevices} devices`; }
+  if (s.errors || nReg) { tone = 'err'; mark = '!';
+    line = [s.errors ? `${plural(s.errors, 'ship-blocking issue')} on ${errDev} of ${nDevices} devices` : '',
+            nReg ? `visual regression on ${plural(nReg, unit)} against the baseline` : ''].filter(Boolean).join(' · '); }
   else if (blocked) { tone = 'wall'; mark = '⊘'; line = `Blocked by bot protection on ${plural(blocked, unit)}`; }
   else if (failed) { tone = 'wall'; mark = '×'; line = `${plural(failed, 'capture')} failed — nothing to vouch for there`; }
   else if (s.warnings) {
@@ -1631,23 +1916,25 @@ const state = {sev: 'all', platforms: new Set(platforms), sort: 'worst', picks: 
   $('#verdict').innerHTML = `<div class="mark" aria-hidden="true">${mark}</div><div>
     <h1>${esc(line)}${extras.length ? ' · ' + esc(extras.join(' · ')) : ''}</h1>
     <p class="sub"><a href="${esc(R.url)}" target="_blank" rel="noopener">${esc(R.url)}</a><br>
-    ${plural(devs.length, 'capture')} across ${plural(nDevices, 'device')} and ${plural(platforms.length, 'platform')} · ${esc(started.toLocaleString())} · ${ms(R.timing.wallMs)} · ${esc(R.backend)} backend · devicepreview ${esc(R.tool.version)}</p></div>`;
+    ${plural(devs.length, 'capture')} across ${plural(nDevices, 'device')} and ${plural(platforms.length, 'platform')} · ${esc(started.toLocaleString())} · ${ms(R.timing.wallMs)} · ${esc(R.backend)} backend · devicepreview ${esc(R.tool.version)}${
+      R.baseline ? `<br>Compared with the run of ${esc(new Date(R.baseline.startedAt).toLocaleString())} (${esc(R.baseline.engines.join('/') || 'no diffs')}, regression above ${R.baseline.threshold}%)` : ''}</p></div>`;
   $('#stats').innerHTML = `
     <div class="stat ${s.errors ? 'err' : ''}"><b class="num">${s.errors}</b><span>errors</span></div>
     <div class="stat ${s.warnings ? 'warn' : ''}"><b class="num">${s.warnings}</b><span>warnings</span></div>
     <div class="stat"><b class="num">${s.infos}</b><span>info</span></div>
     <div class="stat ok"><b class="num">${s.devicesPassed}<small style="font-size:12px;color:var(--muted)">/${devs.length}</small></b><span>${unit}s passed</span></div>
+    ${R.baseline ? `<div class="stat ${nReg ? 'err' : 'ok'}"><b class="num">${nReg}</b><span>regressed</span></div>` : ''}
     ${blocked ? `<div class="stat wall"><b class="num">${blocked}</b><span>blocked</span></div>` : ''}
     ${failed ? `<div class="stat wall"><b class="num">${failed}</b><span>failed</span></div>` : ''}`;
 }
 
 // ── toolbar ────────────────────────────────────────────────────────
-const sevMatch = d => state.sev === 'all' || (state.sev === 'error' && d._c.error) || (state.sev === 'warn' && d._c.warn)
+const sevMatch = d => state.sev === 'all' || (state.sev === 'error' && d._c.error) || (state.sev === 'warn' && d._c.warn) || (state.sev === 'regressed' && regressed(d))
   || (state.sev === 'clean' && d.status === 'ok' && !d._c.error && !d._c.warn) || (state.sev === 'problem' && d.status !== 'ok');
 const visible = () => devs.filter(d => sevMatch(d) && state.platforms.has(d.platform));
 const renderBar = () => {
   const n = k => devs.filter(d => { const save = state.sev; state.sev = k; const m = sevMatch(d); state.sev = save; return m; }).length;
-  const segs = [['all', 'All'], ['error', 'With errors'], ['warn', 'With warnings'], ['clean', 'Clean'], ['problem', 'Blocked / failed']]
+  const segs = [['all', 'All'], ['error', 'With errors'], ['regressed', 'Regressed'], ['warn', 'With warnings'], ['clean', 'Clean'], ['problem', 'Blocked / failed']]
     .filter(([k]) => k === 'all' || n(k)).map(([k, l]) => `<button type="button" data-sev="${k}" class="${state.sev === k ? 'on' : ''}" aria-pressed="${state.sev === k}">${l}<span class="n">${n(k)}</span></button>`).join('');
   const chips = platforms.map(p => `<button type="button" class="chip ${state.platforms.has(p) ? 'on' : ''}" data-plat="${esc(p)}" aria-pressed="${state.platforms.has(p)}">${esc(PLATFORM[p] || p)}<span class="n">${devs.filter(d => d.platform === p).length}</span></button>`).join('');
   $('#bar').innerHTML = `<div class="seg" role="group" aria-label="Filter by result">${segs}</div>
@@ -1677,7 +1964,10 @@ const badges = d => {
         + (c.warn ? `<span class="b warn">${plural(c.warn, 'warning')}</span>` : '')
         + (c.info ? `<span class="b info">${c.info} info</span>` : '')
       : '<span class="b ok">clean</span>';
-  return main + (d.verified ? '' : '<span class="b unv" title="Viewport, scale factor and user agent come from published specs, not a physical device">unverified</span>');
+  const diff = !d.diff ? '' : d.diff.missing ? '<span class="b unv" title="The baseline run had no capture for this profile">no baseline</span>'
+    : d.diff.regressed ? `<span class="b err" title="${esc(d.diff.percent)}% of pixels differ from the baseline">regressed ${Number(d.diff.percent).toFixed(2)}%</span>`
+    : `<span class="b ok" title="pixels that differ from the baseline">Δ ${Number(d.diff.percent).toFixed(2)}%</span>`;
+  return main + diff + (d.verified ? '' : '<span class="b unv" title="Viewport, scale factor and user agent come from published specs, not a physical device">unverified</span>');
 };
 const card = d => {
   const img = d.images.thumb || d.images.fold;
@@ -1768,7 +2058,12 @@ const openDetail = (key, opener) => {
         ${d.status === 'ok' && !fs.length ? '<p class="note" style="margin-top:16px">Nothing flagged on this ' + unit + '. Look at the capture anyway — the rules catch geometry, not taste.</p>' : ''}
         ${placed.length ? `<h4>On the page<span class="n">${placed.length}</span></h4>${placed.map(fitem).join('')}` : ''}
         ${pageLevel.length ? `<h4>About the whole page<span class="n">${pageLevel.length}</span></h4>${pageLevel.map(fitem).join('')}` : ''}
-        ${d.diff ? `<h4>Baseline diff</h4><p class="note">${Number(d.diff.percent ?? 0).toFixed(3)}% of pixels changed${d.diff.regressed ? ' — regressed' : ''}</p>${d.diff.image ? `<img class="diffimg" src="${esc(d.diff.image)}" alt="difference against the baseline">` : ''}` : ''}
+        ${d.diff && d.diff.missing ? '<h4>Baseline</h4><p class="note">The baseline run had no capture for this profile; nothing to compare.</p>' : ''}
+        ${d.diff && !d.diff.missing ? `<h4>Baseline diff</h4>
+          <p class="note"><b style="color:${d.diff.regressed ? 'var(--err)' : 'var(--ok)'}">${Number(d.diff.percent).toFixed(3)}% of pixels differ</b> (${d.diff.changedPixels.toLocaleString()} of ${d.diff.totalPixels.toLocaleString()}; threshold ${d.diff.threshold}%)${d.diff.regressed ? ' — regressed' : ''}${d.diff.sizeChanged ? ` · the page is ${Math.abs(d.diff.heightDeltaCss)}px ${d.diff.heightDeltaCss > 0 ? 'taller' : 'shorter'} than the baseline; the strip counts as changed` : ''}${d.diff.fontsDiffer && d.diff.fontsDiffer.length ? ` · webfont rendering differed between the runs (${esc(d.diff.fontsDiffer.join(', '))}), so text in those faces counts as changed` : ''}${d.diff.maskedBoxes ? ` · ${plural(d.diff.maskedBoxes, 'region')} masked` : ''} · ${esc(d.diff.engine)}</p>
+          ${d.diff.hotspots && d.diff.hotspots.length ? `<p class="note">Where the change is:</p><div class="kv">${d.diff.hotspots.map(h => `<span class="num">${h.shareOfChange}%</span><b><code>${esc(h.selector)}</code></b>`).join('')}</div>
+          <p class="note">Dynamic by design? Re-run with <code>--ignore-regions "${esc(d.diff.hotspots[0].selector)}"</code> to mask it.</p>` : ''}
+          ${d.diff.image ? `<a href="${esc(d.diff.image)}" target="_blank" rel="noopener"><img class="diffimg" src="${esc(d.diff.image)}" alt="difference against the baseline: changed pixels in red over the greyed baseline"></a>` : ''}` : ''}
         ${d.notes && d.notes.length ? `<h4>Notes</h4>${d.notes.map(n => `<p class="note">${esc(n)}</p>`).join('')}` : ''}
         <h4>Capture</h4><div class="kv">
           ${d.page && d.page.title ? `<span>Title</span><b>${esc(d.page.title)}</b>` : ''}
@@ -1898,9 +2193,16 @@ def main() -> int:
     ap.add_argument("--concurrency", type=int, default=min(os.cpu_count() or 1, 4),
                     help="parallel engines; default min(cpu_count, 4)")
     ap.add_argument("--timeout", type=float, default=30.0, help="seconds")
-    ap.add_argument("--max-scroll-viewports", type=int, default=5, metavar="N",
-                    help="lazy-load trigger: scroll at most N viewport heights (default 5; a "
-                         "12000px page on a 750px phone needs about 16 to load everything)")
+    ap.add_argument("--max-scroll-viewports", type=int, default=40, metavar="N",
+                    help="lazy-load trigger: scroll the whole page, but never more than N viewport "
+                         "heights (default 40; only infinite-scroll pages reach it)")
+    ap.add_argument("--baseline", metavar="DIR", help="a previous run directory to diff each capture against")
+    ap.add_argument("--ignore-regions", default="", metavar="SEL,SEL",
+                    help="CSS selectors masked before diffing (carousels, clocks, chat widgets, ad slots)")
+    ap.add_argument("--diff-threshold", type=float, default=0.1, metavar="PCT",
+                    help="percent of changed pixels above which a device is regressed (default 0.1)")
+    ap.add_argument("--odiff", metavar="CMD", help="odiff binary or command, e.g. 'npx -y odiff-bin'; "
+                                                   "default: odiff on PATH, else Pillow")
     ap.add_argument("--out", help="default: ./runs/<timestamp>")
     ap.add_argument("--json", action="store_true", help="print report.json path only")
     ap.add_argument("--list-devices", action="store_true")
@@ -1951,26 +2253,42 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     chosen = select_profiles(profiles, args.devices, args.tier, args.include_edge)
     schemes = ["light", "dark"] if args.color_scheme == "both" else [args.color_scheme]
+    ignore = [x.strip() for x in args.ignore_regions.split(",") if x.strip()]
     base_opts = CaptureOptions(out_dir=out_dir, landscape=args.landscape, timeout_s=args.timeout,
                                max_scroll_viewports=args.max_scroll_viewports,
-                               rules=load_rules(args.disable_rule))
+                               rules=load_rules(args.disable_rule), ignore_regions=ignore)
+    odiff = None
+    if args.baseline:
+        try:
+            import PIL  # noqa: F401 — the diff needs it even when odiff does the counting
+        except ImportError:
+            raise SystemExit("--baseline needs Pillow: pip install pillow")
+        odiff = resolve_odiff(args.odiff)
+        if not (Path(args.baseline) / "report.json").is_file():
+            raise SystemExit(f"--baseline: {Path(args.baseline) / 'report.json'} not found")
 
     started = datetime.now(timezone.utc)
     say(f"  {len(chosen)} device(s) × {len(schemes)} scheme(s), "
         f"{len({p.engine for p in chosen})} engine(s) in parallel")
     results, timing = run_matrix(url, chosen, schemes, base_opts, args.backend,
                                  args.concurrency, say)
+    baseline_info = None
+    if args.baseline:
+        say(f"\n  diffing against {args.baseline} ({'odiff' if odiff else 'pillow'}, threshold {args.diff_threshold}%)")
+        baseline_info = diff_run(results, Path(args.baseline), out_dir, args.diff_threshold, odiff, say)
 
     report = {
         "schemaVersion": SCHEMA_VERSION,
-        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 5},
+        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 6},
         "files": {"json": "report.json", "html": "report.html"},
         "url": url,
         "startedAt": started.isoformat(timespec="seconds"),
         "finishedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "backend": args.backend,
         "options": {"landscape": args.landscape, "colorScheme": args.color_scheme,
-                    "timeoutSeconds": args.timeout, "concurrency": args.concurrency},
+                    "timeoutSeconds": args.timeout, "concurrency": args.concurrency,
+                    "ignoreRegions": ignore},
+        "baseline": baseline_info,
         "timing": timing,
         "rules": base_opts.rules,
         "summary": summarise(results),
@@ -1996,12 +2314,15 @@ def main() -> int:
         for r in blocked:
             say(f"    {r.label:26} BLOCKED        {(r.error or '')[:90]}")
         for r in results:
+            if r.diff and r.diff.get("regressed"):
+                say(f"    {r.label:26} REGRESSED      {r.diff['percent']:.2f}% of pixels differ from the baseline")
+        for r in results:
             for f in r.findings:
                 if f["severity"] == "error":
                     say(f"    {r.label:26} {f['rule']:14} {f['message'][:90]}")
-    # 0 clean, 1 any error-severity finding, 2 tool failure. Failure wins: a
-    # run that could not capture cannot vouch for anything.
-    return 2 if failed else (1 if summary["errors"] else 0)
+    # 0 clean, 1 any error-severity finding or visual regression, 2 tool
+    # failure. Failure wins: a run that could not capture cannot vouch for anything.
+    return 2 if failed else (1 if summary["errors"] or summary["devicesRegressed"] else 0)
 
 
 if __name__ == "__main__":

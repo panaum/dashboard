@@ -3,3 +3,4 @@ playwright>=1.45
 # downscale thumbnails; if removed, captures still succeed and each result
 # carries a note that the gallery will scale the fold image instead.
 pillow>=10
+\n# Pillow is required for --baseline diffing (and thumbnails). odiff is optional and\n# faster: any `odiff` on PATH is used, or pass --odiff "npx -y odiff-bin".\n
