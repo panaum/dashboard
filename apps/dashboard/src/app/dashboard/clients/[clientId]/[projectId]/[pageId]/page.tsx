@@ -12,6 +12,7 @@ import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { EditPageButton } from "@/components/forms/dialogs";
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { QAChecklist } from "@/components/qa/qa-checklist";
+import { ChecklistPrefillRunner } from "@/components/qa/checklist-prefill-runner";
 import { StillTrueHeader, LinkToMonitoring } from "@/components/qa/still-true";
 import { RegistryLink } from "@/components/qa/registry-link";
 import { registryConfigured, fetchPrefills } from "@/lib/registry";
@@ -297,6 +298,16 @@ export default async function PageDetailPage({
           )}
         </Card>
       </div>
+
+      {/* Machine proposals for the rows a live check can answer. Writes nothing:
+          each Confirm calls the same action the LinkSpy prefills use. */}
+      {page.certificate && (
+        <ChecklistPrefillRunner
+          url={page.url ?? null}
+          items={page.certificate.items.map((i) => ({ id: i.id, name: i.name }))}
+          path={path}
+        />
+      )}
 
       {/* Production presence — the other half of this page's life, seen from
           LinkSpy. Renders nothing at all when there is nothing to say. */}

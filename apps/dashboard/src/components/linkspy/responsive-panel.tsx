@@ -174,18 +174,7 @@ export function ResponsivePanel({ url }: { url: string | null }) {
                 {f.detail && (
                   <p className="max-w-prose text-[13px] text-text-secondary">{f.detail}</p>
                 )}
-                {!!f.evidence?.length && (
-                  <ul className="mt-2 flex flex-col gap-0.5">
-                    {f.evidence.slice(0, 6).map((e, i) => (
-                      <li
-                        key={i}
-                        className="overflow-x-auto whitespace-pre font-mono text-[11px] leading-relaxed text-text-muted"
-                      >
-                        {e}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                {!!f.evidence?.length && <Evidence lines={f.evidence} />}
               </div>
             ))}
           </div>
@@ -240,6 +229,37 @@ export function ResponsivePanel({ url }: { url: string | null }) {
             check again to regenerate them.
           </p>
         </Card>
+      )}
+    </div>
+  );
+}
+
+const EVIDENCE_SHOWN = 8;
+
+function Evidence({ lines }: { lines: string[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? lines : lines.slice(0, EVIDENCE_SHOWN);
+  const hidden = lines.length - shown.length;
+  return (
+    <div className="mt-2">
+      <ul className="flex flex-col gap-0.5">
+        {shown.map((e, i) => (
+          <li
+            key={i}
+            className="overflow-x-auto whitespace-pre font-mono text-[11px] leading-relaxed text-text-muted"
+          >
+            {e}
+          </li>
+        ))}
+      </ul>
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setAll(true)}
+          className="mt-1 text-[12px] font-medium text-accent hover:underline"
+        >
+          Show {hidden} more
+        </button>
       )}
     </div>
   );
