@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import type { ResponsiveFinding } from "@/lib/linkspy/responsive-view";
+import { countsOf, type DpReport } from "@/lib/devicepreview/history";
+import { devicePreviewBase, devicePreviewConfigured, devicePreviewHeaders } from "@/lib/devicepreview/client";
 
 // Saving a checked page and its history. The sweep itself runs on the Railway
 // service; this only records what it found and keeps the screenshots for the
@@ -123,6 +125,88 @@ async function pruneShots(siteId: string): Promise<void> {
   });
   const keep = recent.map((r) => r.id);
   await db.layoutShot.deleteMany({
+    where: { run: { siteId }, runId: { notIn: keep.length ? keep : ["__none__"] } },
+  });
+}
+
+// ── device preview ──────────────────────────────────────────────────────────
+
+const FOLD_JPEG_WIDTH = 900;
+
+/** Record a finished devicepreview run for a page and keep a fold JPEG per
+ *  device for the two most recent runs. The report is the record; the images
+ *  are copied across now or not at all, because the service prunes its runs. */
+export async function saveDevicePreviewRun(input: {
+  url: string;
+  serviceRunId: string;
+}): Promise<{ ok?: boolean; error?: string; runId?: string }> {
+  await requireAuth();
+  const url = normaliseUrl(input.url);
+  if (!url) return { error: "Invalid URL." };
+  if (!/^[A-Za-z0-9_-]{6,64}$/.test(input.serviceRunId)) return { error: "Bad run id." };
+  if (!devicePreviewConfigured()) return { error: "The preview service is not configured." };
+  const base = devicePreviewBase();
+  const headers = devicePreviewHeaders();
+
+  let report: DpReport;
+  try {
+    const res = await fetch(`${base}/api/devicepreview/report?run_id=${encodeURIComponent(input.serviceRunId)}`, {
+      headers, signal: AbortSignal.timeout(20000), cache: "no-store",
+    });
+    if (!res.ok) return { error: "The preview service has no report for that run." };
+    report = (await res.json()) as DpReport;
+  } catch {
+    return { error: "Could not fetch the report from the preview service." };
+  }
+  if (report?.schemaVersion !== 1 || !Array.isArray(report.devices) || !report.summary) {
+    return { error: "The report is not in a shape this Dashboard understands." };
+  }
+  const counts = countsOf(report);
+  const existing = await db.devicePreviewRun.findUnique({ where: { serviceRunId: input.serviceRunId }, select: { id: true } });
+  if (existing) return { ok: true, runId: existing.id };
+
+  const site = await db.layoutSite.upsert({ where: { url }, update: {}, create: { url } });
+  // The service names the baseline by its run directory; map it back to our run.
+  const baselineDir = report.baseline?.dir ? report.baseline.dir.split("/").pop() ?? null : null;
+  const baseline = baselineDir
+    ? await db.devicePreviewRun.findUnique({ where: { serviceRunId: baselineDir }, select: { id: true } })
+    : null;
+  const run = await db.devicePreviewRun.create({
+    data: {
+      siteId: site.id, serviceRunId: input.serviceRunId, baselineRunId: baseline?.id ?? null,
+      report: report as unknown as object, worst: counts.worst, deviceCount: counts.deviceCount,
+      errorCount: counts.errorCount, warnCount: counts.warnCount, regressedCount: counts.regressedCount,
+    },
+  });
+
+  for (const d of report.devices) {
+    if (!d.images?.fold) continue;
+    try {
+      const res = await fetch(
+        `${base}/api/devicepreview/image?run_id=${encodeURIComponent(input.serviceRunId)}&profile=${encodeURIComponent(d.profile_id)}&kind=fold&max_width=${FOLD_JPEG_WIDTH}`,
+        { headers, signal: AbortSignal.timeout(20000), cache: "no-store" },
+      );
+      if (!res.ok) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (!buf.length) continue;
+      await db.devicePreviewShot.create({ data: { runId: run.id, profileId: d.profile_id, image: buf, bytes: buf.length } });
+    } catch {
+      // A missing screenshot must not lose the report, which is the record.
+    }
+  }
+
+  await pruneDevicePreviewShots(site.id);
+  revalidatePath("/dashboard/layout-checks");
+  revalidatePath(`/dashboard/layout-checks/${site.id}`);
+  return { ok: true, runId: run.id };
+}
+
+async function pruneDevicePreviewShots(siteId: string): Promise<void> {
+  const recent = await db.devicePreviewRun.findMany({
+    where: { siteId }, orderBy: { checkedAt: "desc" }, select: { id: true }, take: KEEP_RUNS_WITH_SHOTS,
+  });
+  const keep = recent.map((r) => r.id);
+  await db.devicePreviewShot.deleteMany({
     where: { run: { siteId }, runId: { notIn: keep.length ? keep : ["__none__"] } },
   });
 }

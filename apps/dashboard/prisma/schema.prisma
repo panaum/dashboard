@@ -225,12 +225,13 @@ model SpineOutbox {
 // checked URL is not always a tracked deliverable — a competitor page, a
 // client's page before it is onboarded, a preview link.
 model LayoutSite {
-  id        String      @id @default(cuid())
-  url       String      @unique
-  label     String? //     what a human calls it; falls back to the URL
-  runs      LayoutRun[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id             String             @id @default(cuid())
+  url            String             @unique
+  label          String? //          what a human calls it; falls back to the URL
+  runs           LayoutRun[]
+  devicePreviews DevicePreviewRun[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 }
 
 // One sweep. `findings` is the engine's output verbatim, so a later change to
@@ -263,5 +264,39 @@ model LayoutShot {
   bytes  Int //       recorded so storage can be reported without reading blobs
 
   @@unique([runId, width])
+  @@index([runId])
+}
+
+// A cross-device preview run: the devicepreview service's report for one page,
+// with a JPEG of each device's fold kept here for the two most recent runs.
+// Full-page images and the diffable gallery stay on the service while it
+// retains the run (serviceRunId); the verdicts survive here regardless.
+model DevicePreviewRun {
+  id             String              @id @default(cuid())
+  site           LayoutSite          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  siteId         String
+  checkedAt      DateTime            @default(now())
+  serviceRunId   String              @unique //   the run directory on the devicepreview service
+  baselineRunId  String? //                        our run this one was diffed against
+  report         Json //                           report.json as the service wrote it (schemaVersion 1)
+  worst          String              @default("PASS") // FAIL | REGRESSED | BLOCKED | WARN | PASS — for lists
+  deviceCount    Int                 @default(0)
+  errorCount     Int                 @default(0)
+  warnCount      Int                 @default(0)
+  regressedCount Int                 @default(0)
+  shots          DevicePreviewShot[]
+
+  @@index([siteId, checkedAt])
+}
+
+model DevicePreviewShot {
+  id        String           @id @default(cuid())
+  run       DevicePreviewRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId     String
+  profileId String
+  image     Bytes //           JPEG of the fold, at most 900px wide
+  bytes     Int //             recorded so storage can be reported without reading blobs
+
+  @@unique([runId, profileId])
   @@index([runId])
 }

@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: webfont with a working sibling</title><link rel="stylesheet" href="_base.css">
+<style>
+  @font-face { font-family: "Twin Sans"; src: url("missing-twin.woff2") format("woff2"); }
+  @font-face { font-family: "Twin Sans"; src: local("Helvetica"), local("Arial"), local("DejaVu Sans"), local("Liberation Sans"); }
+  p { font-family: "Twin Sans", sans-serif; }
+</style></head>
+<body>
+<p>A negative control for webfont. Two declarations share one family: the first points at a file that does not exist, the second resolves locally and loads. The visitor sees the family render, so the failed twin is not a finding.</p>
+</body></html>

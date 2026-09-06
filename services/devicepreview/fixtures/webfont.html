@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: webfont fails</title><link rel="stylesheet" href="_base.css">
+<style>@font-face { font-family: "Missing Sans"; src: url("missing-font.woff2") format("woff2"); } p { font-family: "Missing Sans", sans-serif; }</style></head>
+<body>
+<p>Exactly one defect: the declared webfont does not exist, so the request fails and the text silently falls back. The screenshot looks fine; the finding says otherwise.</p>
+</body></html>

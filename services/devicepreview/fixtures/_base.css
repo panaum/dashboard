@@ -1,0 +1,5 @@
+/* Shared by every fixture. The viewport meta in each file matters more than it
+   looks: without it a mobile profile lays the page out at 980px and shrinks
+   it, so nothing overflows and every touch target measures wrong. */
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; padding: 16px; }
+p { max-width: 60ch; }

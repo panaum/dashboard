@@ -30,6 +30,9 @@ const SESSION_GUARDED = [
   "src/app/api/linkspy/monitor/route.ts",
   "src/app/api/linkspy/shot/route.ts",
   "src/app/api/layout-shot/route.ts",
+  "src/app/api/devicepreview/monitor/route.ts",
+  "src/app/api/devicepreview/view/[runId]/[[...path]]/route.ts",
+  "src/app/api/devicepreview/shot/route.ts",
 ];
 
 // Service-to-service: a shared secret compared timing-safely, or an HMAC envelope.

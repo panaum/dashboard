@@ -7,6 +7,8 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckRunner } from "@/components/layout-checks/check-runner";
+import { DevicePreviewSection } from "@/components/layout-checks/device-preview-section";
+import { devicePreviewConfigured } from "@/lib/devicepreview/client";
 import { diffRuns, verdictOf } from "@/lib/linkspy/layout-history";
 import {
   type ResponsiveFinding,
@@ -40,9 +42,17 @@ export default async function LayoutSitePage({
         take: 12,
         include: { shots: { select: { width: true }, orderBy: { width: "asc" } } },
       },
+      devicePreviews: {
+        orderBy: { checkedAt: "desc" },
+        take: 12,
+        include: { shots: { select: { profileId: true } } },
+      },
     },
   });
   if (!site) notFound();
+  const devicePreview = (
+    <DevicePreviewSection url={site.url} runs={site.devicePreviews} configured={devicePreviewConfigured()} />
+  );
 
   const [current, previous] = site.runs;
   const changes = current
@@ -74,11 +84,14 @@ export default async function LayoutSitePage({
       />
 
       {!current ? (
+        <div className="flex flex-col gap-5">
         <Card className="px-5 py-10 text-center">
           <p className="text-sm text-text-secondary">
             No checks yet. Run one to record how this page renders at eight widths.
           </p>
         </Card>
+        {devicePreview}
+        </div>
       ) : (
         <div className="flex flex-col gap-4">
           <Card className="px-5 py-4">
@@ -198,6 +211,8 @@ export default async function LayoutSitePage({
               ))}
             </div>
           </Card>
+
+          {devicePreview}
 
           <a href={site.url} target="_blank" rel="noopener"
              className="inline-flex w-fit items-center gap-2 text-[13px] text-text-secondary hover:text-text-primary">

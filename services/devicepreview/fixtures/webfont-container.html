@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: container-only family</title><link rel="stylesheet" href="_base.css">
+<style>
+  /* The wrapper names a broken face but draws no glyphs of its own; every
+     word inside it is set in a system stack. No text is in a fallback. */
+  @font-face { font-family: "Ghost Face"; src: url("missing-ghost.woff2") format("woff2"); }
+  .wrap { font-family: "Ghost Face", sans-serif; }
+  .wrap p { font-family: Arial, Helvetica, sans-serif; }
+</style></head>
+<body><div class="wrap"><p>All of this text is Arial. The div around it asks for Ghost Face, which no glyph on the page ever uses.</p></div></body></html>

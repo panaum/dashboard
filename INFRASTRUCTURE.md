@@ -365,6 +365,8 @@ Auth is a shared team password + signed cookie — **not** NextAuth.
 | `LINKSPY_APP_URL` | LinkSpy dashboard base for operator deep links (`lib/linkspy/client.ts:24`) | url | — | No — falls back to `LINKSPY_API_URL`, then plain instructions |
 | `PRESENCE` | Gates the **production-presence strip** on the page checklist view (`lib/linkspy/presence-shape.ts:37` via `lib/linkspy/presence.ts:62`). Only the literal `1` enables it | flag | *(same name, set separately, on Vercel brokenlinkchecker)* | No — unset ⇒ the checklist view is byte-identical to pre-presence |
 | `PRESENCE_CHIPS` | Gates the **client presence chips** on client detail + list (`lib/linkspy/client-presence-chips-shape.ts` `presenceChipsEnabled()`) and the "Link to LinkSpy" action. Only the literal `1` enables it | flag | *(same name, set separately, on Railway)* | No — unset ⇒ client pages are byte-identical to pre-chips |
+| `DEVICEPREVIEW_URL` | Base URL of the devicepreview Railway service (§1.5) for the Device preview section on Layout checks pages (`lib/devicepreview/client.ts`, `api/devicepreview/*`) | url | — | No — section shows "not configured" |
+| `DEVICEPREVIEW_KEY` | Bearer key for that service; **server-only, never reaches the browser** | secret | Railway devicepreview (`DEVICEPREVIEW_KEY`) | No — as above |
 | `ANTHROPIC_API_KEY` | Enables Claude judgment in the AI QA agent (`lib/ai/anthropic.ts:5`) | secret | — | No — deterministic checks still run |
 | `E2E_PASSWORD` | Playwright login; must equal the server's `APP_PASSWORD` (`e2e/auth.setup.ts:15`) | secret | — | Test-only |
 | `NODE_ENV` | Cookie `secure` flag, Prisma client caching | platform | — | Injected |
@@ -394,6 +396,35 @@ Door registry (`app/go/[app]/route.ts:7-10`, evaluated at module load):
 | `board` | absent from `DEST` | 302 to `/`; UI card is inert (`disabled`, badge "Soon") |
 
 ---
+
+### 1.5 Railway — `devicepreview` service (cross-device preview) — TO BE CREATED
+
+`services/devicepreview/`: the CLI plus `server.py` (FastAPI, same stack as the
+LinkSpy backend), started by its `Dockerfile` (`uvicorn server:app --port $PORT`).
+The Dockerfile installs fonts and Playwright's three engines and fails the build
+if font fallback is broken. Railway builds it from the repo with **root
+directory `services/devicepreview`**. Attach a **volume at `/app/runs`** so run
+galleries survive redeploys. Reads no `.env`; every variable is process
+environment. **Fails closed:** with `DEVICEPREVIEW_KEY` unset every request is
+`503`, so this surface does not join the fail-open list in D13.
+
+| Variable | Purpose | Type | Shared with | Currently required |
+|---|---|---|---|---|
+| `DEVICEPREVIEW_KEY` | The one service key; `Authorization: Bearer` or `X-Api-Key`, constant-time compare (`server.py` `_gate`) | secret | Vercel dashboard (`DEVICEPREVIEW_KEY`, piece 2) | **Yes** — unset ⇒ 503 on every route |
+| `RUNS_DIR` | Run storage; the volume mount point | tuning | — | No — default `/app/runs` (set in the Dockerfile) |
+| `RETAIN_RUNS` | Newest runs kept; older pruned after each run | tuning | — | No — default `40` |
+| `RUN_TIMEOUT_S` | Hard stop per run | tuning | — | No — default `900` |
+| `DEVICEPREVIEW_CONCURRENCY` | Engines in parallel inside a run; lower on a small instance | tuning | — | No — default `2` |
+| `MAX_RUNNING` | Runs accepted at once; more get `429 run_capacity` | tuning | — | No — default `1` |
+| `PORT` | Injected by Railway; consumed by the Dockerfile `CMD` | platform | — | Injected |
+| `BROWSERSTACK_USERNAME` | Basic-auth user for the Screenshots REST API (`devicepreview.py` `browserstack_credentials`) | secret | — | Only with `--backend browserstack`; unset ⇒ the backend stops and prints how to enable it |
+| `BROWSERSTACK_ACCESS_KEY` | Basic-auth key for the same | secret | — | As above |
+| `BROWSERSTACK_KEY` | Alternative single value `user:key` (the spec's name) | secret | — | Alternative to the pair |
+
+Optional tooling, not a variable: `odiff` on PATH (or `--odiff "npx -y odiff-bin"`)
+speeds up `--baseline` diffing; Pillow does the work otherwise. The BrowserStack
+backend needs a plan that includes the Screenshots API and has not yet been run
+against a live account.
 
 ## 2. Shared-secret map
 

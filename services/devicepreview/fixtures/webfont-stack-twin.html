@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: dead first face, live second face</title><link rel="stylesheet" href="_base.css">
+<style>
+  /* apexure.com's shape: text asks for a face that is broken, but the next
+     family in the same stack is one of the page's own fonts and loads. The
+     visitor sees a webfont; the tool must not call that a fallback. */
+  @font-face { font-family: "Dead Face"; src: url("missing-dead.woff2") format("woff2"); }
+  @font-face { font-family: "Live Face"; src: local("Helvetica"), local("Arial"), local("DejaVu Sans"), local("Liberation Sans"); }
+  p { font-family: "Dead Face", "Live Face", sans-serif; }
+</style></head>
+<body><p>This paragraph is drawn in Live Face because Dead Face cannot load. Nothing is wrong with what the reader sees.</p></body></html>

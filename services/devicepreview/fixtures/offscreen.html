@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: offscreen content</title><link rel="stylesheet" href="_base.css">
+<style>#ghost { position: absolute; left: -2000px; top: 200px; width: 300px; background: #fee; padding: 8px; }</style></head>
+<body>
+<p>Exactly one defect: a block of real text is parked at left:-2000px with no hidden marking, no menu class, and no screen-reader shape. Nobody will ever see it.</p>
+<div id="ghost">This paragraph exists in the DOM but sits two thousand pixels to the left of the screen.</div>
+</body></html>

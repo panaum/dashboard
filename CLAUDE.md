@@ -12,6 +12,15 @@ you're working in:
   `cd services/linkspy-api && pytest tests/`. Deployed from its Dockerfile on
   Railway.
 - `apps/shell` — the door page (signed handoff tokens to the other two apps).
+- `services/devicepreview` — cross-device rendering preview and layout audit
+  (one Python file, Playwright's three engines, optional BrowserStack).
+  `README.md` there says how to run and extend it, `LIMITATIONS.md` what it
+  cannot tell you. Tests: `cd services/devicepreview &&
+  ../pagecheck/.venv/bin/python -m unittest tests.test_audit`. Rule of the
+  house: never a false FAIL; when evidence is ambiguous, warn.
+- `services/pagecheck` — the single-page pre-launch checker (Python,
+  Playwright); its responsive engine is mirrored into `services/linkspy-api`
+  for the Dashboard's Layout checks.
 
 Repo-wide invariants:
 
