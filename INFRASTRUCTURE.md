@@ -365,6 +365,8 @@ Auth is a shared team password + signed cookie — **not** NextAuth.
 | `LINKSPY_APP_URL` | LinkSpy dashboard base for operator deep links (`lib/linkspy/client.ts:24`) | url | — | No — falls back to `LINKSPY_API_URL`, then plain instructions |
 | `PRESENCE` | Gates the **production-presence strip** on the page checklist view (`lib/linkspy/presence-shape.ts:37` via `lib/linkspy/presence.ts:62`). Only the literal `1` enables it | flag | *(same name, set separately, on Vercel brokenlinkchecker)* | No — unset ⇒ the checklist view is byte-identical to pre-presence |
 | `PRESENCE_CHIPS` | Gates the **client presence chips** on client detail + list (`lib/linkspy/client-presence-chips-shape.ts` `presenceChipsEnabled()`) and the "Link to LinkSpy" action. Only the literal `1` enables it | flag | *(same name, set separately, on Railway)* | No — unset ⇒ client pages are byte-identical to pre-chips |
+| `DEVICEPREVIEW_URL` | Base URL of the devicepreview Railway service (§1.5) for the Device preview section on Layout checks pages (`lib/devicepreview/client.ts`, `api/devicepreview/*`) | url | — | No — section shows "not configured" |
+| `DEVICEPREVIEW_KEY` | Bearer key for that service; **server-only, never reaches the browser** | secret | Railway devicepreview (`DEVICEPREVIEW_KEY`) | No — as above |
 | `ANTHROPIC_API_KEY` | Enables Claude judgment in the AI QA agent (`lib/ai/anthropic.ts:5`) | secret | — | No — deterministic checks still run |
 | `E2E_PASSWORD` | Playwright login; must equal the server's `APP_PASSWORD` (`e2e/auth.setup.ts:15`) | secret | — | Test-only |
 | `NODE_ENV` | Cookie `secure` flag, Prisma client caching | platform | — | Injected |
