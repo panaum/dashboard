@@ -687,6 +687,47 @@ class BrowserStackBackendTests(unittest.TestCase):
         self.assertIn("401", str(cm.exception)); self.assertIn("BROWSERSTACK_USERNAME", str(cm.exception))
 
 
+class FullMatrixIntegration(unittest.TestCase):
+    """The whole matrix against one local page. The report's shape is the
+    contract; this pins it, and the run order, across all three engines."""
+
+    def test_full_matrix_report_shape(self):
+        import dataclasses
+        code, rep = run("clean.html", "all", "--include-edge")
+        out = Path(rep["_out"])
+        profiles = json.loads((ROOT / "devices.json").read_text())["profiles"]
+        self.assertEqual(rep["schemaVersion"], 1)
+        for key in ("tool", "files", "url", "startedAt", "finishedAt", "backend", "options", "timing", "rules",
+                    "summary", "devices", "unverifiedProfiles", "fidelityNote", "host", "baseline"):
+            self.assertIn(key, rep, key)
+        self.assertEqual(rep["backend"], "local"); self.assertIsNone(rep["baseline"])
+        self.assertEqual(len(rep["devices"]), len(profiles), "every profile, edge tier included")
+        expected = [p["id"] for p in profiles if p["tier"] == "primary"] + [p["id"] for p in profiles if p["tier"] == "edge"]
+        self.assertEqual([d["profile_id"] for d in rep["devices"]], expected, "matrix order: primary tier, then edge")
+        self.assertEqual({d["engine"] for d in rep["devices"]}, {"chromium", "firefox", "webkit"})
+        device_keys = {f.name for f in dataclasses.fields(_module().CaptureResult)}
+        for d in rep["devices"]:
+            with self.subTest(device=d["profile_id"]):
+                self.assertEqual(set(d), device_keys, "one shape for every backend")
+                self.assertEqual(d["status"], "ok", d.get("error"))
+                self.assertLessEqual({"fold", "full", "thumb"}, set(d["images"]))
+                for rel in d["images"].values():
+                    self.assertTrue((out / rel).is_file(), rel)
+                self.assertIsNone(d["diff"]); self.assertIsInstance(d["findings"], list)
+                for f in d["findings"]:
+                    self.assertLessEqual({"severity", "rule", "message", "selector", "box"}, set(f))
+                    self.assertIn(f["severity"], ("error", "warn", "info")); self.assertIn(f["rule"], rep["rules"])
+                self.assertLessEqual({"faces", "stacks", "requests", "failed_requests"}, set(d["fonts"]))
+                self.assertLessEqual({"title", "scrollHeight", "userAgent"}, set(d["page"]))
+                self.assertIn("total", d["timings_ms"])
+                self.assertEqual(d["viewport"], next(p["viewport"] for p in profiles if p["id"] == d["profile_id"]))
+        self.assertEqual(sorted(rep["unverifiedProfiles"]), sorted(p["id"] for p in profiles if not p.get("verified")))
+        self.assertEqual(rep["summary"]["errors"], 0, "the clean fixture has no error on any device")
+        self.assertEqual(rep["summary"]["devicesPassed"], len(profiles))
+        self.assertTrue((out / "report.html").is_file())
+        self.assertEqual(code, 0)
+
+
 class ImageSizeThresholds(unittest.TestCase):
     def test_a_2x_asset_on_a_3x_screen_is_not_soft(self):
         # The iPhone 16 profile is 3x. A 1x pixel stretched 240 wide IS soft

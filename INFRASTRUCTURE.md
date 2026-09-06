@@ -395,6 +395,24 @@ Door registry (`app/go/[app]/route.ts:7-10`, evaluated at module load):
 
 ---
 
+### 1.5 Not deployed — `services/devicepreview` (cross-device preview, local/CI tool)
+
+One Python file run by hand or in CI; no hosted surface. Its `Dockerfile`
+installs fonts and Playwright's three engines and fails the build if font
+fallback is broken. Not built on the development machine (no Docker there).
+Reads no `.env`; every variable below is taken from the process environment.
+
+| Variable | Purpose | Type | Shared with | Currently required |
+|---|---|---|---|---|
+| `BROWSERSTACK_USERNAME` | Basic-auth user for the Screenshots REST API (`devicepreview.py` `browserstack_credentials`) | secret | — | Only with `--backend browserstack`; unset ⇒ the backend stops and prints how to enable it |
+| `BROWSERSTACK_ACCESS_KEY` | Basic-auth key for the same | secret | — | As above |
+| `BROWSERSTACK_KEY` | Alternative single value `user:key` (the spec's name) | secret | — | Alternative to the pair |
+
+Optional tooling, not a variable: `odiff` on PATH (or `--odiff "npx -y odiff-bin"`)
+speeds up `--baseline` diffing; Pillow does the work otherwise. The BrowserStack
+backend needs a plan that includes the Screenshots API and has not yet been run
+against a live account.
+
 ## 2. Shared-secret map
 
 ### `SPINE_SECRET` — 4 surfaces

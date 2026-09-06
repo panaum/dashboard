@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 """devicepreview — how a URL renders across a fixed matrix of device profiles.
 
-Build steps 1–4: the device matrix, the capture interface, the `local` backend
-with engine parallelism, and the full twelve-rule audit probe. No gallery yet
-(step 5), no baseline diffing (step 6).
-
-One interface, swappable backends:
+One interface, three swappable backends:
 
     capture(url, profile, options) -> CaptureResult
 
-The caller never knows which backend served a capture; the result shape is
-identical across all of them. Only `local` exists in this step; `macos` and
-`browserstack` are step 7 and say so if selected.
+`local` runs Playwright's bundled engines headless; `macos` is the same code
+on a Mac, where WebKit draws Apple's real font stack; `browserstack` fetches
+real-device screenshots through BrowserStack's Screenshots REST API. The
+caller never knows which one served a capture: the result shape is identical.
 
-Conventions follow services/pagecheck: Playwright's sync API, no dependencies
-beyond Playwright and the standard library (Pillow is used for thumbnails ONLY
-if it is already importable, and its absence is recorded, not fatal), and every
-non-obvious decision carries the reason it was made.
+A run captures three images per profile, runs twelve geometry rules in the
+page, records webfont delivery and layout shift, optionally diffs against a
+previous run, and writes report.json (the contract, schemaVersion 1) and a
+single-file report.html gallery. README.md says how to run and extend it;
+LIMITATIONS.md says what it cannot tell you.
+
+Conventions follow services/pagecheck: Playwright's sync API, no
+dependencies beyond Playwright, Pillow and the standard library (odiff is
+used when present), and every non-obvious decision carries the reason it was
+made — most of them were learned by measuring a real page, not by reasoning.
 """
 from __future__ import annotations
 
@@ -2558,7 +2561,7 @@ def main() -> int:
 
     report = {
         "schemaVersion": SCHEMA_VERSION,
-        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 6},
+        "tool": {"name": "devicepreview", "version": TOOL_VERSION, "step": 8},
         "files": {"json": "report.json", "html": "report.html"},
         "url": url,
         "startedAt": started.isoformat(timespec="seconds"),

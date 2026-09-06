@@ -1,0 +1,178 @@
+# devicepreview
+
+How a URL renders across a fixed matrix of device profiles, with layout
+defects flagged automatically and a self-contained gallery to read the
+result. One Python file, Playwright's three engines, no server.
+
+```bash
+cd services/devicepreview
+../pagecheck/.venv/bin/python devicepreview.py https://example.com/ --tier all --include-edge
+open runs/<timestamp>/report.html
+```
+
+Read `LIMITATIONS.md` before quoting a result to a client.
+
+## Install
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt          # playwright + pillow
+playwright install --with-deps chromium firefox webkit
+python devicepreview.py --self-check     # renders a font test page in all three engines
+```
+
+Pillow is required for thumbnails and for `--baseline` diffing. `odiff` is
+optional and faster for diffing: any `odiff` on PATH is used, or pass
+`--odiff "npx -y odiff-bin"`.
+
+The `Dockerfile` installs the fonts headless Linux needs and fails the build
+if proportional text comes out monospace. Never add Apple's San Francisco
+fonts to it — the licence does not permit it.
+
+## Running
+
+```
+devicepreview <url> [options]
+  --devices iphone-16,galaxy-s25      comma list of ids, or 'all'
+  --tier primary|all                  default: primary
+  --include-edge                      include edge-tier profiles (the 260px Z Flip cover screen)
+  --landscape                         rotate every profile
+  --color-scheme light|dark|both      default: light
+  --backend local|macos|browserstack  default: local
+  --baseline <dir>                    diff each capture against a previous run directory
+  --ignore-regions "<sel>,<sel>"      mask these selectors before diffing
+  --diff-threshold <pct>              regression threshold, default 0.1 (% of pixels)
+  --odiff <cmd>                       odiff binary or command; default: odiff on PATH, else Pillow
+  --concurrency <n>                   parallel engines; default min(cpu, 4)
+  --timeout <seconds>                 navigation / network-idle, default 30
+  --max-scroll-viewports <n>          lazy-load scroll cap, default 40
+  --disable-rule <rule,rule>          switch audit rules off for this run
+  --out <dir>                         default: ./runs/<timestamp>
+  --json                              print the report.json path only
+  --list-devices                      the matrix, with unverified profiles marked
+```
+
+Exit codes: `0` clean, `1` any error-severity finding or a visual regression,
+`2` a capture failed or was blocked by bot protection. Failure wins: a run
+that could not capture vouches for nothing.
+
+A `devicepreview.config.json` beside `devices.json` may switch rules off
+permanently: `{"rules": {"tap-close": false}}`. Unknown rule names are an
+error, not a silent no-op.
+
+## What a run produces
+
+```
+runs/<timestamp>/
+  report.json            the machine-readable contract (schemaVersion 1)
+  report.html            one self-contained file: gallery, detail, compare, diffs
+  <profile-id>/
+    fold.png             above the fold, at the device's pixel density
+    full.png             the whole page, clipped at the viewport width
+    thumb.png            for the gallery
+    diff.png             with --baseline: changed pixels in red over the greyed baseline
+```
+
+`report.json` holds run metadata (`url`, `startedAt`, `backend`, `tool`,
+`options`, `timing`, `host`), a `summary` (errors, warnings, devices passed /
+failed / blocked / regressed), and one entry per capture with `status`
+(`ok` | `failed` | `blocked`), `findings[]` (`severity`, `rule`, `message`,
+`selector`, `box`, and `scope: "page"` for document-level findings),
+`images`, `timings_ms`, `fonts` (faces, measured stacks, requests, failed
+requests), `page` (title, dimensions, user agent, CLS), `notes[]`, and
+`diff` (null without a baseline). Image paths are relative to the run
+directory, so a run folder can be zipped and opened anywhere.
+
+## Baseline diffing
+
+```bash
+python devicepreview.py https://example.com/ --out runs/before
+# ... the developer ships a fix ...
+python devicepreview.py https://example.com/ --out runs/after --baseline runs/before
+```
+
+Each capture is compared with the same profile, colour scheme and
+orientation in the baseline. The detail view shows the percentage changed,
+the diff image, and **where** the change is (the containers holding it, by
+share), with the selector to pass to `--ignore-regions` if it is dynamic by
+design. It also says when the page height changed and when the two runs drew
+text in different fonts. Two runs of a stable page differ by 0.0 %.
+
+## Backends
+
+- `local` — Playwright's bundled engines, headless, in this process. One
+  browser per engine, a fresh context per profile. Fast, free, no quota.
+- `macos` — the same code on a Mac, where WebKit uses Apple's real font
+  stack, so `-apple-system` is authentic and the substitution note is not
+  emitted. Refuses to run elsewhere.
+- `browserstack` — physical devices through BrowserStack's Screenshots REST
+  API (not WebDriver). Needs `BROWSERSTACK_USERNAME` and
+  `BROWSERSTACK_ACCESS_KEY` (or `BROWSERSTACK_KEY` as `user:key`) and a plan
+  that includes the Screenshots API. One job per run, polled to completion,
+  images laid out like a local run. No DOM, so no findings — see
+  `LIMITATIONS.md`.
+
+The result shape is identical across backends; a reader of `report.json`
+never needs to know which one ran.
+
+## Adding a device
+
+Add a profile to `devices.json`:
+
+```json
+{
+  "id": "pixel-9", "label": "Pixel 9", "engine": "chromium", "platform": "android",
+  "tier": "primary", "playwrightDevice": "Pixel 7",
+  "viewport": {"width": 412, "height": 923}, "deviceScaleFactor": 2.625,
+  "isMobile": true, "hasTouch": true, "userAgent": null, "verified": false,
+  "browserstack": {"os": "android", "os_version": "15.0", "device": "Google Pixel 9"}
+}
+```
+
+- `playwrightDevice` names a Playwright descriptor whose fields are spread
+  first; explicit fields override it, so user agents track Playwright's
+  updates instead of rotting here. `userAgent: null` means the descriptor's,
+  or the engine's default for desktops (Chromium's is read from the running
+  browser with "HeadlessChrome" renamed, because Cloudflare walls that word).
+- Leave `verified: false` until the numbers have been checked against the
+  physical device; the report footer names unverified profiles.
+- `browserstack` is the Screenshots API mapping (`os`, `os_version`,
+  `device`; for desktops `os`, `os_version`, `browser`, `browser_version`),
+  or `null` if BrowserStack does not offer the device.
+- `tier: "edge"` profiles run only with `--include-edge`.
+
+## Adding an audit rule
+
+1. Add the rule to `DEFAULT_RULES` in `devicepreview.py`.
+2. Add its block to `AUDIT_JS`, guarded by `rules['<name>']`, using the
+   helpers declared above the first rule (`vis`, `sel`, `box`, `snippet`,
+   `clippedBy`, `inSlider`, `textRects`, `ownText`). Push findings as
+   `{severity, rule, message, selector, box}`; use `selector: 'html'` /
+   `'body'` for document-level findings (they are listed, not drawn).
+3. Write `fixtures/<name>.html` that triggers exactly this rule and nothing
+   else, and a test in `tests/test_audit.py` that asserts both directions:
+   the rule fires there, and no other rule does. The second half is what
+   catches regressions.
+4. Decide the severity by the rule of the house: **never a false FAIL**.
+   `error` only for something a visitor cannot miss (the page scrolls
+   sideways, a font file is missing); `warn` when the evidence is real but the
+   impact is arguable; `info` for fidelity notes. When evidence is ambiguous,
+   warn and say "check the screenshots".
+5. Run the suite, then the live gates before committing: the pages named in
+   the commit history must keep reporting what they report. A rule that
+   starts firing on a page it used to ignore is a false positive nobody
+   asked for.
+
+## Tests
+
+```bash
+../pagecheck/.venv/bin/python -m unittest tests.test_audit        # ~2 minutes, all three engines
+../pagecheck/.venv/bin/python -m unittest tests.test_audit -k Baseline
+```
+
+Every rule has a fixture that triggers only it; the harness runs the real
+CLI end to end and fails loudly if a capture's `status` is not `ok`, so a
+crash inside the probe cannot masquerade as "no findings". The integration
+test runs the whole fifteen-profile matrix against a local page and pins
+the report's shape. BrowserStack is tested against a fake of its documented
+API; the macos backend is tested live on a Mac and skipped elsewhere.
