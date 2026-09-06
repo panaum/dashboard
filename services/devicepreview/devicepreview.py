@@ -283,12 +283,11 @@ FONTS_JS = """async () => {
         // text already on screen? False is the WebKit state described above.
         const wi = measure(st.el, 'inherit', run.text);
         freshMatchesPainted = wi > 0 ? Math.abs(run.width - wi) < tol : null;
-      } else {
-        // No single-line run to witness (text split across many nodes):
-        // fall back to comparing two fresh probe runs.
-        const w = measure(st.el, 'inherit', PROBE), wo = measure(st.el, without.join(', '), PROBE);
-        renders = (w > 0 && wo > 0) ? Math.abs(w - wo) >= 0.5 : null;
       }
+      // No single-line run of six or more characters to witness (a "15", a
+      // glyph icon): no verdict. Judging such stacks from fresh probe runs
+      // produced the one false warning in a fifteen-device run — the WebKit
+      // state that made fresh runs lie is exactly what the witness guards against.
     } catch (e) {}
     const status = {};
     try { for (const f of document.fonts) { const k = bare(String(f.family)); if (decl.some(d => bare(d) === k)) (status[k] = status[k] || []).push(f.status); } } catch (e) {}
@@ -932,8 +931,14 @@ class LocalBackend(Backend):
                 page.add_init_script(CLS_INIT_JS)
                 # Font files that fail are invisible in a screenshot when the
                 # fallback looks plausible. The network is the only honest record.
+                # Status alone is not delivery: a challenge or error page served
+                # with 200 for a font URL is rejected by every engine, and the
+                # face reads "error" while "every request succeeded". Keep the
+                # content type so that case is named, not guessed at.
                 page.on("response", lambda r: font_requests.append(
-                    {"url": r.url[:200], "status": r.status})
+                    {"url": r.url[:200], "status": r.status,
+                     "contentType": (r.headers.get("content-type") or "")[:60],
+                     "contentLength": r.headers.get("content-length")})
                     if r.request.resource_type == "font" else None)
                 page.on("requestfailed", lambda rq: font_requests.append(
                     {"url": rq.url[:200], "status": None, "failure": (rq.failure or "")[:80]})
@@ -979,7 +984,8 @@ class LocalBackend(Backend):
                     "stacks": fonts.get("stacks", []),
                     "requests": font_requests,
                     "failed_requests": [r for r in font_requests
-                                        if r.get("status") is None or r["status"] >= 400],
+                                        if r.get("status") is None or r["status"] >= 400
+                                        or _not_a_font(r.get("contentType"))],
                 }
                 if fonts.get("requestsAppleSystemFont"):
                     res.fonts["appleSystemFontRequested"] = True
@@ -1102,13 +1108,16 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, An
     by_family: dict[str, dict[str, Any]] = {}
     for st in fallback:
         lead = (st.get("declared") or ["?"])[0]
-        g = by_family.setdefault(lead, {"elements": 0, "sample": st.get("sample"), "statuses": set()})
+        g = by_family.setdefault(lead, {"elements": 0, "sample": st.get("sample"), "statuses": set(),
+                                        "witness": st.get("witness")})
         g["elements"] += int(st.get("elements") or 0)
         g["statuses"].update(v for vals in (st.get("status") or {}).values() for v in vals)
 
     failed = (fonts.get("failed_requests") or [])[:6]
     for r in failed:
-        why = r.get("failure") or (f"HTTP {r['status']}" if r.get("status") else "failed")
+        why = r.get("failure") or (f"served as {r['contentType'].split(';')[0]} instead of a font"
+                                   if _not_a_font(r.get("contentType")) and (r.get("status") or 0) < 400
+                                   else f"HTTP {r['status']}" if r.get("status") else "failed")
         name = r["url"].rsplit("/", 1)[-1][:60]
         if by_family:
             out.append({"severity": "error", "rule": "webfont",
@@ -1122,7 +1131,9 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, An
                         "selector": "head", "box": whole, "url": r["url"]})
 
     for fam, g in list(by_family.items())[:4]:
-        n = g["elements"]; where = f"{n} element{'s' if n != 1 else ''} (e.g. <{g['sample']}>)"
+        n = g["elements"]
+        seen = f' — the text "{g["witness"][:40]}" ' if g.get("witness") else " "
+        where = f"{n} element{'s' if n != 1 else ''} (e.g. <{g['sample']}>{seen.rstrip()})"
         if "error" not in g["statuses"]:
             out.append({"severity": "warn", "rule": "webfont",
                         "message": f"{fam} is used by the page but never loaded (no request was made — refused "
@@ -1142,6 +1153,14 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, An
                                "substituted on this backend, so the typography is not authentic",
                     "selector": "body", "box": whole})
     return out
+
+def _not_a_font(content_type: str | None) -> bool:
+    """A font URL answered with a document. Servers do this with a 200 status —
+    a bot challenge, a soft 404, a maintenance page — and the browser rejects
+    the bytes as a font while the network log looks clean."""
+    ct = (content_type or "").lower()
+    return ct.startswith(("text/html", "application/json", "text/plain", "application/xhtml"))
+
 
 def _first_line(exc: BaseException) -> str:
     """Playwright appends a multi-line call log to every message; the first
@@ -1581,7 +1600,14 @@ const state = {sev: 'all', platforms: new Set(platforms), sort: 'worst', picks: 
   if (s.errors) { tone = 'err'; mark = '!'; line = `${plural(s.errors, 'ship-blocking issue')} on ${errDev} of ${nDevices} devices`; }
   else if (blocked) { tone = 'wall'; mark = '⊘'; line = `Blocked by bot protection on ${plural(blocked, unit)}`; }
   else if (failed) { tone = 'wall'; mark = '×'; line = `${plural(failed, 'capture')} failed — nothing to vouch for there`; }
-  else if (s.warnings) { tone = 'warn'; mark = '~'; line = `No errors · ${plural(s.warnings, 'warning')} to review`; }
+  else if (s.warnings) {
+    // 300 warnings on 15 devices is usually 25 things seen 12 times. Say so.
+    const distinct = new Set(devs.flatMap(d => (d.findings || []).filter(f => f.severity === 'warn').map(f => f.rule + '|' + (f.selector || '')))).size;
+    const warnDev = new Set(devs.filter(d => d._c.warn).map(d => d.profile_id)).size;
+    tone = 'warn'; mark = '~';
+    line = distinct < s.warnings ? `No errors · ${plural(distinct, 'distinct warning')} across ${plural(warnDev, 'device')} (${s.warnings} in total)`
+                                 : `No errors · ${plural(s.warnings, 'warning')} to review`;
+  }
   else { tone = 'ok'; mark = '✓'; line = `All ${nDevices} devices clean`; }
   const extras = [];
   if (s.errors && blocked) extras.push(`${plural(blocked, unit)} blocked`);
