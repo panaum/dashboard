@@ -164,3 +164,17 @@ Default login password (dev): `apexure` — change `APP_PASSWORD` in `.env`.
 Server actions in the page-detail `actions.ts`: `analyzeUrl` (runs the agent, no
 writes) and `applyProposal` (updates matching `QACheckItem`s by name + creates
 issues). UI: `src/components/qa/ai-qa.tsx` (`AiQaButton`) — analyse → review → apply.
+
+## Device preview
+
+Layout checks pages carry a **Device preview** section: the page rendered
+across the fifteen-profile matrix by the `services/devicepreview` service
+(Railway, see INFRASTRUCTURE.md §1.5). Data: `DevicePreviewRun` (one per run,
+the service's `report.json` verbatim plus derived counts) and
+`DevicePreviewShot` (a fold JPEG per device, kept for the two most recent
+runs, like `LayoutShot`). Routes, all session-guarded: `/api/devicepreview/
+monitor` (start/poll proxy), `/api/devicepreview/view/[runId]/[...]` (the
+service's own gallery and images, streamed while it retains the run),
+`/api/devicepreview/shot` (stored folds). Pure helpers and tests live in
+`src/lib/devicepreview/history.ts`. Env: `DEVICEPREVIEW_URL`, `DEVICEPREVIEW_KEY`
+(server-only). The section is silent when they are unset.
