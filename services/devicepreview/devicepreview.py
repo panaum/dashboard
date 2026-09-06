@@ -290,13 +290,14 @@ FONTS_JS = """async () => {
       // state that made fresh runs lie is exactly what the witness guards against.
     } catch (e) {}
     const status = {};
-    try { for (const f of document.fonts) { const k = bare(String(f.family)); if (decl.some(d => bare(d) === k)) (status[k] = status[k] || []).push(f.status); } } catch (e) {}
+    const display = {};
+    try { for (const f of document.fonts) { const k = bare(String(f.family)); if (decl.some(d => bare(d) === k)) { (status[k] = status[k] || []).push(f.status); display[k] = f.display || 'auto'; } } } catch (e) {}
     const el = st.el;
     const cls = (typeof el.className === 'string' && el.className.trim()) ? '.' + el.className.trim().split(/\\s+/)[0] : '';
     stackOut.push({ stack: st.stack, weight: st.weight, style: st.style, elements: st.elements,
       sample: (el.tagName.toLowerCase() + (el.id ? '#' + el.id : cls)).slice(0, 60),
       text: (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40),
-      declared: decl.map(d => d.trim().replace(/^["']|["']$/g, '')), status, renders,
+      declared: decl.map(d => d.trim().replace(/^["']|["']$/g, '')), status, display, renders,
       witness: run ? run.text.slice(0, 40) : null, freshMatchesPainted });
   }
   // Per-face view for the report: a family is "used" when some text's stack
@@ -311,7 +312,7 @@ FONTS_JS = """async () => {
   const faces = [];
   try { for (const f of document.fonts) {
     const key = bare(String(f.family));
-    faces.push({ family: f.family, status: f.status, weight: f.weight, style: f.style,
+    faces.push({ family: f.family, status: f.status, weight: f.weight, style: f.style, display: f.display || 'auto',
       used: usedFams.has(key), renders: usedFams.has(key) ? (rendersFam[key] === undefined ? null : rendersFam[key]) : null }); } }
   catch (e) {}
   // A page asking for Apple's system face will be substituted on Linux. That is
@@ -1109,7 +1110,8 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, An
     for st in fallback:
         lead = (st.get("declared") or ["?"])[0]
         g = by_family.setdefault(lead, {"elements": 0, "sample": st.get("sample"), "statuses": set(),
-                                        "witness": st.get("witness")})
+                                        "witness": st.get("witness"),
+                                        "display": (st.get("display") or {}).get(lead.lower(), "auto")})
         g["elements"] += int(st.get("elements") or 0)
         g["statuses"].update(v for vals in (st.get("status") or {}).values() for v in vals)
 
@@ -1134,7 +1136,19 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int) -> list[dict[str, An
         n = g["elements"]
         seen = f' — the text "{g["witness"][:40]}" ' if g.get("witness") else " "
         where = f"{n} element{'s' if n != 1 else ''} (e.g. <{g['sample']}>{seen.rstrip()})"
-        if "error" not in g["statuses"]:
+        if g.get("display") == "optional" and "error" in g["statuses"]:
+            # Not a broken file: the page ASKED for this. font-display: optional
+            # lets the browser skip a face that is not ready within ~100ms and
+            # mark it failed for that visit. On apexure.com two families were
+            # optional and one was swap; only the optional two ever "failed",
+            # one load in four, with identical bytes every time.
+            out.append({"severity": "warn", "rule": "webfont",
+                        "message": f"{fam} was skipped on this load: it is declared font-display: optional, so the "
+                                   f"browser kept the fallback when the file was not ready in time. Visitors on a "
+                                   f"cold cache or slow network see the same. {where} measure as their fallback face. "
+                                   f"Use font-display: swap, or preload the file, if the face must always show",
+                        "selector": g["sample"] or "body", "box": whole, "family": fam})
+        elif "error" not in g["statuses"]:
             out.append({"severity": "warn", "rule": "webfont",
                         "message": f"{fam} is used by the page but never loaded (no request was made — refused "
                                    f"before the network); {where} measure as their fallback face",

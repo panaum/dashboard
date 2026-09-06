@@ -440,6 +440,42 @@ class BotWalls(unittest.TestCase):
         self.assertIn("Chrome/", ua, ua)
 
 
+class WebfontWording(unittest.TestCase):
+    """_font_findings is pure; these cases cannot be staged in a browser on demand."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("devicepreview", ROOT / "devicepreview.py")
+        mod = importlib.util.module_from_spec(spec); sys.modules["devicepreview"] = mod; spec.loader.exec_module(mod)
+        cls.ff = staticmethod(mod._font_findings)
+
+    def _stack(self, fam, **kw):
+        base = {"stack": f'"{fam}", sans-serif', "weight": "400", "style": "normal", "elements": 12,
+                "sample": "p.hero", "witness": "Most companies do not have", "declared": [fam],
+                "status": {fam.lower(): ["error", "error"]}, "display": {fam.lower(): "auto"}, "renders": False}
+        base.update(kw); return base
+
+    def test_an_optional_face_skipped_by_the_browser_is_named_as_such(self):
+        # apexure.com: font-display: optional on two families; one load in four
+        # the browser kept the fallback with identical bytes served every time.
+        out = self.ff({"stacks": [self._stack("Poppins-Regular", display={"poppins-regular": "optional"})],
+                       "failed_requests": []}, 393, 852)
+        self.assertEqual(len(out), 1); m = out[0]["message"]
+        self.assertIn("font-display: optional", m); self.assertIn("Most companies", m); self.assertEqual(out[0]["severity"], "warn")
+        self.assertNotIn("declarations are in error", m)
+
+    def test_a_document_served_for_a_font_url_is_a_failed_request(self):
+        out = self.ff({"stacks": [self._stack("Brand Sans")],
+                       "failed_requests": [{"url": "https://x/f/Brand.woff2", "status": 200, "contentType": "text/html; charset=utf-8"}]}, 393, 852)
+        errs = [f for f in out if f["severity"] == "error"]
+        self.assertEqual(len(errs), 1); self.assertIn("served as text/html instead of a font", errs[0]["message"])
+
+    def test_no_witness_means_no_verdict(self):
+        out = self.ff({"stacks": [self._stack("Brand Sans", renders=None, witness=None)], "failed_requests": []}, 393, 852)
+        self.assertEqual([f for f in out if f["severity"] != "info"], [])
+
+
 class ImageSizeThresholds(unittest.TestCase):
     def test_a_2x_asset_on_a_3x_screen_is_not_soft(self):
         # The iPhone 16 profile is 3x. A 1x pixel stretched 240 wide IS soft
