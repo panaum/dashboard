@@ -98,8 +98,13 @@ tool measured, tried, or learned the hard way; none is hypothetical.
   deadline that fires is recorded in the notes and can leave a verdict
   incomplete.
 - Full-page captures are clipped at the viewport width (so overflow shows as
-  overflow, not as a wider image) and capped at 30 000 CSS px tall. Some
-  engines repeat a fixed header down a full-page capture; the note says so.
+  overflow, not as a wider image) and capped at whatever fits the engine's
+  32 767-device-pixel screenshot limit — which is that limit divided by the
+  profile's pixel density, so about 16 380 CSS px at 2x and 10 920 at 3x, not a
+  flat number. A page taller than that is captured down to the ceiling and the
+  run carries a note saying where the image stops; the findings below it were
+  still measured from the DOM and simply cannot be drawn. Some engines repeat a
+  fixed header down a full-page capture; the note says so.
 
 ## Baseline diffing
 

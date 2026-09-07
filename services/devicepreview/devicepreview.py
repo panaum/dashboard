@@ -1159,8 +1159,15 @@ class LocalBackend(Backend):
                 # need re-learning.
                 sh = int(res.page.get("scrollHeight") or 0)
                 if sh > 0:
+                    h = capture_height(sh, profile.device_scale_factor)
                     page.screenshot(path=str(full), full_page=True,
-                                    clip={"x": 0, "y": 0, "width": w, "height": min(sh, 30000)})
+                                    clip={"x": 0, "y": 0, "width": w, "height": h})
+                    if h < sh:
+                        res.notes.append(
+                            f"the page is {sh}px tall and this capture stops at {h}px: at "
+                            f"{profile.device_scale_factor}x that is the most a screenshot can "
+                            f"hold ({SHOT_LIMIT_PX}px). Findings below it were still measured "
+                            "from the DOM, but cannot be drawn on the image")
                 else:
                     page.screenshot(path=str(full), full_page=True)
                 # Relative to the run directory, so report.html beside them can
@@ -1303,6 +1310,25 @@ def _rel(path: Path, base: Path) -> str:
         return path.relative_to(base).as_posix()
     except ValueError:                     # a backend wrote somewhere else; keep the truth
         return path.as_posix()
+
+
+# The engines refuse any screenshot dimension over this many DEVICE pixels.
+SHOT_LIMIT_PX = 32767
+
+
+def capture_height(scroll_height: int, dpr: float, limit: int = SHOT_LIMIT_PX) -> int:
+    """How much of a page one full-page capture may cover, in CSS pixels.
+
+    The clip is given in CSS px but the file comes out at CSS × dpr, so the
+    ceiling is limit/dpr — not a flat number. A flat 30000 was safe only at 1x:
+    every phone and tablet in the matrix is 2x or more, so a tall page asked
+    for up to 105000 device px and the capture failed outright with "Cannot
+    take screenshot larger than 32767 pixels on any dimension", losing that
+    device from the run entirely. Desktop profiles are 1x, which is why they
+    were the only ones that kept working.
+    """
+    ceiling = int((limit - 8) // max(float(dpr), 1.0))   # a little margin for rounding
+    return max(1, min(int(scroll_height), ceiling))
 
 
 def _thumbnail(src: Path, dst: Path, width: int) -> Path | None:

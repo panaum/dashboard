@@ -22,6 +22,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+sys.path.insert(0, str(ROOT))
+from devicepreview import SHOT_LIMIT_PX, capture_height, load_devices  # noqa: E402
 FIX = ROOT / "fixtures"
 TOUCH = "iphone-16"            # hasTouch: tap rules apply
 DESKTOP = "desktop-1440-chrome"  # no touch: tap rules must stay silent
@@ -154,6 +156,35 @@ class TapInlineException(unittest.TestCase):
         for f in close:
             self.assertEqual(f["severity"], "info", f["message"])
             self.assertIn("Inline exception", f["message"])
+
+
+class CaptureHeight(unittest.TestCase):
+    """The ceiling is limit/dpr, not a flat number.
+
+    A flat 30000 CSS px was safe only on the 1x desktop profiles. On every
+    phone and tablet it asked for 60000-105000 device pixels, the engine
+    refused the whole screenshot, and the device was lost from the run —
+    which is exactly what happened on a real client page.
+    """
+
+    def test_a_short_page_is_never_padded(self):
+        self.assertEqual(capture_height(1200, 3), 1200)
+        self.assertEqual(capture_height(1200, 1), 1200)
+
+    def test_the_ceiling_falls_as_pixel_density_rises(self):
+        for dpr in (1, 2, 3, 3.5):
+            self.assertLessEqual(capture_height(99999, dpr) * dpr, SHOT_LIMIT_PX, f"{dpr}x")
+        self.assertLess(capture_height(99999, 3), capture_height(99999, 2))
+
+    def test_every_profile_in_the_matrix_stays_under_the_engine_limit(self):
+        for p in load_devices(None):
+            px = capture_height(99999, p.device_scale_factor) * p.device_scale_factor
+            self.assertLessEqual(px, SHOT_LIMIT_PX, f"{p.id} would still be refused at {px}px")
+
+    def test_a_daft_scale_factor_cannot_produce_a_zero_height_clip(self):
+        self.assertGreaterEqual(capture_height(5000, 0), 1)
+        self.assertGreaterEqual(capture_height(0, 3), 1)
+        self.assertGreaterEqual(capture_height(-10, 3), 1)
 
 
 class RuleConfig(unittest.TestCase):

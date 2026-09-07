@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Check, ChevronRight, Columns3, ExternalLink } from "lucide-react";
+import { Check, ChevronRight, Columns3, ExternalLink, Globe, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CheckShell } from "@/components/layout-checks/check-shell";
@@ -10,6 +10,7 @@ import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { railItems } from "@/lib/layout-checks/findings-view";
 import { rovingTarget } from "@/lib/layout-checks/roving";
 import { ms } from "@/lib/layout-checks/motion";
+import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
 import { comparableEngines, engineColumns } from "@/lib/layout-checks/engines-view";
 import { DevicePreviewRunner } from "@/components/layout-checks/device-preview-runner";
 import {
@@ -102,13 +103,33 @@ export function DevicesPanel({
   const selectedCol = finding && finding.includes(":") ? finding.split(":")[0] : null;
   const selectedColItem = selectedCol ? columns.find((c) => c.engine === selectedCol)?.items.find((i) => compareId(selectedCol, i.id) === finding) ?? null : null;
   const showCompare = compare && canCompare;
+
+  // The real page in the frame, for when a picture of it is not the question.
+  // Asked for, never automatic: framing a client page is a real visit to it,
+  // so it happens on a click and carries the same QA parameters the sweep
+  // uses. The site decides whether it may be framed at all, and only the
+  // server can find that out — a refused frame is opaque to script.
+  const [live, setLive] = useState(false);
+  const [embed, setEmbed] = useState<{ checking?: boolean; reason?: string } | null>(null);
+  const goLive = async () => {
+    if (live) { setLive(false); return; }
+    setEmbed({ checking: true });
+    try {
+      const v = await (await fetch(`/api/embed-check?url=${encodeURIComponent(url)}`, { cache: "no-store" })).json();
+      if (v?.embeddable) { setEmbed(null); setLive(true); setFinding(null); }
+      else setEmbed({ reason: v?.reason ?? "This page cannot be shown inside the Dashboard." });
+    } catch {
+      setEmbed({ reason: "Could not check whether this page can be framed." });
+    }
+  };
+  const showLive = live && !showCompare;
   // "Desktop 1440 (Firefox)" names one pill; a compared frame is the viewport
   // plus its own engine, so the pill's engine must not leak into every caption.
   const viewportName = current ? current.label.replace(/\s*\([^)]*\)\s*$/, "") : "";
 
   // Try the live full page only where it can exist; a request the page knows
   // will fail is a blank frame for as long as it takes to fail.
-  const live = current && runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(current.profileId)}&kind=full` : null;
+  const liveShot = current && runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(current.profileId)}&kind=full` : null;
   const fold = current && runId && stored.has(current.profileId) ? `/api/devicepreview/shot?runId=${runId}&profile=${encodeURIComponent(current.profileId)}` : null;
 
   const runLine = running || progress.phase === "failed" ? (
@@ -301,17 +322,19 @@ export function DevicesPanel({
       <DeviceFrame
         shape={current.shape}
         viewport={current.viewport}
-        src={live ?? fold}
+        src={liveShot ?? fold}
         fallbackSrc={fold}
-        alt={`${current.label}, rendered page`}
+        liveSrc={showLive ? qaUrl(url) : null}
+        alt={showLive ? `${current.label}, the live page` : `${current.label}, rendered page`}
         title={url.replace(/^https?:\/\//, "")}
         maxHeight={720}
         highlight={selectedItem?.box ?? null}
         onImageMeta={setImageMeta}
       />
-      <p className="text-[12px] text-text-muted">
+      <p className="max-w-sm text-center text-[12px] text-text-muted">
         <span className="font-medium text-text-secondary">{current.label}</span>
-        {" · "}{current.engineLabel}{" · "}{current.viewportLabel}
+        {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
+        {showLive && <span className="mt-0.5 block text-[11.5px]">{LIVE_CAVEAT}</span>}
       </p>
     </Fade>
   ) : null;
@@ -319,15 +342,35 @@ export function DevicesPanel({
   // Your browser, not the device's: the live page in a window of the
   // profile's viewport size. Honest about what it is, in the tooltip.
   const openAtSize = current ? (
-    <Button
-      type="button"
-      variant="secondary"
-      size="sm"
-      onClick={() => window.open(url, "_blank", `width=${current.viewport.width},height=${current.viewport.height}`)}
-      title="Opens the live page in your own browser at this size — your browser, not the device's."
-    >
-      <ExternalLink className="size-4" /> Open at this size
-    </Button>
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {!showCompare && (
+          <Button
+            type="button"
+            variant={showLive ? "primary" : "secondary"}
+            size="sm"
+            aria-pressed={showLive}
+            onClick={goLive}
+            disabled={Boolean(embed?.checking)}
+            title={showLive ? "Back to the captured screenshot, where findings can be drawn."
+                            : "Loads the real page inside the frame at this viewport."}
+          >
+            {embed?.checking ? <Loader2 className="size-4 animate-spin" /> : <Globe className="size-4" />}
+            {embed?.checking ? "Checking…" : showLive ? "Show the capture" : "Open live here"}
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => window.open(url, "_blank", `width=${current.viewport.width},height=${current.viewport.height}`)}
+          title="Opens the live page in your own browser at this size — your browser, not the device's."
+        >
+          <ExternalLink className="size-4" /> Open in a window
+        </Button>
+      </div>
+      {embed?.reason && <p className="max-w-sm text-center text-[12px] text-text-muted">{embed.reason}</p>}
+    </div>
   ) : null;
 
   const rail = current && showCompare ? (
@@ -373,7 +416,12 @@ export function DevicesPanel({
         }
         items={items}
         selectedId={finding}
-        onSelect={(id) => setFinding((cur) => (cur === id ? null : id))}
+        onSelect={(id) => {
+          // A box is drawn on the capture, so choosing a finding comes back
+          // from the live page rather than selecting into nothing.
+          setLive(false);
+          setFinding((cur) => (cur === id ? null : id));
+        }}
         expanded={expanded}
         onToggle={() => setExpanded((e) => !e)}
         drawableHeight={imageMeta?.cssHeight ?? null}
