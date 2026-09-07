@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Columns3, ExternalLink } from "lucide-react";
+import { Check, Columns3, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CheckShell } from "@/components/layout-checks/check-shell";
@@ -9,6 +9,10 @@ import { DeviceFrame } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { railItems } from "@/lib/layout-checks/findings-view";
 import { comparableEngines, engineColumns } from "@/lib/layout-checks/engines-view";
+import { DevicePreviewRunner } from "@/components/layout-checks/device-preview-runner";
+import {
+  IDLE_PROGRESS, isBusy, progressNote, progressPct, type DeviceRunState, type RunProgress,
+} from "@/lib/layout-checks/run-progress";
 import type { TabVerdict } from "@/lib/layout-checks/verdict";
 import {
   defaultSelection, groupDevices, toView, type DeviceInput, type DeviceView, type Severity,
@@ -31,6 +35,7 @@ export function DevicesPanel({
   storedFolds,
   liveAvailable,
   headerAction,
+  run,
   url,
 }: {
   verdict: TabVerdict;
@@ -39,10 +44,20 @@ export function DevicesPanel({
   storedFolds: string[];
   /** The preview service is configured, so full-page images may still be served live. */
   liveAvailable: boolean;
-  /** The run control; sits beside the verdict, not under the frame. */
+  /** Shown beside the verdict when there is no run control to put there. */
   headerAction?: ReactNode;
+  /** Present when the preview service is configured: the panel hosts the runner. */
+  run?: { baselineServiceRunId: string | null; hasRuns: boolean };
   url: string;
 }) {
+  // A run in flight, drawn over the picker: every device grey, each one
+  // fading to what the service actually reported for it. The severity dots
+  // belong to the last saved run, so they step aside until this one is saved
+  // rather than sitting there stale next to a device being re-captured.
+  const [progress, setProgress] = useState<RunProgress>(IDLE_PROGRESS);
+  const running = isBusy(progress);
+  const note = progressNote(progress);
+
   const views = useMemo(() => devices.map(toView), [devices]);
   const groups = useMemo(() => groupDevices(views), [views]);
   const [selected, setSelected] = useState<string | null>(() => defaultSelection(views));
@@ -83,7 +98,19 @@ export function DevicesPanel({
   const live = current && runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(current.profileId)}&kind=full` : null;
   const fold = current && runId && stored.has(current.profileId) ? `/api/devicepreview/shot?runId=${runId}&profile=${encodeURIComponent(current.profileId)}` : null;
 
-  const picker = views.length ? (
+  const runLine = running || progress.phase === "failed" ? (
+    <div className="flex flex-col gap-1.5" role="status" aria-live="polite">
+      <p className={cn("text-[12.5px]", progress.phase === "failed" ? "text-error" : "text-text-muted")}>{note}</p>
+      {running && (
+        <div className="h-1 w-full max-w-sm overflow-hidden rounded-full bg-card-soft">
+          <div className="h-full rounded-full bg-accent transition-[width] duration-500"
+               style={{ width: `${Math.max(4, progressPct(progress))}%` }} />
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const pills = views.length ? (
     <div className="flex flex-wrap gap-x-7 gap-y-3" role="group" aria-label="Devices">
       {groups.map(({ group, devices: ds }) => (
         <div key={group} className="flex flex-col gap-1.5">
@@ -91,6 +118,7 @@ export function DevicesPanel({
           <div className="flex flex-wrap gap-1.5">
             {ds.map((d) => {
               const on = d.profileId === current?.profileId;
+              const runState: DeviceRunState | null = running ? progress.devices[d.label] ?? "waiting" : null;
               return (
                 <button
                   key={d.profileId}
@@ -99,16 +127,31 @@ export function DevicesPanel({
                   onClick={() => pick(d.profileId)}
                   title={`${d.label} · ${d.engineLabel} · ${d.viewportLabel}`}
                   className={cn(
-                    "group flex flex-col items-start rounded-lg px-2.5 py-1.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+                    "group flex flex-col items-start rounded-lg px-2.5 py-1.5 text-left transition-[opacity,color,background-color,border-color] duration-300 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
                     on ? "bg-accent text-text-on-dark" : "border border-border-soft bg-card text-text-primary hover:border-accent/50",
+                    runState === "waiting" && "opacity-55",
                   )}
                 >
                   <span className="flex items-center gap-1.5 text-[13px] font-medium leading-tight">
-                    {d.severity !== "clean" && (
+                    {runState ? (
+                      runState === "captured" ? (
+                        <Check aria-hidden className={cn("size-3 shrink-0 transition-colors duration-300", on ? "text-text-on-dark" : "text-text-secondary")} />
+                      ) : (
+                        <span aria-hidden className={cn(
+                          "inline-block size-2 shrink-0 rounded-full transition-colors duration-300",
+                          runState === "failed" ? "bg-error" : "bg-border-soft",
+                        )} />
+                      )
+                    ) : d.severity !== "clean" ? (
                       <span aria-hidden className={cn("inline-block size-2 shrink-0 rounded-full", DOT[d.severity])} />
-                    )}
+                    ) : null}
                     <span className="sr-only">
-                      {d.severity === "error" ? "has errors: " : d.severity === "warning" ? "has warnings: " : d.severity === "inconclusive" ? "not captured: " : ""}
+                      {runState === "captured" ? "captured: "
+                        : runState === "failed" ? "capture failed: "
+                        : runState === "waiting" ? "waiting: "
+                        : d.severity === "error" ? "has errors: "
+                        : d.severity === "warning" ? "has warnings: "
+                        : d.severity === "inconclusive" ? "not captured: " : ""}
                     </span>
                     {d.label}
                   </span>
@@ -124,7 +167,16 @@ export function DevicesPanel({
       ))}
     </div>
   ) : (
-    <p className="text-[13px] text-text-muted">Run the check to see it here.</p>
+    <p className="text-[13px] text-text-muted">
+      {running ? "The first run has no devices to list yet." : "Run the check to see it here."}
+    </p>
+  );
+
+  const picker = (
+    <div className="flex flex-col gap-3">
+      {runLine}
+      {pills}
+    </div>
   );
 
   const srcFor = (profileId: string) => ({
@@ -259,7 +311,9 @@ export function DevicesPanel({
   return (
     <CheckShell
       verdict={verdict}
-      headerAction={headerAction}
+      headerAction={run
+        ? <DevicePreviewRunner url={url} baselineServiceRunId={run.baselineServiceRunId} hasRuns={run.hasRuns} onProgress={setProgress} />
+        : headerAction}
       picker={picker}
       frame={frame}
       action={openAtSize}

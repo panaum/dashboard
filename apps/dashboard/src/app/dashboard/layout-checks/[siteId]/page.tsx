@@ -5,7 +5,6 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
 import { CheckRunner } from "@/components/layout-checks/check-runner";
-import { DevicePreviewRunner } from "@/components/layout-checks/device-preview-runner";
 import { SiteTabs } from "@/components/layout-checks/site-tabs";
 import { CheckShell } from "@/components/layout-checks/check-shell";
 import { DevicesPanel } from "@/components/layout-checks/devices-panel";
@@ -115,9 +114,10 @@ export default async function LayoutSitePage({
       storedFolds={dCur?.shots.map((s) => s.profileId) ?? []}
       liveAvailable={devicePreviewConfigured()}
       url={site.url}
-      headerAction={devicePreviewConfigured()
-        ? <DevicePreviewRunner url={site.url} baselineServiceRunId={dCur?.serviceRunId ?? null} hasRuns={Boolean(dCur)} />
-        : <p className="text-[12px] text-text-muted">Device preview is not configured on this deployment.</p>}
+      run={devicePreviewConfigured()
+        ? { baselineServiceRunId: dCur?.serviceRunId ?? null, hasRuns: Boolean(dCur) }
+        : undefined}
+      headerAction={<p className="text-[12px] text-text-muted">Device preview is not configured on this deployment.</p>}
     />
   );
 
