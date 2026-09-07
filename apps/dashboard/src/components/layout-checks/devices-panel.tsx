@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Check, Columns3, ExternalLink } from "lucide-react";
+import { Check, ChevronRight, Columns3, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CheckShell } from "@/components/layout-checks/check-shell";
@@ -17,7 +17,8 @@ import {
 } from "@/lib/layout-checks/run-progress";
 import type { TabVerdict } from "@/lib/layout-checks/verdict";
 import {
-  defaultSelection, groupDevices, toView, type DeviceInput, type DeviceView, type Severity,
+  defaultSelection, groupDevices, groupOfProfile, groupSummary, toView,
+  type DeviceInput, type DeviceView, type Group, type Severity,
 } from "@/lib/layout-checks/devices-view";
 
 // The Devices tab: pick one device, see that device. The picker carries a
@@ -25,6 +26,10 @@ import {
 // engine tag on every device, sorted worst first within Apple / Android /
 // Tablet / Desktop, with the worst one selected on load — so the broken ones
 // are found without clicking through all fourteen.
+
+const TONE_DOT: Record<string, string> = {
+  error: "bg-error", warning: "bg-warning", neutral: "bg-text-muted/50", success: "",
+};
 
 const DOT: Record<Severity, string> = {
   error: "bg-error", warning: "bg-warning", clean: "", inconclusive: "border border-text-muted bg-transparent",
@@ -64,6 +69,12 @@ export function DevicesPanel({
   const groups = useMemo(() => groupDevices(views), [views]);
   const [selected, setSelected] = useState<string | null>(() => defaultSelection(views));
   const current: DeviceView | undefined = views.find((v) => v.profileId === selected) ?? views[0];
+  // One group open at a time. Fourteen pills in four blocks is most of the
+  // screen spent on a control you use once; open on the group holding the
+  // device that opened, which is the worst one.
+  const [open, setOpen] = useState<Group | null>(
+    () => groupOfProfile(views, defaultSelection(views)) ?? groupDevices(views)[0]?.group ?? null,
+  );
   const stored = new Set(storedFolds);
 
   // Rail state is per device: a new device means no selected finding, the
@@ -112,23 +123,59 @@ export function DevicesPanel({
     </div>
   ) : null;
 
-  // One tab stop for the picker, arrows between the devices — the reading
-  // order across the four groups, not four separate stops.
-  const order = groups.flatMap((g) => g.devices);
+  // One tab stop for the picker, arrows between the devices of the open group.
+  // A collapsed group is inert, so nothing focusable hides behind a closed row.
+  const openDevices = groups.find((g) => g.group === open)?.devices ?? [];
+  const tabTarget = openDevices.find((d) => d.profileId === current?.profileId)?.profileId
+    ?? openDevices[0]?.profileId;
   const onPickerKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    const j = rovingTarget(e.key, order.findIndex((d) => d.profileId === current?.profileId), order.length);
+    const j = rovingTarget(e.key, openDevices.findIndex((d) => d.profileId === current?.profileId), openDevices.length);
     if (j === null) return;
     e.preventDefault();
-    pick(order[j].profileId);
-    document.getElementById(`d-pick-${order[j].profileId}`)?.focus();
+    pick(openDevices[j].profileId);
+    document.getElementById(`d-pick-${openDevices[j].profileId}`)?.focus();
   };
 
   const pills = views.length ? (
-    <div className="flex flex-wrap gap-x-7 gap-y-3" role="radiogroup" aria-label="Devices" onKeyDown={onPickerKey}>
-      {groups.map(({ group, devices: ds }) => (
-        <div key={group} className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">{group}</span>
-          <div className="flex flex-wrap gap-1.5">
+    <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
+      {groups.map(({ group, devices: ds }, gi) => {
+        const isOpen = group === open;
+        const sum = groupSummary(ds);
+        return (
+        <div key={group} className={cn(gi > 0 && "border-t border-border-soft")}>
+          <button
+            type="button"
+            aria-expanded={isOpen}
+            aria-controls={`d-grp-${group}`}
+            onClick={() => setOpen(isOpen ? null : group)}
+            className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-card-soft focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+          >
+            <ChevronRight
+              aria-hidden
+              className={cn("size-3.5 shrink-0 text-text-muted motion-safe:transition-transform motion-safe:duration-200",
+                            isOpen && "rotate-90")}
+            />
+            <span className="text-[12px] font-semibold uppercase tracking-[0.07em] text-text-secondary">{group}</span>
+            <span className="text-[11.5px] tabular-nums text-text-muted">{ds.length}</span>
+            <span className="ml-auto flex items-center gap-1.5">
+              {sum.tone !== "success" && (
+                <span aria-hidden className={cn("inline-block size-1.5 rounded-full", TONE_DOT[sum.tone])} />
+              )}
+              <span className="text-[11.5px] text-text-muted">{sum.label}</span>
+            </span>
+          </button>
+
+          {/* 0fr → 1fr animates to the content's own height, so a group with two
+              rows of pills opens as smoothly as one with a single row. */}
+          <div
+            id={`d-grp-${group}`}
+            inert={!isOpen}
+            style={{ display: "grid", gridTemplateRows: isOpen ? "1fr" : "0fr",
+                     transition: `grid-template-rows ${ms(200)}ms ease` }}
+          >
+            <div className="overflow-hidden">
+              <div className="flex flex-wrap gap-1.5 px-3 pb-3 pt-0.5"
+                   role="radiogroup" aria-label={`${group} devices`} onKeyDown={onPickerKey}>
             {ds.map((d) => {
               const on = d.profileId === current?.profileId;
               const runState: DeviceRunState | null = running ? progress.devices[d.label] ?? "waiting" : null;
@@ -139,7 +186,7 @@ export function DevicesPanel({
                   type="button"
                   role="radio"
                   aria-checked={on}
-                  tabIndex={on ? 0 : -1}
+                  tabIndex={d.profileId === tabTarget ? 0 : -1}
                   onClick={() => pick(d.profileId)}
                   title={`${d.label} · ${d.engineLabel} · ${d.viewportLabel}`}
                   className={cn(
@@ -178,9 +225,12 @@ export function DevicesPanel({
                 </button>
               );
             })}
+              </div>
+            </div>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   ) : (
     <p className="text-[13px] text-text-muted">
@@ -255,6 +305,7 @@ export function DevicesPanel({
         fallbackSrc={fold}
         alt={`${current.label}, rendered page`}
         title={url.replace(/^https?:\/\//, "")}
+        maxHeight={720}
         highlight={selectedItem?.box ?? null}
         onImageMeta={setImageMeta}
       />
@@ -312,6 +363,14 @@ export function DevicesPanel({
     ) : (
       <FindingsRail
         deviceLabel={current.label}
+        heading={
+          <p className="mb-2 flex items-baseline gap-2 border-b border-border-soft pb-2 text-[12px] font-semibold uppercase tracking-[0.07em] text-text-muted">
+            {current.label}
+            <span className="font-medium normal-case tracking-normal text-text-muted/80">
+              {items.length ? `${items.length} finding${items.length === 1 ? "" : "s"}` : "clean"}
+            </span>
+          </p>
+        }
         items={items}
         selectedId={finding}
         onSelect={(id) => setFinding((cur) => (cur === id ? null : id))}
