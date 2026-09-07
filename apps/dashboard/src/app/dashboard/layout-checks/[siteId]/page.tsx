@@ -4,27 +4,26 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckRunner } from "@/components/layout-checks/check-runner";
-import { DevicePreviewSection } from "@/components/layout-checks/device-preview-section";
+import { DevicePreviewRunner } from "@/components/layout-checks/device-preview-runner";
+import { SiteTabs } from "@/components/layout-checks/site-tabs";
+import { CheckShell } from "@/components/layout-checks/check-shell";
 import { devicePreviewConfigured } from "@/lib/devicepreview/client";
-import { diffRuns, verdictOf } from "@/lib/linkspy/layout-history";
-import {
-  type ResponsiveFinding,
-  FINDING_TONE,
-  orderFindings,
-  widthLabel,
-} from "@/lib/linkspy/responsive-view";
+import type { DpReport } from "@/lib/devicepreview/history";
+import { devicesVerdict, viewportsVerdict } from "@/lib/layout-checks/verdict";
+import type { ResponsiveFinding } from "@/lib/linkspy/responsive-view";
 
-export const metadata = { title: "Layout history" };
+export const metadata = { title: "Layout checks" };
 
-const MOVE_LABEL = {
-  fixed: "Fixed", introduced: "New", "still-open": "Still open", unchanged: "Unchanged",
-} as const;
-const MOVE_TONE = {
-  fixed: "success", introduced: "error", "still-open": "warning", unchanged: "neutral",
-} as const;
+// One screenshot and the findings for that screenshot, nothing else. Two
+// tabs — the eight-width sweep and the device-matrix run — share one layout
+// (CheckShell) so the interaction is learned once. Step 1 of the redesign:
+// the tab structure, the verdict lines, and the shell with a placeholder
+// picker and rail; the pickers, frames and rail arrive in the next steps.
+
+const PLATFORM_LABEL: Record<string, string> = {
+  ios: "Apple", ipados: "Tablet", android: "Android", desktop: "Desktop",
+};
 
 export default async function LayoutSitePage({
   params,
@@ -39,36 +38,125 @@ export default async function LayoutSitePage({
     include: {
       runs: {
         orderBy: { checkedAt: "desc" },
-        take: 12,
+        take: 2,
         include: { shots: { select: { width: true }, orderBy: { width: "asc" } } },
       },
       devicePreviews: {
         orderBy: { checkedAt: "desc" },
-        take: 12,
+        take: 2,
         include: { shots: { select: { profileId: true } } },
       },
     },
   });
   if (!site) notFound();
-  const devicePreview = (
-    <DevicePreviewSection url={site.url} runs={site.devicePreviews} configured={devicePreviewConfigured()} />
+
+
+  // ── Viewports ────────────────────────────────────────────────────────────
+  const [vCur, vPrev] = site.runs;
+  const asViewportsRun = (r: typeof vCur | undefined) => r
+    ? { findings: r.findings as unknown as ResponsiveFinding[], widths: r.shots.map((s) => s.width), checkedAt: r.checkedAt.toISOString() }
+    : null;
+  const vVerdict = viewportsVerdict(asViewportsRun(vCur), asViewportsRun(vPrev));
+  const widths = vCur?.shots.map((s) => s.width) ?? [];
+
+  const viewportsPanel = (
+    <CheckShell
+      verdict={vVerdict}
+      picker={
+        vCur ? (
+          <div className="flex flex-wrap gap-2" aria-label="Widths">
+            {widths.map((w, i) => (
+              <span key={w} className={i === 0
+                ? "rounded-full bg-accent px-3 py-1 text-[13px] font-medium text-text-on-dark"
+                : "rounded-full border border-border-soft px-3 py-1 text-[13px] text-text-secondary"}>
+                {w}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[13px] text-text-muted">Run the check to see it here.</p>
+        )
+      }
+      frame={
+        vCur && widths.length ? (
+          <div className="w-full max-w-[420px] overflow-hidden rounded-xl border border-border-soft bg-card-soft">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`/api/layout-shot?runId=${vCur.id}&width=${widths[0]}`} alt={`Rendered at ${widths[0]} pixels wide`}
+                 className="block max-h-[640px] w-full object-cover object-top" />
+          </div>
+        ) : null
+      }
+      action={<CheckRunner url={site.url} label={vCur ? "Run again" : "Run the eight-width check"} />}
+      rail={
+        <p className="text-[13px] text-text-muted">
+          {vCur ? "Findings for the selected width will appear here." : "No run yet."}
+        </p>
+      }
+      railLabel="Findings at the selected width"
+    />
   );
 
-  const [current, previous] = site.runs;
-  const changes = current
-    ? diffRuns(
-        previous
-          ? { checkedAt: previous.checkedAt.toISOString(),
-              findings: previous.findings as unknown as ResponsiveFinding[] }
-          : null,
-        { checkedAt: current.checkedAt.toISOString(),
-          findings: current.findings as unknown as ResponsiveFinding[] },
-      )
-    : [];
-  const verdict = verdictOf(changes, Boolean(previous));
-  const findings = current
-    ? orderFindings(current.findings as unknown as ResponsiveFinding[])
-    : [];
+  // ── Devices ──────────────────────────────────────────────────────────────
+  const [dCur, dPrev] = site.devicePreviews;
+  const asDevicesRun = (r: typeof dCur | undefined) => r
+    ? { report: r.report as unknown as DpReport, checkedAt: r.checkedAt.toISOString() } : null;
+  const dVerdict = devicesVerdict(asDevicesRun(dCur), asDevicesRun(dPrev));
+  const dReport = dCur ? (dCur.report as unknown as DpReport) : null;
+  const dShots = new Set(dCur?.shots.map((s) => s.profileId) ?? []);
+  const firstDevice = dReport?.devices[0];
+  const grouped = new Map<string, DpReport["devices"]>();
+  for (const d of dReport?.devices ?? []) {
+    const list = grouped.get(d.platform) ?? [];
+    list.push(d);
+    grouped.set(d.platform, list);
+  }
+  const groups = Array.from(grouped);
+
+  const devicesPanel = (
+    <CheckShell
+      verdict={dVerdict}
+      picker={
+        dReport ? (
+          <div className="flex flex-wrap gap-x-6 gap-y-3" aria-label="Devices">
+            {groups.map(([platform, devs]) => (
+              <div key={platform} className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">{PLATFORM_LABEL[platform] ?? platform}</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {devs.map((d) => (
+                    <span key={d.profile_id} className={d.profile_id === firstDevice?.profile_id
+                      ? "rounded-full bg-accent px-3 py-1 text-[13px] font-medium text-text-on-dark"
+                      : "rounded-full border border-border-soft px-3 py-1 text-[13px] text-text-secondary"}>
+                      {d.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[13px] text-text-muted">Run the check to see it here.</p>
+        )
+      }
+      frame={
+        dCur && firstDevice && dShots.has(firstDevice.profile_id) ? (
+          <div className="w-full max-w-[420px] overflow-hidden rounded-xl border border-border-soft bg-card-soft">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`/api/devicepreview/shot?runId=${dCur.id}&profile=${encodeURIComponent(firstDevice.profile_id)}`}
+                 alt={`${firstDevice.label}, above the fold`} className="block max-h-[640px] w-full object-cover object-top" />
+          </div>
+        ) : null
+      }
+      action={devicePreviewConfigured()
+        ? <DevicePreviewRunner url={site.url} baselineServiceRunId={dCur?.serviceRunId ?? null} hasRuns={Boolean(dCur)} />
+        : <p className="text-[12px] text-text-muted">Device preview is not configured on this deployment.</p>}
+      rail={
+        <p className="text-[13px] text-text-muted">
+          {dCur ? "Findings for the selected device will appear here." : "No run yet."}
+        </p>
+      }
+      railLabel="Findings on the selected device"
+    />
+  );
 
   return (
     <>
@@ -80,146 +168,19 @@ export default async function LayoutSitePage({
       <PageHeader
         title={site.label ?? site.url.replace(/^https?:\/\//, "")}
         subtitle={site.url}
-        action={<CheckRunner url={site.url} label={current ? "Re-test" : "Run first check"} />}
-      />
-
-      {!current ? (
-        <div className="flex flex-col gap-5">
-        <Card className="px-5 py-10 text-center">
-          <p className="text-sm text-text-secondary">
-            No checks yet. Run one to record how this page renders at eight widths.
-          </p>
-        </Card>
-        {devicePreview}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          <Card className="px-5 py-4">
-            <p className="text-sm font-medium text-text-primary">{verdict.headline}</p>
-            <p className="mt-0.5 text-[12px] text-text-muted">
-              Checked {current.checkedAt.toLocaleString()}
-              {previous && ` · compared against ${previous.checkedAt.toLocaleString()}`}
-            </p>
-          </Card>
-
-          {previous && (
-            <Card>
-              <CardHeader>
-                <CardTitle>What changed since the last check</CardTitle>
-              </CardHeader>
-              <div className="flex flex-col divide-y divide-border-soft">
-                {changes.filter((c) => c.movement !== "unchanged").length === 0 ? (
-                  <p className="px-5 py-4 text-[13px] text-text-secondary">
-                    Nothing moved between these two checks.
-                  </p>
-                ) : (
-                  changes
-                    .filter((c) => c.movement !== "unchanged")
-                    .map((c) => (
-                      <div key={c.id} className="flex flex-wrap items-baseline gap-2 px-5 py-3">
-                        <Badge tone={MOVE_TONE[c.movement]}>{MOVE_LABEL[c.movement]}</Badge>
-                        <span className="text-sm font-medium text-text-primary">{c.title}</span>
-                        <span className="text-[12px] text-text-muted">
-                          {c.before ?? "—"} → {c.after ?? "—"}
-                        </span>
-                      </div>
-                    ))
-                )}
-              </div>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle>This check</CardTitle>
-            </CardHeader>
-            <div className="flex flex-col divide-y divide-border-soft">
-              {findings.map((f) => (
-                <div key={f.id} className="px-5 py-3">
-                  <div className="mb-0.5 flex items-center gap-2">
-                    <Badge tone={FINDING_TONE[f.status]}>{f.status}</Badge>
-                    <span className="text-sm font-medium text-text-primary">{f.title}</span>
-                  </div>
-                  {f.detail && (
-                    <p className="max-w-prose text-[13px] text-text-secondary">{f.detail}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {current.shots.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  How it renders{previous?.shots.length ? " — now, and last time" : ""}
-                </CardTitle>
-              </CardHeader>
-              <div className="grid grid-cols-2 gap-4 px-5 pb-5 sm:grid-cols-4">
-                {current.shots.map((s) => {
-                  const had = previous?.shots.some((p) => p.width === s.width);
-                  return (
-                    <div key={s.width} className="flex flex-col gap-1.5">
-                      <span className="text-[12px] text-text-secondary">{widthLabel(s.width)}</span>
-                      <a href={`/api/layout-shot?runId=${current.id}&width=${s.width}`}
-                         target="_blank" rel="noopener"
-                         className="block overflow-hidden rounded-lg border border-border-soft transition-colors hover:border-accent/50">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/api/layout-shot?runId=${current.id}&width=${s.width}`}
-                             alt={`Rendered at ${s.width} pixels wide`} loading="lazy"
-                             className="block h-36 w-full object-cover object-top" />
-                      </a>
-                      {had && previous && (
-                        <a href={`/api/layout-shot?runId=${previous.id}&width=${s.width}`}
-                           target="_blank" rel="noopener"
-                           className="text-[11px] text-accent hover:underline">
-                          compare with last check
-                        </a>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="px-5 pb-5 text-[12px] text-text-muted">
-                Screenshots are kept for the two most recent checks. Older checks keep
-                what they found, but not the images.
-              </p>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle>History</CardTitle>
-            </CardHeader>
-            <div className="flex flex-col divide-y divide-border-soft">
-              {site.runs.map((r) => (
-                <div key={r.id} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
-                  <span className="w-52 text-[13px] text-text-secondary">
-                    {r.checkedAt.toLocaleString()}
-                  </span>
-                  <Badge tone={r.worst === "FAIL" ? "error" : r.worst === "WARN" ? "warning"
-                    : r.worst === "SKIP" ? "neutral" : "success"}>
-                    {r.worst}
-                  </Badge>
-                  <span className="text-[12px] text-text-muted">
-                    {r.failCount} failing · {r.warnCount} to look at
-                  </span>
-                  {r.shots.length === 0 && (
-                    <span className="ml-auto text-[11px] text-text-muted">images pruned</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {devicePreview}
-
+        action={
           <a href={site.url} target="_blank" rel="noopener"
-             className="inline-flex w-fit items-center gap-2 text-[13px] text-text-secondary hover:text-text-primary">
+             className="inline-flex items-center gap-2 text-[13px] text-text-secondary hover:text-text-primary">
             Open the page <ExternalLink className="size-3.5" />
           </a>
-        </div>
-      )}
+        }
+      />
+
+      <SiteTabs
+        panels={{ viewports: viewportsPanel, devices: devicesPanel }}
+        explainFor={{ viewports: !vCur, devices: !dCur }}
+        initial={vCur || !dCur ? "viewports" : "devices"}
+      />
     </>
   );
 }
