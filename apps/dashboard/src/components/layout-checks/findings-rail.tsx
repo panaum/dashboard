@@ -44,7 +44,22 @@ export function FindingsRail({
       <ul className="flex flex-col" aria-label={`Findings on ${deviceLabel}`}>
         {shown.map((it) => {
           const on = it.id === selectedId;
-          const belowImage = it.box !== null && drawableHeight !== null && it.box.y >= drawableHeight;
+          // The finding has a measured place on the page; what is missing is
+          // the image to draw it on. Say that, and do not offer a click that
+          // would draw nothing.
+          const notStored = it.box !== null && drawableHeight !== null && it.box.y >= drawableHeight;
+          if (notStored) {
+            return (
+              <li key={it.id} className="flex flex-col items-start gap-0.5 px-2.5 py-2">
+                <span className="flex items-center gap-2 text-[13px] font-medium leading-snug text-text-secondary">
+                  <span aria-hidden className={cn("inline-block size-2 shrink-0 rounded-full opacity-70", DOT[it.severity])} />
+                  {it.label}
+                </span>
+                <span className="pl-4 font-mono text-[11px] leading-snug text-text-muted">{it.selector ?? "—"}</span>
+                <span className="pl-4 text-[10.5px] text-text-muted/80">full page not stored for this run</span>
+              </li>
+            );
+          }
           return (
             <li key={it.id}>
               <button
@@ -63,7 +78,6 @@ export function FindingsRail({
                 </span>
                 <span className="pl-4 font-mono text-[11px] leading-snug text-text-muted">
                   {it.pageLevel ? "whole page" : (it.selector ?? "—")}
-                  {belowImage && <span className="ml-1.5 font-sans text-[10.5px] text-text-muted/80">· below the fold</span>}
                 </span>
               </button>
             </li>

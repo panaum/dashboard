@@ -86,7 +86,7 @@ export default async function LayoutSitePage({
           </div>
         ) : null
       }
-      action={<CheckRunner url={site.url} label={vCur ? "Run again" : "Run the eight-width check"} />}
+      headerAction={<CheckRunner url={site.url} label={vCur ? "Run again" : "Run the eight-width check"} />}
       rail={
         <p className="text-[13px] text-text-muted">
           {vCur ? "Findings for the selected width will appear here." : "No run yet."}
@@ -115,7 +115,7 @@ export default async function LayoutSitePage({
       storedFolds={dCur?.shots.map((s) => s.profileId) ?? []}
       liveAvailable={devicePreviewConfigured()}
       url={site.url}
-      action={devicePreviewConfigured()
+      headerAction={devicePreviewConfigured()
         ? <DevicePreviewRunner url={site.url} baselineServiceRunId={dCur?.serviceRunId ?? null} hasRuns={Boolean(dCur)} />
         : <p className="text-[12px] text-text-muted">Device preview is not configured on this deployment.</p>}
     />

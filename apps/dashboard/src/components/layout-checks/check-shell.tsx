@@ -28,6 +28,7 @@ export function VerdictLine({ verdict }: { verdict: TabVerdict }) {
 
 export function CheckShell({
   verdict,
+  headerAction,
   picker,
   frame,
   action,
@@ -35,6 +36,8 @@ export function CheckShell({
   railLabel,
 }: {
   verdict: TabVerdict;
+  /** Run controls: beside the verdict, so the one button under the frame stays "Open at this size". */
+  headerAction?: ReactNode;
   picker: ReactNode;
   frame: ReactNode;
   action?: ReactNode;
@@ -43,7 +46,10 @@ export function CheckShell({
 }) {
   return (
     <div className="flex flex-col gap-5">
-      <VerdictLine verdict={verdict} />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <VerdictLine verdict={verdict} />
+        {headerAction && <div className="shrink-0">{headerAction}</div>}
+      </div>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         <section className="flex min-w-0 flex-col gap-4" aria-label="Screenshot">
           <div>{picker}</div>

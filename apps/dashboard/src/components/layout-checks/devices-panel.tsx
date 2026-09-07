@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
+import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { CheckShell } from "@/components/layout-checks/check-shell";
 import { DeviceFrame } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
@@ -27,7 +29,7 @@ export function DevicesPanel({
   devices,
   storedFolds,
   liveAvailable,
-  action,
+  headerAction,
   url,
 }: {
   verdict: TabVerdict;
@@ -36,7 +38,8 @@ export function DevicesPanel({
   storedFolds: string[];
   /** The preview service is configured, so full-page images may still be served live. */
   liveAvailable: boolean;
-  action?: ReactNode;
+  /** The run control; sits beside the verdict, not under the frame. */
+  headerAction?: ReactNode;
   url: string;
 }) {
   const views = useMemo(() => devices.map(toView), [devices]);
@@ -50,7 +53,9 @@ export function DevicesPanel({
   const [finding, setFinding] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [imageMeta, setImageMeta] = useState<{ cssHeight: number } | null>(null);
-  const pick = (profileId: string) => { setSelected(profileId); setFinding(null); setExpanded(false); setImageMeta(null); };
+  // The selection belongs to the device; expanded/collapsed is a density
+  // preference and survives the switch.
+  const pick = (profileId: string) => { setSelected(profileId); setFinding(null); setImageMeta(null); };
   const currentRaw = devices.find((d) => d.profile_id === current?.profileId);
   const items = useMemo(() => railItems(currentRaw?.findings ?? []), [currentRaw]);
   const selectedItem = items.find((i) => i.id === finding) ?? null;
@@ -123,6 +128,20 @@ export function DevicesPanel({
     </div>
   ) : null;
 
+  // Your browser, not the device's: the live page in a window of the
+  // profile's viewport size. Honest about what it is, in the tooltip.
+  const openAtSize = current ? (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      onClick={() => window.open(url, "_blank", `width=${current.viewport.width},height=${current.viewport.height}`)}
+      title="Opens the live page in your own browser at this size — your browser, not the device's."
+    >
+      <ExternalLink className="size-4" /> Open at this size
+    </Button>
+  ) : null;
+
   const rail = current ? (
     current.status !== "ok" ? (
       <p className="text-[13px] text-text-secondary">
@@ -143,5 +162,15 @@ export function DevicesPanel({
     <p className="text-[13px] text-text-muted">No run yet.</p>
   );
 
-  return <CheckShell verdict={verdict} picker={picker} frame={frame} action={action} rail={rail} railLabel={current ? `Findings on ${current.label}` : "Findings"} />;
+  return (
+    <CheckShell
+      verdict={verdict}
+      headerAction={headerAction}
+      picker={picker}
+      frame={frame}
+      action={openAtSize}
+      rail={rail}
+      railLabel={current ? `Findings on ${current.label}` : "Findings"}
+    />
+  );
 }
