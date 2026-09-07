@@ -27,16 +27,37 @@ export default function LoginPage() {
         <form action={formAction} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label
+              htmlFor="email"
+              className="text-[13px] font-medium text-text-secondary"
+            >
+              Email
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="username"
+              autoFocus
+              placeholder="you@apexure.com"
+              className="rounded-md border border-border-soft bg-card px-3 py-2.5 text-sm text-text-primary outline-none focus:border-accent"
+            />
+            <p className="text-[12px] text-text-muted">
+              Leave blank to sign in with the shared team password.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label
               htmlFor="password"
               className="text-[13px] font-medium text-text-secondary"
             >
-              Team password
+              Password
             </label>
             <input
               id="password"
               name="password"
               type="password"
-              autoFocus
+              autoComplete="current-password"
               required
               className="rounded-md border border-border-soft bg-card px-3 py-2.5 text-sm text-text-primary outline-none focus:border-accent"
             />
