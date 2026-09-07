@@ -384,11 +384,23 @@ def _ranges(widths: list[int]) -> str:
 
 def responsive_findings(r: dict) -> list[dict]:
     """Collapse per-width results into one finding per distinct problem."""
-    F_ = F
+    # Every finding also carries `widths`: the widths this statement is about,
+    # sorted. The prose already says it ("at 350–470"), but a reader filtering
+    # to one screen size should not have to parse a sentence to do it. Additive
+    # — the rest of the finding is unchanged, and a consumer that ignores the
+    # key sees exactly what it saw before. A PASS is about every width that
+    # rendered; a SKIP about the widths that produced nothing.
+    def F_(fid, status, title, detail="", evidence=None, widths=()):
+        f = F(fid, status, title, detail, evidence)
+        f["widths"] = sorted({int(w) for w in widths})
+        return f
+
+    seen_widths = [wd["width"] for wd in (r.get("widths") or [])]
     out: list[dict] = []
     if r.get("errors"):
         out.append(F_("responsive-load", "SKIP", "Responsive sweep",
-                      f"{len(r['errors'])} width(s) could not be measured.", r["errors"][:5]))
+                      f"{len(r['errors'])} width(s) could not be measured.", r["errors"][:5],
+                      widths=[w for w in WIDTH_LIST if w not in seen_widths]))
     if not r.get("widths"):
         return out
 
@@ -398,11 +410,12 @@ def responsive_findings(r: dict) -> list[dict]:
         out.append(F_("blocked", "SKIP", "Blocked at some widths",
                       f"A bot challenge was served at {_ranges(blocked_w)}, so those widths "
                       "measured nothing real. Re-run, more slowly, before trusting this page.",
-                      [w for w in why if w][:3]))
+                      [w for w in why if w][:3], widths=blocked_w))
     # Everything below reads only the widths that actually rendered the page.
     r = {**r, "widths": [wd for wd in r["widths"] if not wd.get("challenged")]}
     if not r["widths"]:
         return out
+    rendered = [wd["width"] for wd in r["widths"]]
 
     # 1 · overflow, keyed by culprit element
     by_el: dict[str, dict] = {}
@@ -420,10 +433,10 @@ def responsive_findings(r: dict) -> list[dict]:
         hit = sorted({w for e in by_el.values() for w in e["widths"]})
         out.append(F_("overflow", sev, "Horizontal overflow",
                       f"The page scrolls sideways at {_ranges(hit)} — worst excess "
-                      f"{worst_doc}px past the viewport.", ev))
+                      f"{worst_doc}px past the viewport.", ev, widths=hit))
     else:
         out.append(F_("overflow", "PASS", "Horizontal overflow",
-                      "No sideways scroll at any of the eight widths."))
+                      "No sideways scroll at any of the eight widths.", widths=rendered))
 
     # 1b · content cut at the viewport edge
     by_edge: dict[str, dict] = {}
@@ -438,10 +451,11 @@ def responsive_findings(r: dict) -> list[dict]:
               for s_, g in sorted(by_edge.items(), key=lambda kv: -kv[1]["cut"])[:8]]
         out.append(F_("edge", "WARN", "Content cut off at the edge",
                       f"{len(by_edge)} image(s) or text block(s) run past the viewport and are "
-                      "clipped. Some bleed is deliberate — check the screenshots.", ev))
+                      "clipped. Some bleed is deliberate — check the screenshots.", ev,
+                      widths=[w for g in by_edge.values() for w in g["widths"]]))
     else:
         out.append(F_("edge", "PASS", "Content cut off at the edge",
-                      "Nothing runs past the viewport edge."))
+                      "Nothing runs past the viewport edge.", widths=rendered))
 
     # 2 · clipped text — ambiguous by nature, so it never escalates past WARN
     by_cut: dict[str, dict] = {}
@@ -455,9 +469,11 @@ def responsive_findings(r: dict) -> list[dict]:
               for s, e in list(by_cut.items())[:8]]
         out.append(F_("clipped", "WARN", "Clipped text",
                       f"{len(by_cut)} element(s) hide part of their text behind "
-                      "overflow:hidden. Check the screenshots — some clipping is deliberate.", ev))
+                      "overflow:hidden. Check the screenshots — some clipping is deliberate.", ev,
+                      widths=[w for e in by_cut.values() for w in e["widths"]]))
     else:
-        out.append(F_("clipped", "PASS", "Clipped text", "No text clipped by a hidden overflow."))
+        out.append(F_("clipped", "PASS", "Clipped text", "No text clipped by a hidden overflow.",
+                      widths=rendered))
 
     # 3 · overlapping text
     by_ov: dict[tuple[str, str], dict] = {}
@@ -472,9 +488,11 @@ def responsive_findings(r: dict) -> list[dict]:
               for (a, b), e in sorted(by_ov.items(), key=lambda kv: -kv[1]["pct"])[:6]]
         out.append(F_("overlap", "WARN", "Overlapping text",
                       f"{len(by_ov)} pair(s) of siblings overlap where one carries text. "
-                      "Confirm against the screenshots before reporting.", ev))
+                      "Confirm against the screenshots before reporting.", ev,
+                      widths=[w for e in by_ov.values() for w in e["widths"]]))
     else:
-        out.append(F_("overlap", "PASS", "Overlapping text", "No text-bearing siblings overlap."))
+        out.append(F_("overlap", "PASS", "Overlapping text", "No text-bearing siblings overlap.",
+                      widths=rendered))
 
     # 4 · CTA position — measured, not judged
     rows, below = [], []
@@ -501,12 +519,13 @@ def responsive_findings(r: dict) -> list[dict]:
         else:
             detail = "Visible without scrolling at every width."
         out.append(F_("cta", "WARN" if below else "PASS", "Is the CTA visible before scrolling?",
-                      detail, rows))
+                      detail, rows, widths=below or seen_w))
 
     if r.get("shots"):
         out.append(F_("shots", "INFO", "Screenshots",
                       f"{len(r['shots'])} full-page screenshots — these are the deliverable.",
-                      [f"{s['width']:>5}px  {s['path']}" for s in r["shots"]]))
+                      [f"{s['width']:>5}px  {s['path']}" for s in r["shots"]],
+                      widths=[s["width"] for s in r["shots"]]))
     return out
 
 
