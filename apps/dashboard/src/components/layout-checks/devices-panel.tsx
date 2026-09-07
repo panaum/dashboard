@@ -4,6 +4,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { CheckShell } from "@/components/layout-checks/check-shell";
 import { DeviceFrame } from "@/components/layout-checks/device-frame";
+import { FindingsRail } from "@/components/layout-checks/findings-rail";
+import { railItems } from "@/lib/layout-checks/findings-view";
 import type { TabVerdict } from "@/lib/layout-checks/verdict";
 import {
   defaultSelection, groupDevices, toView, type DeviceInput, type DeviceView, type Severity,
@@ -43,6 +45,16 @@ export function DevicesPanel({
   const current: DeviceView | undefined = views.find((v) => v.profileId === selected) ?? views[0];
   const stored = new Set(storedFolds);
 
+  // Rail state is per device: a new device means no selected finding, the
+  // list folded back to five, and no assumptions about the image until it loads.
+  const [finding, setFinding] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [imageMeta, setImageMeta] = useState<{ cssHeight: number } | null>(null);
+  const pick = (profileId: string) => { setSelected(profileId); setFinding(null); setExpanded(false); setImageMeta(null); };
+  const currentRaw = devices.find((d) => d.profile_id === current?.profileId);
+  const items = useMemo(() => railItems(currentRaw?.findings ?? []), [currentRaw]);
+  const selectedItem = items.find((i) => i.id === finding) ?? null;
+
   // Try the live full page only where it can exist; a request the page knows
   // will fail is a blank frame for as long as it takes to fail.
   const live = current && runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(current.profileId)}&kind=full` : null;
@@ -61,7 +73,7 @@ export function DevicesPanel({
                   key={d.profileId}
                   type="button"
                   aria-pressed={on}
-                  onClick={() => setSelected(d.profileId)}
+                  onClick={() => pick(d.profileId)}
                   title={`${d.label} · ${d.engineLabel} · ${d.viewportLabel}`}
                   className={cn(
                     "group flex flex-col items-start rounded-lg px-2.5 py-1.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
@@ -101,6 +113,8 @@ export function DevicesPanel({
         fallbackSrc={fold}
         alt={`${current.label}, rendered page`}
         title={url.replace(/^https?:\/\//, "")}
+        highlight={selectedItem?.box ?? null}
+        onImageMeta={setImageMeta}
       />
       <p className="text-[12px] text-text-muted">
         <span className="font-medium text-text-secondary">{current.label}</span>
@@ -110,7 +124,21 @@ export function DevicesPanel({
   ) : null;
 
   const rail = current ? (
-    <p className="text-[13px] text-text-muted">Findings on {current.label} will appear here.</p>
+    current.status !== "ok" ? (
+      <p className="text-[13px] text-text-secondary">
+        {current.status === "blocked" ? "Blocked by bot protection — nothing on this device was audited." : `Capture failed${current.error ? `: ${current.error}` : "."}`}
+      </p>
+    ) : (
+      <FindingsRail
+        deviceLabel={current.label}
+        items={items}
+        selectedId={finding}
+        onSelect={(id) => setFinding((cur) => (cur === id ? null : id))}
+        expanded={expanded}
+        onToggle={() => setExpanded((e) => !e)}
+        drawableHeight={imageMeta?.cssHeight ?? null}
+      />
+    )
   ) : (
     <p className="text-[13px] text-text-muted">No run yet.</p>
   );

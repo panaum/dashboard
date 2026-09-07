@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { Shape } from "@/lib/layout-checks/devices-view";
 
@@ -20,6 +20,7 @@ const CHROME_H = 34;          // the desktop title bar
 const FADE_MS = 150;
 
 type Layer = { key: number; src: string; loaded: boolean; failed: boolean };
+export type Box = { x: number; y: number; width: number; height: number };
 
 export function DeviceFrame({
   shape,
@@ -30,6 +31,8 @@ export function DeviceFrame({
   alt,
   title,
   maxHeight = 640,
+  highlight = null,
+  onImageMeta,
   children,
 }: {
   shape: Shape;
@@ -41,6 +44,10 @@ export function DeviceFrame({
   alt: string;
   title?: string;
   maxHeight?: number;
+  /** A finding's box in CSS px of the page; drawn over the image and scrolled into view. */
+  highlight?: Box | null;
+  /** Reports the loaded image's height in CSS px (null while nothing is loaded). */
+  onImageMeta?: (meta: { cssHeight: number } | null) => void;
   children?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -77,7 +84,14 @@ export function DeviceFrame({
       return [...ls.slice(-1), { key: keyRef.current, src, loaded: false, failed: false }];
     });
   }, [src]);
-  const settle = (key: number) => {
+  const screenRef = useRef<HTMLDivElement>(null);
+  const [cssHeight, setCssHeight] = useState<number | null>(null);
+  const settle = (key: number, img: HTMLImageElement) => {
+    // The image is viewport.width CSS px wide by construction, so its pixel
+    // size gives the page height it covers — the fold, or the whole page.
+    const h = img.naturalWidth ? Math.round(img.naturalHeight * viewport.width / img.naturalWidth) : null;
+    setCssHeight(h);
+    onImageMeta?.(h === null ? null : { cssHeight: h });
     setLayers((ls) => ls.map((l) => (l.key === key ? { ...l, loaded: true } : l)));
     window.setTimeout(() => setLayers((ls) => (ls.length > 1 && ls[ls.length - 1].key === key ? ls.slice(-1) : ls)), FADE_MS + 30);
   };
@@ -85,6 +99,10 @@ export function DeviceFrame({
     setLayers((ls) => ls.map((l) => (l.key === key && !l.failed && fallbackSrc
       ? { ...l, src: fallbackSrc, failed: true } : l.key === key ? { ...l, loaded: true, failed: true } : l)));
   };
+
+  // A box is drawable only where the image exists: the fold image cannot show
+  // a finding 3000px down the page. The rail says "below the fold" for those.
+  const drawable = highlight && cssHeight !== null && highlight.y < cssHeight && scale > 0 ? highlight : null;
 
   return (
     <div ref={host} className="w-full">
@@ -107,6 +125,7 @@ export function DeviceFrame({
           </div>
         )}
         <div
+          ref={screenRef}
           className="relative overflow-y-auto overflow-x-hidden bg-white"
           style={{ width: screenW, height: screenH, borderRadius: bezel.screen, transition: "width 200ms ease, height 200ms ease" }}
         >
@@ -120,15 +139,48 @@ export function DeviceFrame({
               src={l.src}
               alt={alt}
               draggable={false}
-              onLoad={() => settle(l.key)}
+              onLoad={(e) => settle(l.key, e.currentTarget)}
               onError={() => fail(l.key)}
               className={cn("block w-full select-none", i < layers.length - 1 ? "absolute inset-x-0 top-0" : "relative")}
               style={{ opacity: l.loaded ? 1 : 0, transition: `opacity ${FADE_MS}ms ease` }}
             />
           ))}
+          {drawable && (
+            <Highlight key={`${drawable.x},${drawable.y},${drawable.width},${drawable.height}`} box={drawable} scale={scale} container={screenRef} screenH={screenH} />
+          )}
           {children}
         </div>
       </div>
     </div>
+  );
+}
+
+// The highlight: mounts transparent, fades in over 200ms, and scrolls the
+// screen so the box sits in the upper third. Keyed on the box, so a new
+// selection is a new fade rather than a jump.
+function Highlight({ box, scale, container, screenH }: {
+  box: Box; scale: number; container: React.RefObject<HTMLDivElement | null>; screenH: number;
+}) {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setOn(true));
+    const el = container.current;
+    if (el) {
+      const top = box.y * scale;
+      const want = Math.max(0, Math.round(top - screenH / 3));
+      if (Math.abs(el.scrollTop - want) > 4) el.scrollTo({ top: want, behavior: "smooth" });
+    }
+    return () => cancelAnimationFrame(id);
+  }, [box, scale, container, screenH]);
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute rounded-[3px] border-2 border-accent bg-accent/15 shadow-[0_0_0_2px_rgba(255,255,255,.85)]"
+      style={{
+        left: Math.max(0, box.x * scale - 2), top: Math.max(0, box.y * scale - 2),
+        width: Math.max(8, box.width * scale + 4), height: Math.max(8, box.height * scale + 4),
+        opacity: on ? 1 : 0, transition: "opacity 200ms ease",
+      }}
+    />
   );
 }
