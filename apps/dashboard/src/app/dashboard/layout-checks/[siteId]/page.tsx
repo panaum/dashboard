@@ -8,6 +8,9 @@ import { CheckRunner } from "@/components/layout-checks/check-runner";
 import { DevicePreviewRunner } from "@/components/layout-checks/device-preview-runner";
 import { SiteTabs } from "@/components/layout-checks/site-tabs";
 import { CheckShell } from "@/components/layout-checks/check-shell";
+import { DevicesPanel } from "@/components/layout-checks/devices-panel";
+import { RunHistory, type HistoryRow } from "@/components/layout-checks/run-history";
+import type { DeviceInput } from "@/lib/layout-checks/devices-view";
 import { devicePreviewConfigured } from "@/lib/devicepreview/client";
 import type { DpReport } from "@/lib/devicepreview/history";
 import { devicesVerdict, viewportsVerdict } from "@/lib/layout-checks/verdict";
@@ -17,13 +20,10 @@ export const metadata = { title: "Layout checks" };
 
 // One screenshot and the findings for that screenshot, nothing else. Two
 // tabs — the eight-width sweep and the device-matrix run — share one layout
-// (CheckShell) so the interaction is learned once. Step 1 of the redesign:
-// the tab structure, the verdict lines, and the shell with a placeholder
-// picker and rail; the pickers, frames and rail arrive in the next steps.
-
-const PLATFORM_LABEL: Record<string, string> = {
-  ios: "Apple", ipados: "Tablet", android: "Android", desktop: "Desktop",
-};
+// (CheckShell) so the interaction is learned once. Steps 1–2 of the
+// redesign: tabs, verdict lines, the shell; and on the Devices tab the real
+// picker (severity dots, engine tags, worst first) and the resizing frame.
+// The findings rail is still a placeholder (step 3).
 
 export default async function LayoutSitePage({
   params,
@@ -38,12 +38,12 @@ export default async function LayoutSitePage({
     include: {
       runs: {
         orderBy: { checkedAt: "desc" },
-        take: 2,
+        take: 12,
         include: { shots: { select: { width: true }, orderBy: { width: "asc" } } },
       },
       devicePreviews: {
         orderBy: { checkedAt: "desc" },
-        take: 2,
+        take: 12,
         include: { shots: { select: { profileId: true } } },
       },
     },
@@ -102,61 +102,36 @@ export default async function LayoutSitePage({
     ? { report: r.report as unknown as DpReport, checkedAt: r.checkedAt.toISOString() } : null;
   const dVerdict = devicesVerdict(asDevicesRun(dCur), asDevicesRun(dPrev));
   const dReport = dCur ? (dCur.report as unknown as DpReport) : null;
-  const dShots = new Set(dCur?.shots.map((s) => s.profileId) ?? []);
-  const firstDevice = dReport?.devices[0];
-  const grouped = new Map<string, DpReport["devices"]>();
-  for (const d of dReport?.devices ?? []) {
-    const list = grouped.get(d.platform) ?? [];
-    list.push(d);
-    grouped.set(d.platform, list);
-  }
-  const groups = Array.from(grouped);
+  const deviceInputs: DeviceInput[] = (dReport?.devices ?? []).map((d) => ({
+    ...(d as DeviceInput),
+    findings: d.findings ?? [],
+  }));
 
   const devicesPanel = (
-    <CheckShell
+    <DevicesPanel
       verdict={dVerdict}
-      picker={
-        dReport ? (
-          <div className="flex flex-wrap gap-x-6 gap-y-3" aria-label="Devices">
-            {groups.map(([platform, devs]) => (
-              <div key={platform} className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">{PLATFORM_LABEL[platform] ?? platform}</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {devs.map((d) => (
-                    <span key={d.profile_id} className={d.profile_id === firstDevice?.profile_id
-                      ? "rounded-full bg-accent px-3 py-1 text-[13px] font-medium text-text-on-dark"
-                      : "rounded-full border border-border-soft px-3 py-1 text-[13px] text-text-secondary"}>
-                      {d.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-[13px] text-text-muted">Run the check to see it here.</p>
-        )
-      }
-      frame={
-        dCur && firstDevice && dShots.has(firstDevice.profile_id) ? (
-          <div className="w-full max-w-[420px] overflow-hidden rounded-xl border border-border-soft bg-card-soft">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/api/devicepreview/shot?runId=${dCur.id}&profile=${encodeURIComponent(firstDevice.profile_id)}`}
-                 alt={`${firstDevice.label}, above the fold`} className="block max-h-[640px] w-full object-cover object-top" />
-          </div>
-        ) : null
-      }
+      runId={dCur?.id ?? null}
+      devices={deviceInputs}
+      storedFolds={dCur?.shots.map((s) => s.profileId) ?? []}
+      liveAvailable={devicePreviewConfigured()}
+      url={site.url}
       action={devicePreviewConfigured()
         ? <DevicePreviewRunner url={site.url} baselineServiceRunId={dCur?.serviceRunId ?? null} hasRuns={Boolean(dCur)} />
         : <p className="text-[12px] text-text-muted">Device preview is not configured on this deployment.</p>}
-      rail={
-        <p className="text-[13px] text-text-muted">
-          {dCur ? "Findings for the selected device will appear here." : "No run yet."}
-        </p>
-      }
-      railLabel="Findings on the selected device"
     />
   );
+
+  // ── History: run-level, so it sits below the tabs, not beside a screenshot ──
+  const history: HistoryRow[] = [
+    ...site.runs.map((r) => ({
+      id: r.id, kind: "Viewports" as const, checkedAt: r.checkedAt.toISOString(), worst: r.worst,
+      summary: `${r.failCount} failing · ${r.warnCount} to look at`,
+    })),
+    ...site.devicePreviews.map((r) => ({
+      id: r.id, kind: "Devices" as const, checkedAt: r.checkedAt.toISOString(), worst: r.worst,
+      summary: `${r.deviceCount} devices · ${r.errorCount} error${r.errorCount === 1 ? "" : "s"} · ${r.warnCount} warning${r.warnCount === 1 ? "" : "s"}${r.regressedCount ? ` · ${r.regressedCount} regressed` : ""}`,
+    })),
+  ].sort((a, b) => b.checkedAt.localeCompare(a.checkedAt)).slice(0, 12);
 
   return (
     <>
@@ -181,6 +156,10 @@ export default async function LayoutSitePage({
         explainFor={{ viewports: !vCur, devices: !dCur }}
         initial={vCur || !dCur ? "viewports" : "devices"}
       />
+
+      <div className="mt-8">
+        <RunHistory rows={history} />
+      </div>
     </>
   );
 }
