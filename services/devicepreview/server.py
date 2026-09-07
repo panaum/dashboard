@@ -15,7 +15,13 @@ already drives: start a job, poll it, fetch what it produced.
 Each run is the CLI in its own process — Playwright's sync API and three
 engines stay out of the server's event loop, and a run that hangs is killed
 at its deadline instead of taking the service with it. Runs live under
-RUNS_DIR (a Railway volume in production); the newest RETAIN_RUNS are kept.
+RUNS_DIR (a Railway volume in production). Retention is per site, not by a
+global count — a busy week on one page must never evict another page's
+latest run — and it keeps the derivative, not the original: the newest
+RETAIN_PER_SITE runs of each URL keep their report and 900px JPEGs of every
+capture (~1MB a phone), only the newest keeps the PNG originals (~5MB a
+phone) that the gallery and the next baseline diff read, and older runs go.
+The disk is then predictable from the number of sites.
 
 Auth is one service key, DEVICEPREVIEW_KEY, as `Authorization: Bearer` or
 `X-Api-Key`, compared in constant time. With no key configured every request
@@ -43,7 +49,9 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 
 HERE = Path(__file__).resolve().parent
 RUNS_DIR = Path(os.environ.get("RUNS_DIR") or HERE / "runs").resolve()
-RETAIN_RUNS = int(os.environ.get("RETAIN_RUNS", "40"))
+RETAIN_PER_SITE = int(os.environ.get("RETAIN_PER_SITE", "2"))
+DERIVATIVE_WIDTH = int(os.environ.get("DERIVATIVE_WIDTH", "900"))
+DERIVATIVE_QUALITY = int(os.environ.get("DERIVATIVE_QUALITY", "82"))
 RUN_TIMEOUT_S = int(os.environ.get("RUN_TIMEOUT_S", "900"))
 CONCURRENCY = os.environ.get("DEVICEPREVIEW_CONCURRENCY", "2")
 MAX_RUNNING = int(os.environ.get("MAX_RUNNING", "1"))
@@ -84,7 +92,7 @@ def _now() -> str:
 
 def _public(entry: dict[str, Any]) -> dict[str, Any]:
     keys = ("run_id", "status", "url", "started_at", "finished_at", "progress", "error", "summary",
-            "baseline", "baseline_missing", "exit_code")
+            "baseline", "baseline_missing", "exit_code", "originals")
     return {k: entry[k] for k in keys if entry.get(k) is not None}
 
 
@@ -105,19 +113,69 @@ def _index_existing() -> None:
             continue
         _runs[d.name] = {"run_id": d.name, "status": "done", "url": r.get("url"),
                          "started_at": r.get("startedAt"), "finished_at": r.get("finishedAt"),
-                         "summary": r.get("summary"), "dir": d, "restored": True}
+                         "summary": r.get("summary"), "dir": d, "restored": True,
+                         "originals": any(d.glob("*/full.png"))}
 
 
-def _prune() -> int:
-    """Newest RETAIN_RUNS stay; a running one is never touched."""
-    done = sorted((e for e in _runs.values() if e["status"] in ("done", "failed")),
-                  key=lambda e: e.get("started_at") or "", reverse=True)
-    removed = 0
-    for e in done[RETAIN_RUNS:]:
-        shutil.rmtree(e["dir"], ignore_errors=True)
-        _runs.pop(e["run_id"], None)
-        removed += 1
+KINDS = ("fold", "full", "thumb", "diff")
+
+
+def _derivative_path(d: Path, profile: str, kind: str, width: int = DERIVATIVE_WIDTH, quality: int = DERIVATIVE_QUALITY) -> Path:
+    return d / profile / f"{kind}.{width}.q{quality}.jpg"
+
+
+def _make_derivative(src: Path, dst: Path, width: int, quality: int) -> bool:
+    """A downscaled JPEG of a PNG capture — the copy that outlives the original."""
+    try:
+        from PIL import Image
+        with Image.open(src) as im:
+            im = im.convert("RGB")
+            if im.width > width:
+                im = im.resize((width, max(1, round(im.height * width / im.width))), Image.LANCZOS)
+            im.save(dst, "JPEG", quality=quality, optimize=True, progressive=True)
+        return True
+    except Exception:  # noqa: BLE001 — a missing derivative is a 404 later, not a crash now
+        return False
+
+
+def _derive(entry: dict[str, Any]) -> int:
+    """Every capture of a run gets its JPEG derivatives while the PNGs exist."""
+    d: Path = entry["dir"]; made = 0
+    for prof in sorted(p for p in d.iterdir() if p.is_dir()):
+        for kind in ("fold", "full"):
+            src = prof / f"{kind}.png"; dst = _derivative_path(d, prof.name, kind)
+            if src.is_file() and not dst.is_file() and _make_derivative(src, dst, DERIVATIVE_WIDTH, DERIVATIVE_QUALITY):
+                made += 1
+    return made
+
+
+def _drop_originals(entry: dict[str, Any]) -> int:
+    """Keep the report and the JPEG derivatives; let the PNGs go."""
+    d: Path = entry["dir"]; removed = 0
+    for prof in (p for p in d.iterdir() if p.is_dir()):
+        for f in prof.glob("*.png"):
+            f.unlink(missing_ok=True); removed += 1
+    (d / "report.html").unlink(missing_ok=True)   # it references the PNGs
+    entry["originals"] = False
     return removed
+
+
+def _prune() -> dict[str, int]:
+    """Per site: the newest RETAIN_PER_SITE runs stay, only the newest of them
+    with its originals; older runs go. A running run is never touched."""
+    by_url: dict[str, list[dict[str, Any]]] = {}
+    for e in _runs.values():
+        if e["status"] in ("done", "finishing", "failed"):
+            by_url.setdefault(e.get("url") or "", []).append(e)
+    deleted = 0; stripped = 0
+    for runs in by_url.values():
+        runs.sort(key=lambda e: e.get("started_at") or "", reverse=True)
+        for i, e in enumerate(runs):
+            if i >= RETAIN_PER_SITE:
+                shutil.rmtree(e["dir"], ignore_errors=True); _runs.pop(e["run_id"], None); deleted += 1
+            elif i > 0 and e.get("originals", True):
+                _derive(e); stripped += _drop_originals(e)
+    return {"deleted": deleted, "stripped": stripped}
 
 
 def _args(body: dict[str, Any], out: Path) -> tuple[list[str], dict[str, Any]]:
@@ -194,8 +252,13 @@ def _run_job(run_id: str) -> None:
         if rep.is_file():
             try:
                 r = json.loads(rep.read_text(encoding="utf-8"))
-                entry.update(status="done", summary=r.get("summary"), exit_code=proc.returncode,
-                             finished_at=r.get("finishedAt") or _now())
+                # "finishing": the report exists, the derivatives and the
+                # site's pruning are still being written. "done" means all of
+                # it is on disk — a caller that sees done can rely on the
+                # retention state, not race it.
+                entry.update(status="finishing", summary=r.get("summary"), exit_code=proc.returncode,
+                             finished_at=r.get("finishedAt") or _now(), originals=True)
+                _derive(entry)         # the copies that outlive the PNGs, made while they exist
             except ValueError:
                 entry.update(status="failed", error="report.json is not readable", finished_at=_now())
         else:
@@ -203,6 +266,8 @@ def _run_job(run_id: str) -> None:
                          error=("the run produced no report: " + " | ".join(tail[-3:]))[:400])
     with _lock:
         _prune()
+        if entry["status"] == "finishing":
+            entry["status"] = "done"
 
 
 # ── endpoints ───────────────────────────────────────────────────────────────
@@ -211,7 +276,7 @@ def _run_job(run_id: str) -> None:
 def health():
     running = sum(1 for e in _runs.values() if e["status"] == "running")
     return {"ok": True, "running": running, "retained": sum(1 for e in _runs.values() if e["status"] == "done"),
-            "configured": bool(SERVICE_KEY), "runs_dir": str(RUNS_DIR)}
+            "configured": bool(SERVICE_KEY), "runs_dir": str(RUNS_DIR), "retain_per_site": RETAIN_PER_SITE}
 
 
 @app.post("/api/devicepreview/run")
@@ -304,19 +369,18 @@ def image(run_id: str = Query(...), profile: str = Query(...), kind: str = Query
     if not e or e["status"] != "done" or not ID_RX.match(profile) or kind not in ("fold", "full", "thumb", "diff"):
         return JSONResponse({"error": "not_found"}, status_code=404)
     src = e["dir"] / profile / f"{kind}.png"
-    if not src.is_file():
-        return JSONResponse({"error": "not_found"}, status_code=404)
-    dst = e["dir"] / profile / f"{kind}.{max_width}.q{quality}.jpg"
+    dst = _derivative_path(e["dir"], profile, kind, max_width, quality)
     if not dst.is_file():
-        try:
-            from PIL import Image
-            with Image.open(src) as im:
-                im = im.convert("RGB")
-                if im.width > max_width:
-                    im = im.resize((max_width, max(1, round(im.height * max_width / im.width))), Image.LANCZOS)
-                im.save(dst, "JPEG", quality=quality, optimize=True, progressive=True)
-        except Exception as exc:  # noqa: BLE001 — a variant that cannot be made is a 500 with a reason
-            return JSONResponse({"error": f"could not encode: {exc}"}, status_code=500)
+        if not src.is_file():
+            # The originals are gone (an older run of this site) and no
+            # derivative at this size was kept: the standard one is offered
+            # instead, so a slightly different width never becomes a 404.
+            std = _derivative_path(e["dir"], profile, kind)
+            if std.is_file():
+                return FileResponse(std, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400, immutable"})
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        if not _make_derivative(src, dst, max_width, quality):
+            return JSONResponse({"error": "could not encode the image"}, status_code=500)
     return FileResponse(dst, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400, immutable"})
 
 

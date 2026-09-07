@@ -114,6 +114,13 @@ tool measured, tried, or learned the hard way; none is hypothetical.
   volume mounted there, a redeploy discards every gallery; the Dashboard keeps
   each run's report and a JPEG of each fold, so verdicts survive, but the
   full-page images and the ability to diff against that run do not.
+- With the volume, the service keeps the newest `RETAIN_PER_SITE` (default 2)
+  runs of each URL and deletes the rest. Only the newest run of a URL keeps
+  its PNG originals and gallery; the older kept run has its report and a
+  900 px JPEG of every capture. So a baseline diff is only possible against
+  the newest run of a page, an older run's gallery link answers "no longer
+  kept", and what the Dashboard shows for an older run's full page is the
+  JPEG, not the pixel-exact capture.
 - One run at a time (`MAX_RUNNING`), because three browser engines on a
   small instance are enough; a second request gets `429 run_capacity` and the
   caller retries later rather than queueing.

@@ -174,7 +174,9 @@ the service's `report.json` verbatim plus derived counts) and
 `DevicePreviewShot` (a fold JPEG per device, kept for the two most recent
 runs, like `LayoutShot`). Routes, all session-guarded: `/api/devicepreview/
 monitor` (start/poll proxy), `/api/devicepreview/view/[runId]/[...]` (the
-service's own gallery and images, streamed while it retains the run),
+service's own gallery and images, streamed while it retains them — the
+service keeps two runs per site, and only the newest of those keeps its
+gallery and PNGs; the older one has JPEG derivatives),
 `/api/devicepreview/shot` (stored folds). Pure helpers and tests live in
 `src/lib/devicepreview/history.ts`. Env: `DEVICEPREVIEW_URL`, `DEVICEPREVIEW_KEY`
 (server-only). The section is silent when they are unset.

@@ -178,7 +178,8 @@ DEVICEPREVIEW_KEY=$(openssl rand -hex 24) ../pagecheck/.venv/bin/python server.p
 |---|---|---|
 | `DEVICEPREVIEW_KEY` | The service key callers must present (`Authorization: Bearer` or `X-Api-Key`). Unset ⇒ every request is refused with 503 | — |
 | `RUNS_DIR` | Where runs are kept. Mount a persistent volume here on Railway or galleries vanish on redeploy | `./runs` |
-| `RETAIN_RUNS` | Newest runs kept on disk; older ones are pruned after each run | `40` |
+| `RETAIN_PER_SITE` | Runs kept per URL, newest first; the rest are deleted after each run. Only the newest run of a URL keeps its PNG originals and gallery; the older kept runs hold their report and JPEG derivatives | `2` |
+| `DERIVATIVE_WIDTH` / `DERIVATIVE_QUALITY` | Width and JPEG quality of the derivative made of every capture when a run completes | `900` / `82` |
 | `RUN_TIMEOUT_S` | Hard stop for one run | `900` |
 | `DEVICEPREVIEW_CONCURRENCY` | Engines run in parallel inside a run; lower it on a small instance | `2` |
 | `MAX_RUNNING` | Runs accepted at once; more get `429 run_capacity` | `1` |
@@ -187,18 +188,31 @@ DEVICEPREVIEW_KEY=$(openssl rand -hex 24) ../pagecheck/.venv/bin/python server.p
 POST /api/devicepreview/run      {url, devices?: [...] | "all", tier?, include_edge?, landscape?,
                                   color_scheme?, ignore_regions?: [...], baseline?: run_id, timeout?}
                                   → {run_id, status: "running", baseline?, baseline_missing?}
-GET  /api/devicepreview/status   ?run_id=   → {status: running|done|failed, progress{done,total,message}, summary, exit_code, error}
+GET  /api/devicepreview/status   ?run_id=   → {status: running|finishing|done|failed, progress{done,total,message}, summary, exit_code, error, originals}
 GET  /api/devicepreview/report   ?run_id=   → report.json
 GET  /api/devicepreview/file     ?run_id=&path=report.html | <profile>/full.png | <profile>/diff.png …
 GET  /api/devicepreview/image    ?run_id=&profile=&kind=fold|full|thumb|diff&max_width=1400   → JPEG, downscaled
 GET  /api/devicepreview/runs     ?url=      → retained runs for that page, newest first
-GET  /health                                → {ok, running, retained, configured}
+GET  /health                                → {ok, running, retained, configured, runs_dir, retain_per_site}
 ```
 
 `status` reports `done` whenever a report was written, with the CLI's exit
 code alongside (0 clean, 1 errors or regressions, 2 a capture failed or was
 blocked) — the report says which device and why. `failed` means no report at
-all. Tests: `../pagecheck/.venv/bin/python -m unittest tests.test_server`.
+all. `finishing` is the moment between the report and `done`, while the
+derivatives are written and the site's older runs are pruned; a caller that
+sees `done` can rely on what is on disk.
+
+Retention is **per site, and keeps the derivative**. After every run the
+service sorts that URL's runs newest first, deletes all but `RETAIN_PER_SITE`
+of them, and strips the PNG originals and `report.html` from every kept run
+but the newest — so one page checked hourly cannot evict another page's
+latest run, and the disk grows with the number of sites, not with how often
+one is run. `originals: false` on `status` says a run has been stripped:
+`image` still serves its JPEG derivatives at any `max_width` up to
+`DERIVATIVE_WIDTH`, `file` answers 404 for its PNGs and gallery, and it can no
+longer serve as a `baseline` (diffing reads PNGs, so only the newest run of a
+URL can). Tests: `../pagecheck/.venv/bin/python -m unittest tests.test_server`.
 
 ## Tests
 
