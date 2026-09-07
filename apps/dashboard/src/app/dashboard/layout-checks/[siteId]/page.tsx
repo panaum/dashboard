@@ -6,7 +6,7 @@ import { requireAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
 import { CheckRunner } from "@/components/layout-checks/check-runner";
 import { SiteTabs } from "@/components/layout-checks/site-tabs";
-import { CheckShell } from "@/components/layout-checks/check-shell";
+import { ViewportsPanel } from "@/components/layout-checks/viewports-panel";
 import { DevicesPanel } from "@/components/layout-checks/devices-panel";
 import { RunHistory, type HistoryRow } from "@/components/layout-checks/run-history";
 import type { DeviceInput } from "@/lib/layout-checks/devices-view";
@@ -14,15 +14,15 @@ import { devicePreviewConfigured } from "@/lib/devicepreview/client";
 import type { DpReport } from "@/lib/devicepreview/history";
 import { devicesVerdict, viewportsVerdict } from "@/lib/layout-checks/verdict";
 import type { ResponsiveFinding } from "@/lib/linkspy/responsive-view";
+import type { ViewportFinding } from "@/lib/layout-checks/viewports-view";
 
 export const metadata = { title: "Layout checks" };
 
 // One screenshot and the findings for that screenshot, nothing else. Two
 // tabs — the eight-width sweep and the device-matrix run — share one layout
-// (CheckShell) so the interaction is learned once. Steps 1–2 of the
-// redesign: tabs, verdict lines, the shell; and on the Devices tab the real
-// picker (severity dots, engine tags, worst first) and the resizing frame.
-// The findings rail is still a placeholder (step 3).
+// (CheckShell) so the interaction is learned once: a verdict, a picker of
+// widths or devices with severity dots, the framed screenshot, and the
+// findings for that ONE screenshot beside it. Run history sits below both.
 
 export default async function LayoutSitePage({
   params,
@@ -59,39 +59,13 @@ export default async function LayoutSitePage({
   const widths = vCur?.shots.map((s) => s.width) ?? [];
 
   const viewportsPanel = (
-    <CheckShell
+    <ViewportsPanel
       verdict={vVerdict}
-      picker={
-        vCur ? (
-          <div className="flex flex-wrap gap-2" aria-label="Widths">
-            {widths.map((w, i) => (
-              <span key={w} className={i === 0
-                ? "rounded-full bg-accent px-3 py-1 text-[13px] font-medium text-text-on-dark"
-                : "rounded-full border border-border-soft px-3 py-1 text-[13px] text-text-secondary"}>
-                {w}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <p className="text-[13px] text-text-muted">Run the check to see it here.</p>
-        )
-      }
-      frame={
-        vCur && widths.length ? (
-          <div className="w-full max-w-[420px] overflow-hidden rounded-xl border border-border-soft bg-card-soft">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/api/layout-shot?runId=${vCur.id}&width=${widths[0]}`} alt={`Rendered at ${widths[0]} pixels wide`}
-                 className="block max-h-[640px] w-full object-cover object-top" />
-          </div>
-        ) : null
-      }
+      runId={vCur?.id ?? null}
+      findings={(vCur?.findings ?? []) as unknown as ViewportFinding[]}
+      widths={widths}
+      url={site.url}
       headerAction={<CheckRunner url={site.url} label={vCur ? "Run again" : "Run the eight-width check"} />}
-      rail={
-        <p className="text-[13px] text-text-muted">
-          {vCur ? "Findings for the selected width will appear here." : "No run yet."}
-        </p>
-      }
-      railLabel="Findings at the selected width"
     />
   );
 

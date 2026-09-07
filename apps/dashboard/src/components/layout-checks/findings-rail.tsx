@@ -5,7 +5,12 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { RAIL_CAP, railSlice, type RailFinding } from "@/lib/layout-checks/findings-view";
 
-export type RailItem = RailFinding & { tag?: string };
+export type RailItem = RailFinding & {
+  tag?: string;
+  /** Shown under the row while it is selected. The width findings carry a
+      sentence worth reading; the device findings do not have one. */
+  detail?: string;
+};
 
 // The findings for ONE screenshot, never all of them. One line each — a dot,
 // four or five words, the selector beneath in mono — capped at five with a
@@ -92,6 +97,9 @@ export function FindingsRail({
                 <span className="pl-4 font-mono text-[11px] leading-snug text-text-muted">
                   {it.pageLevel ? "whole page" : (it.selector ?? "—")}
                 </span>
+                {on && it.detail && (
+                  <span className="pl-4 text-[11.5px] leading-snug text-text-secondary">{it.detail}</span>
+                )}
               </button>
             </li>
           );

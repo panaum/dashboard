@@ -69,6 +69,7 @@ export function DeviceFrame({
   const screenW = Math.round(viewport.width * scale);
   const screenH = Math.round(viewport.height * scale);
   useEffect(() => { scaleRef?.(scale); }, [scale, scaleRef]);
+  const sized = scale > 0;
 
   // Crossfade: the new image mounts on top at opacity 0 and fades in once it
   // has loaded; the previous one is dropped after the fade. A source that
@@ -85,6 +86,24 @@ export function DeviceFrame({
     });
   }, [src]);
   const screenRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  // The size transition belongs to a change of selection and to nothing else.
+  // It is switched on for that change only, so arriving at the page, the
+  // column settling and a window resize are all instant — an animation the
+  // reader did not ask for reads as lag. `transition` is deliberately absent
+  // from the style props below, so React never overwrites what is set here.
+  const shownViewport = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const sig = `${viewport.width}x${viewport.height}`;
+    const was = shownViewport.current;
+    shownViewport.current = sig;
+    const el = frameRef.current, sc = screenRef.current;
+    if (!el || !sc || was === null || was === sig) return;
+    el.style.transition = "width 200ms ease, height 200ms ease, border-radius 200ms ease";
+    sc.style.transition = "width 200ms ease, height 200ms ease";
+    const t = window.setTimeout(() => { el.style.transition = ""; sc.style.transition = ""; }, 240);
+    return () => window.clearTimeout(t);
+  }, [viewport.width, viewport.height]);
   const [cssHeight, setCssHeight] = useState<number | null>(null);
   const settle = (key: number, img: HTMLImageElement) => {
     // The image is viewport.width CSS px wide by construction, so its pixel
@@ -107,14 +126,14 @@ export function DeviceFrame({
   return (
     <div ref={host} className="w-full">
       <div
+        ref={frameRef}
         className={cn("mx-auto bg-[#15181e] shadow-md", shape === "desktop" ? "rounded-xl" : "")}
         style={{
           width: screenW + 2 * bezel.x,
           height: screenH + 2 * bezel.y + chrome,
           borderRadius: bezel.radius,
           padding: `${bezel.y}px ${bezel.x}px`,
-          transition: `width 200ms ease, height 200ms ease, border-radius 200ms ease`,
-          visibility: scale > 0 ? "visible" : "hidden",
+          visibility: sized ? "visible" : "hidden",
         }}
         aria-label={title}
       >
@@ -127,7 +146,7 @@ export function DeviceFrame({
         <div
           ref={screenRef}
           className="relative overflow-y-auto overflow-x-hidden bg-white"
-          style={{ width: screenW, height: screenH, borderRadius: bezel.screen, transition: "width 200ms ease, height 200ms ease" }}
+          style={{ width: screenW, height: screenH, borderRadius: bezel.screen }}
         >
           {layers.length === 0 && (
             <div className="grid h-full place-items-center px-4 text-center text-[12px] text-text-muted">No screenshot for this device</div>
