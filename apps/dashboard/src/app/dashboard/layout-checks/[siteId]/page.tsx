@@ -122,14 +122,20 @@ export default async function LayoutSitePage({
   );
 
   // ── History: run-level, so it sits below the tabs, not beside a screenshot ──
+  // The preview service keeps full pages for the newest DEVICE_FULL_PAGES_KEPT
+  // runs of a site (its RETAIN_PER_SITE, default 2); the Dashboard keeps folds
+  // for as many. Older rows say so before anyone clicks in.
+  const DEVICE_FULL_PAGES_KEPT = 2;
   const history: HistoryRow[] = [
     ...site.runs.map((r) => ({
       id: r.id, kind: "Viewports" as const, checkedAt: r.checkedAt.toISOString(), worst: r.worst,
       summary: `${r.failCount} failing · ${r.warnCount} to look at`,
+      kept: (r.shots.length > 0 ? "all" : "none") as HistoryRow["kept"],
     })),
-    ...site.devicePreviews.map((r) => ({
+    ...site.devicePreviews.map((r, i) => ({
       id: r.id, kind: "Devices" as const, checkedAt: r.checkedAt.toISOString(), worst: r.worst,
       summary: `${r.deviceCount} devices · ${r.errorCount} error${r.errorCount === 1 ? "" : "s"} · ${r.warnCount} warning${r.warnCount === 1 ? "" : "s"}${r.regressedCount ? ` · ${r.regressedCount} regressed` : ""}`,
+      kept: (i < DEVICE_FULL_PAGES_KEPT ? "all" : r.shots.length > 0 ? "folds" : "none") as HistoryRow["kept"],
     })),
   ].sort((a, b) => b.checkedAt.localeCompare(a.checkedAt)).slice(0, 12);
 

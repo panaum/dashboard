@@ -1,8 +1,11 @@
 "use client";
 
 import { CheckCircle2 } from "lucide-react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { RAIL_CAP, railSlice, type RailFinding } from "@/lib/layout-checks/findings-view";
+
+export type RailItem = RailFinding & { tag?: string };
 
 // The findings for ONE screenshot, never all of them. One line each — a dot,
 // four or five words, the selector beneath in mono — capped at five with a
@@ -15,6 +18,7 @@ const DOT: Record<RailFinding["severity"], string> = { error: "bg-error", warn: 
 export function FindingsRail({
   deviceLabel,
   items,
+  heading,
   selectedId,
   onSelect,
   expanded,
@@ -22,7 +26,9 @@ export function FindingsRail({
   drawableHeight,
 }: {
   deviceLabel: string;
-  items: RailFinding[];
+  items: RailItem[];
+  /** Optional section header, used in engine comparison. */
+  heading?: ReactNode;
   selectedId: string | null;
   onSelect: (id: string) => void;
   expanded: boolean;
@@ -32,15 +38,19 @@ export function FindingsRail({
 }) {
   if (!items.length) {
     return (
-      <p className="flex items-center gap-2 py-1 text-[13.5px] font-medium text-text-primary">
-        <CheckCircle2 className="size-5 text-success" strokeWidth={2} aria-hidden />
-        No issues on {deviceLabel}
-      </p>
+      <div className="flex flex-col">
+        {heading}
+        <p className="flex items-center gap-2 py-1 text-[13.5px] font-medium text-text-primary">
+          <CheckCircle2 className="size-5 text-success" strokeWidth={2} aria-hidden />
+          No issues on {deviceLabel}
+        </p>
+      </div>
     );
   }
   const { shown, hidden } = railSlice(items, expanded);
   return (
     <div className="flex flex-col">
+      {heading}
       <ul className="flex flex-col" aria-label={`Findings on ${deviceLabel}`}>
         {shown.map((it) => {
           const on = it.id === selectedId;
@@ -75,6 +85,9 @@ export function FindingsRail({
                   <span aria-hidden className={cn("inline-block size-2 shrink-0 rounded-full", DOT[it.severity])} />
                   <span className="sr-only">{it.severity === "error" ? "Error: " : it.severity === "warn" ? "Warning: " : "Note: "}</span>
                   {it.label}
+                  {it.tag && (
+                    <span className="ml-1 whitespace-nowrap rounded bg-accent/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-accent">{it.tag}</span>
+                  )}
                 </span>
                 <span className="pl-4 font-mono text-[11px] leading-snug text-text-muted">
                   {it.pageLevel ? "whole page" : (it.selector ?? "—")}

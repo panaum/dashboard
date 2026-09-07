@@ -10,6 +10,14 @@ export type HistoryRow = {
   checkedAt: string;
   worst: string;
   summary: string;
+  /** What is still on disk for this run, said before anyone clicks in. */
+  kept: "all" | "folds" | "none";
+};
+
+const KEPT_NOTE: Record<HistoryRow["kept"], string | null> = {
+  all: null,
+  folds: "full pages not kept — folds only",
+  none: "screenshots not kept",
 };
 
 const TONE: Record<string, "error" | "warning" | "neutral" | "success"> = {
@@ -30,6 +38,7 @@ export function RunHistory({ rows }: { rows: HistoryRow[] }) {
             <Badge tone="neutral">{r.kind}</Badge>
             <Badge tone={TONE[r.worst] ?? "neutral"}>{r.worst}</Badge>
             <span className="text-[12px] text-text-muted">{r.summary}</span>
+            {KEPT_NOTE[r.kept] && <span className="ml-auto text-[11px] text-text-muted">{KEPT_NOTE[r.kept]}</span>}
           </div>
         ))}
       </div>
