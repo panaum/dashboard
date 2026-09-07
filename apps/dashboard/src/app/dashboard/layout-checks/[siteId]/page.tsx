@@ -4,27 +4,25 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckRunner } from "@/components/layout-checks/check-runner";
-import { DevicePreviewSection } from "@/components/layout-checks/device-preview-section";
+import { SiteTabs } from "@/components/layout-checks/site-tabs";
+import { ViewportsPanel } from "@/components/layout-checks/viewports-panel";
+import { DevicesPanel } from "@/components/layout-checks/devices-panel";
+import { RunHistory, type HistoryRow } from "@/components/layout-checks/run-history";
+import type { DeviceInput } from "@/lib/layout-checks/devices-view";
 import { devicePreviewConfigured } from "@/lib/devicepreview/client";
-import { diffRuns, verdictOf } from "@/lib/linkspy/layout-history";
-import {
-  type ResponsiveFinding,
-  FINDING_TONE,
-  orderFindings,
-  widthLabel,
-} from "@/lib/linkspy/responsive-view";
+import type { DpReport } from "@/lib/devicepreview/history";
+import { devicesVerdict, viewportsVerdict } from "@/lib/layout-checks/verdict";
+import type { ResponsiveFinding } from "@/lib/linkspy/responsive-view";
+import type { ViewportFinding } from "@/lib/layout-checks/viewports-view";
 
-export const metadata = { title: "Layout history" };
+export const metadata = { title: "Layout checks" };
 
-const MOVE_LABEL = {
-  fixed: "Fixed", introduced: "New", "still-open": "Still open", unchanged: "Unchanged",
-} as const;
-const MOVE_TONE = {
-  fixed: "success", introduced: "error", "still-open": "warning", unchanged: "neutral",
-} as const;
+// One screenshot and the findings for that screenshot, nothing else. Two
+// tabs — the eight-width sweep and the device-matrix run — share one layout
+// (CheckShell) so the interaction is learned once: a verdict, a picker of
+// widths or devices with severity dots, the framed screenshot, and the
+// findings for that ONE screenshot beside it. Run history sits below both.
 
 export default async function LayoutSitePage({
   params,
@@ -50,25 +48,70 @@ export default async function LayoutSitePage({
     },
   });
   if (!site) notFound();
-  const devicePreview = (
-    <DevicePreviewSection url={site.url} runs={site.devicePreviews} configured={devicePreviewConfigured()} />
+
+
+  // ── Viewports ────────────────────────────────────────────────────────────
+  const [vCur, vPrev] = site.runs;
+  const asViewportsRun = (r: typeof vCur | undefined) => r
+    ? { findings: r.findings as unknown as ResponsiveFinding[], widths: r.shots.map((s) => s.width), checkedAt: r.checkedAt.toISOString() }
+    : null;
+  const vVerdict = viewportsVerdict(asViewportsRun(vCur), asViewportsRun(vPrev));
+  const widths = vCur?.shots.map((s) => s.width) ?? [];
+
+  const viewportsPanel = (
+    <ViewportsPanel
+      verdict={vVerdict}
+      runId={vCur?.id ?? null}
+      findings={(vCur?.findings ?? []) as unknown as ViewportFinding[]}
+      widths={widths}
+      url={site.url}
+      headerAction={<CheckRunner url={site.url} label={vCur ? "Run again" : "Run the eight-width check"} />}
+    />
   );
 
-  const [current, previous] = site.runs;
-  const changes = current
-    ? diffRuns(
-        previous
-          ? { checkedAt: previous.checkedAt.toISOString(),
-              findings: previous.findings as unknown as ResponsiveFinding[] }
-          : null,
-        { checkedAt: current.checkedAt.toISOString(),
-          findings: current.findings as unknown as ResponsiveFinding[] },
-      )
-    : [];
-  const verdict = verdictOf(changes, Boolean(previous));
-  const findings = current
-    ? orderFindings(current.findings as unknown as ResponsiveFinding[])
-    : [];
+  // ── Devices ──────────────────────────────────────────────────────────────
+  const [dCur, dPrev] = site.devicePreviews;
+  const asDevicesRun = (r: typeof dCur | undefined) => r
+    ? { report: r.report as unknown as DpReport, checkedAt: r.checkedAt.toISOString() } : null;
+  const dVerdict = devicesVerdict(asDevicesRun(dCur), asDevicesRun(dPrev));
+  const dReport = dCur ? (dCur.report as unknown as DpReport) : null;
+  const deviceInputs: DeviceInput[] = (dReport?.devices ?? []).map((d) => ({
+    ...(d as DeviceInput),
+    findings: d.findings ?? [],
+  }));
+
+  const devicesPanel = (
+    <DevicesPanel
+      verdict={dVerdict}
+      runId={dCur?.id ?? null}
+      devices={deviceInputs}
+      storedFolds={dCur?.shots.map((s) => s.profileId) ?? []}
+      liveAvailable={devicePreviewConfigured()}
+      url={site.url}
+      run={devicePreviewConfigured()
+        ? { baselineServiceRunId: dCur?.serviceRunId ?? null, hasRuns: Boolean(dCur) }
+        : undefined}
+      headerAction={<p className="text-[12px] text-text-muted">Device preview is not configured on this deployment.</p>}
+    />
+  );
+
+  // ── History: run-level, so it sits below the tabs, not beside a screenshot ──
+  // The preview service keeps full pages for the newest DEVICE_FULL_PAGES_KEPT
+  // runs of a site (its RETAIN_PER_SITE, default 2); the Dashboard keeps folds
+  // for as many. Older rows say so before anyone clicks in.
+  const DEVICE_FULL_PAGES_KEPT = 2;
+  const history: HistoryRow[] = [
+    ...site.runs.map((r) => ({
+      id: r.id, kind: "Viewports" as const, checkedAt: r.checkedAt.toISOString(), worst: r.worst,
+      summary: `${r.failCount} failing · ${r.warnCount} to look at`,
+      kept: (r.shots.length > 0 ? "all" : "none") as HistoryRow["kept"],
+    })),
+    ...site.devicePreviews.map((r, i) => ({
+      id: r.id, kind: "Devices" as const, checkedAt: r.checkedAt.toISOString(), worst: r.worst,
+      summary: `${r.deviceCount} devices · ${r.errorCount} error${r.errorCount === 1 ? "" : "s"} · ${r.warnCount} warning${r.warnCount === 1 ? "" : "s"}${r.regressedCount ? ` · ${r.regressedCount} regressed` : ""}`,
+      kept: (i < DEVICE_FULL_PAGES_KEPT ? "all" : r.shots.length > 0 ? "folds" : "none") as HistoryRow["kept"],
+    })),
+  ].sort((a, b) => b.checkedAt.localeCompare(a.checkedAt)).slice(0, 12);
 
   return (
     <>
@@ -80,146 +123,23 @@ export default async function LayoutSitePage({
       <PageHeader
         title={site.label ?? site.url.replace(/^https?:\/\//, "")}
         subtitle={site.url}
-        action={<CheckRunner url={site.url} label={current ? "Re-test" : "Run first check"} />}
-      />
-
-      {!current ? (
-        <div className="flex flex-col gap-5">
-        <Card className="px-5 py-10 text-center">
-          <p className="text-sm text-text-secondary">
-            No checks yet. Run one to record how this page renders at eight widths.
-          </p>
-        </Card>
-        {devicePreview}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          <Card className="px-5 py-4">
-            <p className="text-sm font-medium text-text-primary">{verdict.headline}</p>
-            <p className="mt-0.5 text-[12px] text-text-muted">
-              Checked {current.checkedAt.toLocaleString()}
-              {previous && ` · compared against ${previous.checkedAt.toLocaleString()}`}
-            </p>
-          </Card>
-
-          {previous && (
-            <Card>
-              <CardHeader>
-                <CardTitle>What changed since the last check</CardTitle>
-              </CardHeader>
-              <div className="flex flex-col divide-y divide-border-soft">
-                {changes.filter((c) => c.movement !== "unchanged").length === 0 ? (
-                  <p className="px-5 py-4 text-[13px] text-text-secondary">
-                    Nothing moved between these two checks.
-                  </p>
-                ) : (
-                  changes
-                    .filter((c) => c.movement !== "unchanged")
-                    .map((c) => (
-                      <div key={c.id} className="flex flex-wrap items-baseline gap-2 px-5 py-3">
-                        <Badge tone={MOVE_TONE[c.movement]}>{MOVE_LABEL[c.movement]}</Badge>
-                        <span className="text-sm font-medium text-text-primary">{c.title}</span>
-                        <span className="text-[12px] text-text-muted">
-                          {c.before ?? "—"} → {c.after ?? "—"}
-                        </span>
-                      </div>
-                    ))
-                )}
-              </div>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle>This check</CardTitle>
-            </CardHeader>
-            <div className="flex flex-col divide-y divide-border-soft">
-              {findings.map((f) => (
-                <div key={f.id} className="px-5 py-3">
-                  <div className="mb-0.5 flex items-center gap-2">
-                    <Badge tone={FINDING_TONE[f.status]}>{f.status}</Badge>
-                    <span className="text-sm font-medium text-text-primary">{f.title}</span>
-                  </div>
-                  {f.detail && (
-                    <p className="max-w-prose text-[13px] text-text-secondary">{f.detail}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {current.shots.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  How it renders{previous?.shots.length ? " — now, and last time" : ""}
-                </CardTitle>
-              </CardHeader>
-              <div className="grid grid-cols-2 gap-4 px-5 pb-5 sm:grid-cols-4">
-                {current.shots.map((s) => {
-                  const had = previous?.shots.some((p) => p.width === s.width);
-                  return (
-                    <div key={s.width} className="flex flex-col gap-1.5">
-                      <span className="text-[12px] text-text-secondary">{widthLabel(s.width)}</span>
-                      <a href={`/api/layout-shot?runId=${current.id}&width=${s.width}`}
-                         target="_blank" rel="noopener"
-                         className="block overflow-hidden rounded-lg border border-border-soft transition-colors hover:border-accent/50">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/api/layout-shot?runId=${current.id}&width=${s.width}`}
-                             alt={`Rendered at ${s.width} pixels wide`} loading="lazy"
-                             className="block h-36 w-full object-cover object-top" />
-                      </a>
-                      {had && previous && (
-                        <a href={`/api/layout-shot?runId=${previous.id}&width=${s.width}`}
-                           target="_blank" rel="noopener"
-                           className="text-[11px] text-accent hover:underline">
-                          compare with last check
-                        </a>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="px-5 pb-5 text-[12px] text-text-muted">
-                Screenshots are kept for the two most recent checks. Older checks keep
-                what they found, but not the images.
-              </p>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle>History</CardTitle>
-            </CardHeader>
-            <div className="flex flex-col divide-y divide-border-soft">
-              {site.runs.map((r) => (
-                <div key={r.id} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
-                  <span className="w-52 text-[13px] text-text-secondary">
-                    {r.checkedAt.toLocaleString()}
-                  </span>
-                  <Badge tone={r.worst === "FAIL" ? "error" : r.worst === "WARN" ? "warning"
-                    : r.worst === "SKIP" ? "neutral" : "success"}>
-                    {r.worst}
-                  </Badge>
-                  <span className="text-[12px] text-text-muted">
-                    {r.failCount} failing · {r.warnCount} to look at
-                  </span>
-                  {r.shots.length === 0 && (
-                    <span className="ml-auto text-[11px] text-text-muted">images pruned</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {devicePreview}
-
+        action={
           <a href={site.url} target="_blank" rel="noopener"
-             className="inline-flex w-fit items-center gap-2 text-[13px] text-text-secondary hover:text-text-primary">
+             className="inline-flex items-center gap-2 text-[13px] text-text-secondary hover:text-text-primary">
             Open the page <ExternalLink className="size-3.5" />
           </a>
-        </div>
-      )}
+        }
+      />
+
+      <SiteTabs
+        panels={{ viewports: viewportsPanel, devices: devicesPanel }}
+        explainFor={{ viewports: !vCur, devices: !dCur }}
+        initial={vCur || !dCur ? "viewports" : "devices"}
+      />
+
+      <div className="mt-8">
+        <RunHistory rows={history} />
+      </div>
     </>
   );
 }

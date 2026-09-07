@@ -5,34 +5,45 @@ import { useRouter } from "next/navigation";
 import { MonitorSmartphone, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saveDevicePreviewRun } from "@/app/dashboard/layout-checks/actions";
+import {
+  IDLE_PROGRESS, isBusy, mergePoll, progressNote, progressPct, type RunProgress,
+} from "@/lib/layout-checks/run-progress";
 
 // Runs the page across the device matrix on the preview service, then saves
 // the result so it becomes history and the next run has something to diff
 // against. Same shape as CheckRunner: start, poll, save, refresh.
+//
+// With onProgress it is hosted by the Devices panel, which draws the progress
+// over the device picker; the control then renders only its button, so the run
+// is reported in one place instead of two.
 
-type Phase = "idle" | "running" | "saving" | "done" | "failed";
 type Scope = "primary" | "all";
 
 export function DevicePreviewRunner({
   url,
   baselineServiceRunId,
   hasRuns,
+  onProgress,
 }: {
   url: string;
   baselineServiceRunId?: string | null;
   hasRuns: boolean;
+  /** Hosted mode: the panel draws progress, this control just runs it. */
+  onProgress?: (p: RunProgress) => void;
 }) {
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [progress, setProgress] = useState<RunProgress>(IDLE_PROGRESS);
   const [scope, setScope] = useState<Scope>("primary");
-  const [note, setNote] = useState("");
-  const [done, setDone] = useState(0);
-  const [total, setTotal] = useState<number | null>(null);
   const router = useRouter();
+  const hosted = Boolean(onProgress);
 
   const run = useCallback(async () => {
-    setPhase("running");
-    setNote("Starting the browsers…");
-    setDone(0); setTotal(null);
+    let p: RunProgress = { ...IDLE_PROGRESS, phase: "running" };
+    const push = (patch: Parameters<typeof mergePoll>[1]) => {
+      p = mergePoll(p, patch);
+      setProgress(p);
+      onProgress?.(p);
+    };
+    push({ phase: "running", message: "" });
     try {
       const started = await (await fetch("/api/devicepreview/monitor", {
         method: "POST",
@@ -41,45 +52,40 @@ export function DevicePreviewRunner({
       })).json();
       const id = started?.run_id;
       if (!id) {
-        setPhase("failed");
-        setNote(started?.unavailable ? "The preview service is not configured on this deployment."
+        push({ phase: "failed", message: started?.unavailable ? "The preview service is not configured on this deployment."
           : started?.error === "run_capacity" ? "Another preview is running right now. Try again in a minute."
-          : started?.detail ?? started?.error ?? "Could not start the preview.");
+          : started?.detail ?? started?.error ?? "Could not start the preview." });
         return;
       }
-      for (let i = 0; i < 240; i++) {
-        await new Promise((r) => setTimeout(r, 2500));
+      // 1.2s while capturing: a device that finishes between two polls is
+      // never marked, so a faster poll is what makes the picker keep up.
+      for (let i = 0; i < 500; i++) {
+        await new Promise((r) => setTimeout(r, 1200));
         const data = await (await fetch(`/api/devicepreview/monitor?id=${encodeURIComponent(id)}`, { cache: "no-store" })).json();
         if (data?.progress) {
-          setDone(data.progress.done ?? 0);
-          setTotal(data.progress.total ?? null);
-          if (data.progress.message) setNote(data.progress.message);
+          push({ done: data.progress.done ?? null, total: data.progress.total ?? null, message: data.progress.message ?? null });
         }
         if (data?.status === "done") {
-          setPhase("saving");
-          setNote("Saving this run and its screenshots…");
+          push({ phase: "saving" });
           const saved = await saveDevicePreviewRun({ url, serviceRunId: id });
-          if (saved?.error) { setPhase("failed"); setNote(saved.error); return; }
-          setPhase("done"); setNote("Saved.");
+          if (saved?.error) { push({ phase: "failed", message: saved.error }); return; }
+          push({ phase: "done" });
           router.refresh();
           return;
         }
         if (data?.status === "failed" || data?.status === "not_found" || data?.unavailable) {
-          setPhase("failed");
-          setNote(data?.error ?? "The preview did not finish.");
+          push({ phase: "failed", message: data?.error ?? "The preview did not finish." });
           return;
         }
       }
-      setPhase("failed");
-      setNote("The preview took longer than expected and was abandoned.");
+      push({ phase: "failed", message: "The preview took longer than expected and was abandoned." });
     } catch {
-      setPhase("failed");
-      setNote("Could not reach the preview service.");
+      push({ phase: "failed", message: "Could not reach the preview service." });
     }
-  }, [url, scope, baselineServiceRunId, router]);
+  }, [url, scope, baselineServiceRunId, router, onProgress]);
 
-  const busy = phase === "running" || phase === "saving";
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  const busy = isBusy(progress);
+  const note = progressNote(progress);
 
   return (
     <div className="flex flex-col items-end gap-2">
@@ -102,19 +108,17 @@ export function DevicePreviewRunner({
           )}
         </Button>
       </div>
-      {busy && (
+      {!hosted && busy && (
         <div className="w-64">
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-card-soft">
             <div className="h-full rounded-full bg-accent transition-[width] duration-500"
-                 style={{ width: `${Math.max(4, pct)}%` }} />
+                 style={{ width: `${Math.max(4, progressPct(progress))}%` }} />
           </div>
-          {total ? <p className="mt-1 text-right text-[11px] text-text-muted">{done} of {total} devices</p> : null}
         </div>
       )}
-      {note && (
-        <p className={`max-w-xs text-right text-[12px] ${phase === "failed" ? "text-error" : "text-text-muted"}`}>
+      {!hosted && note && (
+        <p className={`max-w-xs text-right text-[12px] ${progress.phase === "failed" ? "text-error" : "text-text-muted"}`}>
           {note}
-          {phase === "running" && " Takes one to two minutes."}
         </p>
       )}
     </div>
