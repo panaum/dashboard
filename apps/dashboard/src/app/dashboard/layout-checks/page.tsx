@@ -1,42 +1,66 @@
-import Link from "next/link";
-import { Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { AddSiteForm } from "@/components/layout-checks/add-site-form";
-import { removeLayoutSite } from "./actions";
+import { PagesList } from "@/components/layout-checks/pages-list";
+import type { ListRow, Thumb } from "@/lib/layout-checks/list-view";
 
 export const metadata = { title: "Layout checks" };
 
-const TONE = { FAIL: "error", WARN: "warning", SKIP: "neutral", PASS: "success" } as const;
-const LABEL = {
-  FAIL: "Broken", WARN: "Worth a look", SKIP: "Couldn't check", PASS: "Clean",
-} as const;
+// The pages we watch, worst first. Each row carries both checks — the
+// eight-width sweep and the device matrix — because a page is only as good as
+// its worse half, and a reader should not have to open two places to find that
+// out. Sorting, searching and running live in the list itself (PagesList).
 
 export default async function LayoutChecksPage() {
   await requireAuth();
 
   const sites = await db.layoutSite.findMany({
     orderBy: { createdAt: "desc" },
-    include: { runs: { orderBy: { checkedAt: "desc" }, take: 1 } },
+    include: {
+      runs: {
+        orderBy: { checkedAt: "desc" },
+        take: 1,
+        // The narrowest stored width makes the best thumbnail: it is the shape
+        // of a phone, which is what the reader is worried about.
+        include: { shots: { select: { width: true }, orderBy: { width: "asc" }, take: 1 } },
+      },
+      devicePreviews: {
+        orderBy: { checkedAt: "desc" },
+        take: 1,
+        include: { shots: { select: { profileId: true }, take: 1 } },
+      },
+    },
   });
 
-  // Worst first: a broken page must never sit below the fold under clean ones.
-  const rank: Record<string, number> = { FAIL: 0, WARN: 1, SKIP: 2, PASS: 3 };
-  const rows = [...sites].sort((a, b) => {
-    const ra = rank[a.runs[0]?.worst ?? ""] ?? 4;
-    const rb = rank[b.runs[0]?.worst ?? ""] ?? 4;
-    return ra - rb;
+  const rows: ListRow[] = sites.map((s) => {
+    const v = s.runs[0];
+    const d = s.devicePreviews[0];
+    const thumb: Thumb =
+      v && v.shots[0] ? { kind: "width", runId: v.id, width: v.shots[0].width }
+      : d && d.shots[0] ? { kind: "device", runId: d.id, profile: d.shots[0].profileId }
+      : null;
+    return {
+      id: s.id,
+      url: s.url,
+      label: s.label,
+      viewports: v
+        ? { checkedAt: v.checkedAt.toISOString(), worst: v.worst, failCount: v.failCount, warnCount: v.warnCount }
+        : null,
+      devices: d
+        ? { checkedAt: d.checkedAt.toISOString(), worst: d.worst, errorCount: d.errorCount,
+            warnCount: d.warnCount, deviceCount: d.deviceCount }
+        : null,
+      thumb,
+    };
   });
 
   return (
     <>
       <PageHeader
         title="Layout checks"
-        subtitle="Pages you want rendered at eight widths, with the history of what each check found."
+        subtitle="Pages rendered at eight widths and across the device matrix, with every run kept — so you can prove what changed."
       />
 
       <Card className="mb-5 px-5 py-4">
@@ -44,54 +68,22 @@ export default async function LayoutChecksPage() {
       </Card>
 
       {rows.length === 0 ? (
-        <Card className="px-5 py-10 text-center">
-          <p className="text-sm text-text-secondary">
-            No pages yet. Add one above, then run a check to record how it renders.
-          </p>
+        <Card className="px-6 py-10">
+          <div className="mx-auto flex max-w-md flex-col gap-3 text-center">
+            <p className="text-sm font-medium text-text-primary">Nothing is being watched yet.</p>
+            <p className="text-[13px] leading-relaxed text-text-secondary">
+              Add a client page above and run a check. The eight-width sweep takes about a
+              minute and a half; the device matrix renders it on fourteen real device
+              profiles across three browser engines.
+            </p>
+            <p className="text-[12.5px] leading-relaxed text-text-muted">
+              You can also run the width sweep from a site&apos;s Layout tab under Sites —
+              add the page here and the run is kept, with its screenshots and history.
+            </p>
+          </div>
         </Card>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
-          {rows.map((s, i) => {
-            const last = s.runs[0];
-            const worst = last?.worst ?? null;
-            return (
-              <div key={s.id}
-                   className={`flex flex-wrap items-center gap-3 px-4 py-3 transition-colors hover:bg-card-soft ${i ? "border-t border-border-soft" : ""}`}>
-                <Link href={`/dashboard/layout-checks/${s.id}`} className="group min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-text-primary group-hover:underline">
-                    {s.label ?? s.url.replace(/^https?:\/\//, "")}
-                  </span>
-                  <span className="block truncate text-[12px] text-text-muted">{s.url}</span>
-                </Link>
-
-                {worst ? (
-                  <Badge tone={TONE[worst as keyof typeof TONE] ?? "neutral"}>
-                    {LABEL[worst as keyof typeof LABEL] ?? worst}
-                  </Badge>
-                ) : (
-                  <span className="text-[12px] text-text-muted">Never checked</span>
-                )}
-
-                <span className="w-40 text-right text-[12px] text-text-muted">
-                  {last ? `checked ${last.checkedAt.toLocaleDateString()}` : "—"}
-                </span>
-
-                <ConfirmDelete
-                  action={removeLayoutSite}
-                  fields={{ id: s.id }}
-                  title="Stop watching this page"
-                  description={`Remove ${s.label ?? s.url}? Its check history and screenshots go with it.`}
-                  trigger={
-                    <button className="rounded-md p-1.5 text-text-secondary transition-colors hover:bg-error/10 hover:text-error"
-                            aria-label="Remove page">
-                      <Trash2 className="size-4" />
-                    </button>
-                  }
-                />
-              </div>
-            );
-          })}
-        </div>
+        <PagesList rows={rows} />
       )}
     </>
   );
