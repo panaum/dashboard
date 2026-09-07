@@ -404,7 +404,11 @@ LinkSpy backend), started by its `Dockerfile` (`uvicorn server:app --port $PORT`
 The Dockerfile installs fonts and Playwright's three engines and fails the build
 if font fallback is broken. Railway builds it from the repo with **root
 directory `services/devicepreview`**. Attach a **volume at `/app/runs`** so run
-galleries survive redeploys. Reads no `.env`; every variable is process
+galleries survive redeploys. Sizing: the service keeps two runs per site and
+strips the older one to JPEGs, so budget ≈ 100 MB per site (one run of PNGs at
+50–70 MB for the fourteen-profile matrix on a long page, plus two runs of
+900 px JPEGs at ≈ 13 MB each); the total floats with the number of sites, not
+with how often one is checked. Reads no `.env`; every variable is process
 environment. **Fails closed:** with `DEVICEPREVIEW_KEY` unset every request is
 `503`, so this surface does not join the fail-open list in D13.
 
@@ -412,7 +416,8 @@ environment. **Fails closed:** with `DEVICEPREVIEW_KEY` unset every request is
 |---|---|---|---|---|
 | `DEVICEPREVIEW_KEY` | The one service key; `Authorization: Bearer` or `X-Api-Key`, constant-time compare (`server.py` `_gate`) | secret | Vercel dashboard (`DEVICEPREVIEW_KEY`, piece 2) | **Yes** — unset ⇒ 503 on every route |
 | `RUNS_DIR` | Run storage; the volume mount point | tuning | — | No — default `/app/runs` (set in the Dockerfile) |
-| `RETAIN_RUNS` | Newest runs kept; older pruned after each run | tuning | — | No — default `40` |
+| `RETAIN_PER_SITE` | Runs kept per URL, newest first; the rest deleted after each run. Only the newest run of a URL keeps PNG originals and gallery, older kept runs hold report + JPEG derivatives | tuning | — | No — default `2` |
+| `DERIVATIVE_WIDTH` / `DERIVATIVE_QUALITY` | Size / quality of the JPEG made of every capture at run completion | tuning | — | No — defaults `900` / `82` |
 | `RUN_TIMEOUT_S` | Hard stop per run | tuning | — | No — default `900` |
 | `DEVICEPREVIEW_CONCURRENCY` | Engines in parallel inside a run; lower on a small instance | tuning | — | No — default `2` |
 | `MAX_RUNNING` | Runs accepted at once; more get `429 run_capacity` | tuning | — | No — default `1` |
