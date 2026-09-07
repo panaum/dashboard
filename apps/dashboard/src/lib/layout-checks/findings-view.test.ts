@@ -23,6 +23,7 @@ test("short labels come from the audit's own templates", () => {
   assert.equal(shortLabel(f("webfont", "Webfont failed to load: missing-font.woff2 — HTTP 404", "error")), "Webfont failed — missing-font.woff2");
   assert.equal(shortLabel(f("webfont", "Page requests Apple's system font (-apple-system / SF Pro); it is substituted on this backend", "info")), "Apple system font substituted");
   assert.equal(shortLabel(f("tap-small", "7 more small tap target(s) not listed", "info")), "7 more not listed");
+  assert.equal(shortLabel(f("tap-small", "12 more small tap target(s) not listed — 6 under the 24px AA minimum, 6 between 24 and 44px", "info")), "12 more not listed");
   assert.equal(shortLabel(f("new-rule", "Something odd happened on the page here", "warn")), "New rule: Something odd happened on");
 });
 

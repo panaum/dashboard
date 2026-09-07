@@ -32,7 +32,9 @@ const num = (m: RegExpMatchArray | null, i = 1) => (m ? m[i] : null);
 
 export function shortLabel(f: RawFinding): string {
   const m = f.message;
-  const more = m.match(/^(\d+) more .* not listed$/);
+  // "12 more small tap target(s) not listed — 6 under the 24px AA minimum, …":
+  // the count is the label; the breakdown stays in the full message.
+  const more = m.match(/^(\d+) more .*? not listed/);
   if (more) return `${more[1]} more not listed`;
   switch (f.rule) {
     case "overflow": {
