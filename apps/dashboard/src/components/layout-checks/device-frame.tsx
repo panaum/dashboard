@@ -29,6 +29,7 @@ export function DeviceFrame({
   scaleRef,
   src,
   fallbackSrc,
+  liveSrc = null,
   alt,
   title,
   maxHeight = 640,
@@ -42,6 +43,8 @@ export function DeviceFrame({
   scaleRef?: (scale: number) => void;
   src: string | null;
   fallbackSrc?: string | null;
+  /** The real page, loaded in the frame instead of a capture of it. */
+  liveSrc?: string | null;
   alt: string;
   title?: string;
   maxHeight?: number;
@@ -147,13 +150,32 @@ export function DeviceFrame({
         <div
           ref={screenRef}
           aria-label={alt}
-          className="relative overflow-y-auto overflow-x-hidden bg-white"
+          className={cn("relative bg-white",
+            // A live page scrolls inside itself, the way it would on the
+            // device; a capture is one tall image the frame scrolls instead.
+            liveSrc ? "overflow-hidden" : "overflow-y-auto overflow-x-hidden")}
           style={{ width: screenW, height: screenH, borderRadius: bezel.screen }}
         >
-          {layers.length === 0 && (
+          {liveSrc ? (
+            // Laid out at the profile's real width and then scaled, so the
+            // page answers the viewport it would actually get. Scaling the
+            // box instead would hand it a narrower width and a different
+            // breakpoint. No allow-top-navigation: a page that busts frames
+            // must not be able to navigate the Dashboard away.
+            <iframe
+              key={liveSrc}
+              src={liveSrc}
+              title={alt}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+              className="block border-0 bg-white"
+              style={{ width: viewport.width, height: viewport.height,
+                       transform: `scale(${scale})`, transformOrigin: "top left" }}
+            />
+          ) : null}
+          {!liveSrc && layers.length === 0 && (
             <div className="grid h-full place-items-center px-4 text-center text-[12px] text-text-muted">No screenshot for this device</div>
           )}
-          {layers.map((l, i) => (
+          {!liveSrc && layers.map((l, i) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key={l.key}
@@ -166,7 +188,7 @@ export function DeviceFrame({
               style={{ opacity: l.loaded ? 1 : 0, transition: `opacity ${ms(FADE_MS)}ms ease` }}
             />
           ))}
-          {drawable && (
+          {!liveSrc && drawable && (
             <Highlight key={`${drawable.x},${drawable.y},${drawable.width},${drawable.height}`} box={drawable} scale={scale} container={screenRef} screenH={screenH} />
           )}
           {children}
