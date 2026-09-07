@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Monitor, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { BookmarkPlus, Monitor, RefreshCw } from "lucide-react";
+import { saveLayoutRun } from "@/app/dashboard/layout-checks/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +26,21 @@ import {
 
 type Phase = "idle" | "running" | "done" | "failed";
 
-export function ResponsivePanel({ url }: { url: string | null }) {
+export function ResponsivePanel({
+  url,
+  watched = [],
+}: {
+  url: string | null;
+  /** Pages on this host already kept in Layout checks, so the two stop being
+   *  strangers: the same sweep runs here, but only a kept run has a history. */
+  watched?: { id: string; url: string; label: string | null }[];
+}) {
+  // A run here is thrown away when the tab closes unless it is kept. Keeping it
+  // is the same save the Layout checks page does: the run, its findings and its
+  // eight screenshots, under this URL.
+  const [kept, setKept] = useState<string | null>(null);
+  const [keeping, setKeeping] = useState(false);
+  const [keepError, setKeepError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [checkId, setCheckId] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ message?: string; percent?: number } | null>(null);
@@ -67,8 +83,20 @@ export function ResponsivePanel({ url }: { url: string | null }) {
     timer.current = setTimeout(tick, 2500);
   }, []);
 
+  const keep = useCallback(async () => {
+    if (!url || !checkId || !report) return;
+    setKeeping(true);
+    setKeepError(null);
+    const res = await saveLayoutRun({ url, checkId, report });
+    setKeeping(false);
+    if (res?.error) setKeepError(res.error);
+    else if (res?.siteId) setKept(res.siteId);
+  }, [url, checkId, report]);
+
   const start = useCallback(async () => {
     if (!url) return;
+    setKept(null);
+    setKeepError(null);
     setPhase("running");
     setReport(null);
     setError(null);
@@ -122,6 +150,20 @@ export function ResponsivePanel({ url }: { url: string | null }) {
               reports anything that breaks: sideways scrolling, text cut off, text
               landing on top of other text, and where the main button sits.
             </p>
+            {watched.length > 0 && (
+              <p className="mt-2 text-[12.5px] text-text-muted">
+                Kept in Layout checks:{" "}
+                {watched.map((w, i) => (
+                  <span key={w.id}>
+                    {i > 0 && ", "}
+                    <Link href={`/dashboard/layout-checks/${w.id}`}
+                          className="text-accent underline-offset-2 hover:underline">
+                      {w.label?.trim() || w.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            )}
           </div>
           <Button onClick={start} disabled={phase === "running"}>
             {phase === "running" ? (
@@ -155,8 +197,23 @@ export function ResponsivePanel({ url }: { url: string | null }) {
         )}
 
         {phase === "done" && (
-          <p className="mt-4 text-sm font-medium text-text-primary">{summary.headline}</p>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-medium text-text-primary">{summary.headline}</p>
+            {kept ? (
+              <Link href={`/dashboard/layout-checks/${kept}`}
+                    className="text-[13px] font-medium text-accent underline-offset-2 hover:underline">
+                Kept — open its history and screenshots
+              </Link>
+            ) : (
+              <Button variant="secondary" size="sm" onClick={keep} disabled={keeping}
+                      title="This run is not saved anywhere until you keep it.">
+                <BookmarkPlus className="size-4" /> {keeping ? "Keeping…" : "Keep this run"}
+              </Button>
+            )}
+          </div>
         )}
+
+        {keepError && <p className="mt-2 text-[13px] text-error">{keepError}</p>}
       </Card>
 
       {phase === "done" && findings.length > 0 && (
