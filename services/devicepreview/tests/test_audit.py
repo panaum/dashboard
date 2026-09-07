@@ -119,6 +119,43 @@ class TapSeverity(unittest.TestCase):
         self.assertIn("24px WCAG AA", f["message"])
 
 
+class TapInlineException(unittest.TestCase):
+    """WCAG 2.5.8's Inline exception, which the rule used to ignore.
+
+    Before this, every AA warning on apexure.com and nine of ten on
+    breezioac.com were inline links inside prose — targets the standard
+    itself exempts. They are still reported, as notes, naming the exception.
+    """
+
+    def test_inline_links_in_a_sentence_are_notes_not_failures(self):
+        _, rep = run("tap-inline.html", TOUCH)
+        dev = next(d for d in rep["devices"])
+        smalls = [f for f in dev["findings"] if f["rule"] == "tap-small"]
+        inline = [f for f in smalls if "inline text link" in f["message"]]
+        self.assertGreaterEqual(len(inline), 2, f"both sentence links should be reported: {smalls}")
+        for f in inline:
+            self.assertEqual(f["severity"], "info", f["message"])
+            self.assertIn("WCAG 2.5.8 Inline", f["message"])
+        # Still measured and still drawable: an exemption is not a deletion.
+        for f in inline:
+            self.assertTrue(f["box"]["width"] > 0 and f["box"]["height"] > 0)
+
+    def test_an_inline_block_button_keeps_its_warning(self):
+        _, rep = run("tap-inline.html", TOUCH)
+        dev = next(d for d in rep["devices"])
+        f = next(f for f in dev["findings"] if f["rule"] == "tap-small" and f["selector"] == "button#block")
+        self.assertEqual(f["severity"], "warn", "an inline-block box is the author's to size")
+        self.assertIn("under the 24px WCAG AA minimum", f["message"])
+
+    def test_two_inline_links_close_together_are_not_a_defect(self):
+        _, rep = run("tap-inline.html", TOUCH)
+        dev = next(d for d in rep["devices"])
+        close = [f for f in dev["findings"] if f["rule"] == "tap-close"]
+        for f in close:
+            self.assertEqual(f["severity"], "info", f["message"])
+            self.assertIn("Inline exception", f["message"])
+
+
 class RuleConfig(unittest.TestCase):
     def test_disable_rule_switches_it_off(self):
         code, rep = run("overflow.html", TOUCH, "--disable-rule", "overflow")
