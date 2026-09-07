@@ -3,6 +3,7 @@
 // device opens by default. No React, no I/O — all of it unit tested.
 
 import type { DpDevice } from "@/lib/devicepreview/history";
+import type { Tone } from "@/lib/layout-checks/verdict";
 
 export type Shape = "phone" | "tablet" | "desktop";
 export type Group = "Apple" | "Android" | "Tablet" | "Desktop";
@@ -93,6 +94,23 @@ export function groupDevices(views: DeviceView[]): { group: Group; devices: Devi
   return GROUP_ORDER
     .map((group) => ({ group, devices: sortDevices(views.filter((v) => v.group === group)) }))
     .filter((g) => g.devices.length > 0);
+}
+
+/** One line for a collapsed group: what is wrong inside it, without opening it.
+ *  Counts devices, not findings — the question a closed group has to answer is
+ *  "is there anything in here for me", not "how bad". */
+export function groupSummary(devices: DeviceView[]): { label: string; tone: Tone } {
+  const n = (s: Severity) => devices.filter((d) => d.severity === s).length;
+  const errors = n("error"), warnings = n("warning"), out = n("inconclusive");
+  if (errors) return { label: `${errors} with error${errors === 1 ? "" : "s"}`, tone: "error" };
+  if (warnings) return { label: `${warnings} to review`, tone: "warning" };
+  if (out) return { label: `${out} not captured`, tone: "neutral" };
+  return { label: "all clean", tone: "success" };
+}
+
+/** The group a device belongs to, for opening the picker on the right one. */
+export function groupOfProfile(views: DeviceView[], profileId: string | null): Group | null {
+  return views.find((v) => v.profileId === profileId)?.group ?? null;
 }
 
 /** The worst device opens by default; if everything is clean, the smallest
