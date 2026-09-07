@@ -3,6 +3,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { Shape } from "@/lib/layout-checks/devices-view";
+import { ms } from "@/lib/layout-checks/motion";
 
 // A generic frame per platform — a bezelled rounded rectangle for phones, a
 // wider one for tablets, a browser chrome bar for desktop — sized to the
@@ -98,7 +99,7 @@ export function DeviceFrame({
     const was = shownViewport.current;
     shownViewport.current = sig;
     const el = frameRef.current, sc = screenRef.current;
-    if (!el || !sc || was === null || was === sig) return;
+    if (!el || !sc || was === null || was === sig || ms(200) === 0) return;
     el.style.transition = "width 200ms ease, height 200ms ease, border-radius 200ms ease";
     sc.style.transition = "width 200ms ease, height 200ms ease";
     const t = window.setTimeout(() => { el.style.transition = ""; sc.style.transition = ""; }, 240);
@@ -145,6 +146,7 @@ export function DeviceFrame({
         )}
         <div
           ref={screenRef}
+          aria-label={alt}
           className="relative overflow-y-auto overflow-x-hidden bg-white"
           style={{ width: screenW, height: screenH, borderRadius: bezel.screen }}
         >
@@ -161,7 +163,7 @@ export function DeviceFrame({
               onLoad={(e) => settle(l.key, e.currentTarget)}
               onError={() => fail(l.key)}
               className={cn("block w-full select-none", i < layers.length - 1 ? "absolute inset-x-0 top-0" : "relative")}
-              style={{ opacity: l.loaded ? 1 : 0, transition: `opacity ${FADE_MS}ms ease` }}
+              style={{ opacity: l.loaded ? 1 : 0, transition: `opacity ${ms(FADE_MS)}ms ease` }}
             />
           ))}
           {drawable && (
@@ -187,7 +189,7 @@ function Highlight({ box, scale, container, screenH }: {
     if (el) {
       const top = box.y * scale;
       const want = Math.max(0, Math.round(top - screenH / 3));
-      if (Math.abs(el.scrollTop - want) > 4) el.scrollTo({ top: want, behavior: "smooth" });
+      if (Math.abs(el.scrollTop - want) > 4) el.scrollTo({ top: want, behavior: ms(200) === 0 ? "auto" : "smooth" });
     }
     return () => cancelAnimationFrame(id);
   }, [box, scale, container, screenH]);
@@ -198,7 +200,7 @@ function Highlight({ box, scale, container, screenH }: {
       style={{
         left: Math.max(0, box.x * scale - 2), top: Math.max(0, box.y * scale - 2),
         width: Math.max(8, box.width * scale + 4), height: Math.max(8, box.height * scale + 4),
-        opacity: on ? 1 : 0, transition: "opacity 200ms ease",
+        opacity: on ? 1 : 0, transition: `opacity ${ms(200)}ms ease`,
       }}
     />
   );

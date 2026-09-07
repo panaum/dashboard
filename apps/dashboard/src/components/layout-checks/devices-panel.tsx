@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, Columns3, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { CheckShell } from "@/components/layout-checks/check-shell";
 import { DeviceFrame } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { railItems } from "@/lib/layout-checks/findings-view";
+import { rovingTarget } from "@/lib/layout-checks/roving";
+import { ms } from "@/lib/layout-checks/motion";
 import { comparableEngines, engineColumns } from "@/lib/layout-checks/engines-view";
 import { DevicePreviewRunner } from "@/components/layout-checks/device-preview-runner";
 import {
@@ -103,15 +105,26 @@ export function DevicesPanel({
       <p className={cn("text-[12.5px]", progress.phase === "failed" ? "text-error" : "text-text-muted")}>{note}</p>
       {running && (
         <div className="h-1 w-full max-w-sm overflow-hidden rounded-full bg-card-soft">
-          <div className="h-full rounded-full bg-accent transition-[width] duration-500"
+          <div className="h-full rounded-full bg-accent motion-safe:transition-[width] motion-safe:duration-500"
                style={{ width: `${Math.max(4, progressPct(progress))}%` }} />
         </div>
       )}
     </div>
   ) : null;
 
+  // One tab stop for the picker, arrows between the devices — the reading
+  // order across the four groups, not four separate stops.
+  const order = groups.flatMap((g) => g.devices);
+  const onPickerKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const j = rovingTarget(e.key, order.findIndex((d) => d.profileId === current?.profileId), order.length);
+    if (j === null) return;
+    e.preventDefault();
+    pick(order[j].profileId);
+    document.getElementById(`d-pick-${order[j].profileId}`)?.focus();
+  };
+
   const pills = views.length ? (
-    <div className="flex flex-wrap gap-x-7 gap-y-3" role="group" aria-label="Devices">
+    <div className="flex flex-wrap gap-x-7 gap-y-3" role="radiogroup" aria-label="Devices" onKeyDown={onPickerKey}>
       {groups.map(({ group, devices: ds }) => (
         <div key={group} className="flex flex-col gap-1.5">
           <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">{group}</span>
@@ -122,12 +135,15 @@ export function DevicesPanel({
               return (
                 <button
                   key={d.profileId}
+                  id={`d-pick-${d.profileId}`}
                   type="button"
-                  aria-pressed={on}
+                  role="radio"
+                  aria-checked={on}
+                  tabIndex={on ? 0 : -1}
                   onClick={() => pick(d.profileId)}
                   title={`${d.label} · ${d.engineLabel} · ${d.viewportLabel}`}
                   className={cn(
-                    "group flex flex-col items-start rounded-lg px-2.5 py-1.5 text-left transition-[opacity,color,background-color,border-color] duration-300 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+                    "group flex flex-col items-start rounded-lg px-2.5 py-1.5 text-left motion-safe:transition-[opacity,color,background-color,border-color] motion-safe:duration-300 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
                     on ? "bg-accent text-text-on-dark" : "border border-border-soft bg-card text-text-primary hover:border-accent/50",
                     runState === "waiting" && "opacity-55",
                   )}
@@ -135,10 +151,10 @@ export function DevicesPanel({
                   <span className="flex items-center gap-1.5 text-[13px] font-medium leading-tight">
                     {runState ? (
                       runState === "captured" ? (
-                        <Check aria-hidden className={cn("size-3 shrink-0 transition-colors duration-300", on ? "text-text-on-dark" : "text-text-secondary")} />
+                        <Check aria-hidden className={cn("size-3 shrink-0 motion-safe:transition-colors motion-safe:duration-300", on ? "text-text-on-dark" : "text-text-secondary")} />
                       ) : (
                         <span aria-hidden className={cn(
-                          "inline-block size-2 shrink-0 rounded-full transition-colors duration-300",
+                          "inline-block size-2 shrink-0 rounded-full motion-safe:transition-colors motion-safe:duration-300",
                           runState === "failed" ? "bg-error" : "bg-border-soft",
                         )} />
                       )
@@ -328,5 +344,5 @@ export function DevicesPanel({
 function Fade({ className, children }: { className?: string; children: ReactNode }) {
   const [on, setOn] = useState(false);
   useEffect(() => { const id = requestAnimationFrame(() => setOn(true)); return () => cancelAnimationFrame(id); }, []);
-  return <div className={className} style={{ opacity: on ? 1 : 0, transition: "opacity 150ms ease" }}>{children}</div>;
+  return <div className={className} style={{ opacity: on ? 1 : 0, transition: `opacity ${ms(150)}ms ease` }}>{children}</div>;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { DeviceFrame } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import type { TabVerdict } from "@/lib/layout-checks/verdict";
 import { widthLabel } from "@/lib/linkspy/responsive-view";
+import { rovingTarget } from "@/lib/layout-checks/roving";
 import {
   defaultWidth, firstWidthOf, hasPerWidth, severityAt, viewportRail, widthShape,
   widthViewport, type ViewportFinding, type WidthSeverity,
@@ -62,6 +63,15 @@ export function ViewportsPanel({
 
   const pick = (w: number) => { setSelected(w); setFinding(null); };
 
+  // One tab stop for the picker; arrows move along the widths, small to large.
+  const onPickerKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const j = rovingTarget(e.key, asc.indexOf(current ?? -1), asc.length);
+    if (j === null) return;
+    e.preventDefault();
+    pick(asc[j]);
+    document.getElementById(`w-pick-${asc[j]}`)?.focus();
+  };
+
   const picker = asc.length ? (
     <div className="flex flex-col gap-3">
       {!perWidth && (
@@ -70,15 +80,18 @@ export function ViewportsPanel({
           across all {asc.length} widths, not just this one. The next run will split them.
         </p>
       )}
-      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Widths">
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Widths" onKeyDown={onPickerKey}>
         {asc.map((w) => {
           const on = w === current;
           const sev = severityAt(findings, w);
           return (
             <button
               key={w}
+              id={`w-pick-${w}`}
               type="button"
-              aria-pressed={on}
+              role="radio"
+              aria-checked={on}
+              tabIndex={on ? 0 : -1}
               onClick={() => pick(w)}
               title={widthLabel(w)}
               className={cn(
