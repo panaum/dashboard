@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { LayoutDashboard, Users, BarChart3, UsersRound, Search, ListChecks, Lightbulb, Sparkles, LogOut, Radar, ExternalLink, Globe, MonitorSmartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { type Actor, visibleNav } from "@/lib/permissions";
 import { Logo } from "@/components/shared/logo";
 import { logout } from "@/app/dashboard/actions";
 
@@ -20,8 +21,12 @@ const NAV = [
   { href: "/dashboard/insights", label: "Insights", icon: Sparkles },
 ];
 
-export function Sidebar() {
+export function Sidebar({ actor }: { actor?: Actor | null }) {
   const pathname = usePathname();
+  // Hiding an unreachable link is a courtesy to the reader. The control is
+  // `requireCapability` on the route and the guard inside each server action —
+  // this only stops people clicking into a redirect.
+  const nav = visibleNav(actor ?? null, NAV);
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-border-soft bg-[#fbfbfd] px-3 py-5 print:hidden">
@@ -53,7 +58,7 @@ export function Sidebar() {
         Menu
       </span>
       <nav className="flex flex-1 flex-col gap-0.5">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const active = item.exact
             ? pathname === item.href
             : pathname.startsWith(item.href);
