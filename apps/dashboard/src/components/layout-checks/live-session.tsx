@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, RotateCw, ChevronLeft, X } from "lucide-react";
+import { Loader2, RotateCw, ChevronLeft, X, CornerDownLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -19,6 +19,30 @@ type State =
   | { phase: "live"; title?: string }
   | { phase: "closed"; detail: string };
 
+/** What a person means when they type an address, or null if it is not one. */
+function normalise(raw: string): string | null {
+  const t = raw.trim();
+  if (!t) return null;
+  const withScheme = /^https?:\/\//i.test(t) ? t : `https://${t}`;
+  try {
+    return new URL(withScheme).toString();
+  } catch {
+    return null;
+  }
+}
+
+/** The address without the QA parameters we add — those are plumbing. */
+function clean(raw: string): string {
+  try {
+    const u = new URL(raw);
+    for (const k of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+                     "gclid", "fbclid"]) u.searchParams.delete(k);
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
 export function LiveSession({
   url,
   profileId,
@@ -32,6 +56,12 @@ export function LiveSession({
   hasTouch: boolean;
   onExit: () => void;
 }) {
+  // The session opens on the page being checked, and the address bar takes you
+  // anywhere else. Each address is a fresh token: the token pins one url, which
+  // is what makes a leaked one harmless, so a new address means a new mint
+  // rather than a loosening of the pin.
+  const [target, setTarget] = useState(url);
+  const [typed, setTyped] = useState(url);
   const [state, setState] = useState<State>({ phase: "connecting" });
   const [frame, setFrame] = useState<string | null>(null);
   const socket = useRef<WebSocket | null>(null);
@@ -50,7 +80,7 @@ export function LiveSession({
         const res = await fetch("/api/devicepreview/live-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, profile: profileId }),
+          body: JSON.stringify({ url: target, profile: profileId }),
         });
         const data = await res.json();
         if (!live) return;
@@ -72,6 +102,11 @@ export function LiveSession({
             const msg = JSON.parse(ev.data);
             if (msg.type === "ready") setState({ phase: "live", title: msg.title });
             else if (msg.type === "closed") setState({ phase: "closed", detail: msg.detail });
+            // The browser is ours, so unlike an iframe it can say where a click
+            // took you. The QA parameters we sign in are stripped for display:
+            // they are how the visit stays out of the client's analytics, not
+            // part of the address anyone means.
+            else if (msg.type === "url" && typeof msg.url === "string") setTyped(clean(msg.url));
             return;
           }
           // A frame. Swap the object URL and release the previous one, or the
@@ -95,7 +130,7 @@ export function LiveSession({
       socket.current = null;
       if (lastUrl.current) URL.revokeObjectURL(lastUrl.current);
     };
-  }, [url, profileId]);
+  }, [target, profileId]);
 
   const send = useCallback((ev: Record<string, unknown>) => {
     const ws = socket.current;
@@ -113,6 +148,14 @@ export function LiveSession({
   };
 
   const live = state.phase === "live";
+
+  const go = () => {
+    const next = normalise(typed);
+    if (!next) return;
+    setFrame(null);
+    setState({ phase: "connecting" });
+    setTarget(next);            // a new address is a new session on a new token
+  };
 
   return (
     <div className="flex w-full flex-col items-center gap-2.5">
@@ -157,6 +200,23 @@ export function LiveSession({
         )}
       </div>
 
+      <form
+        className="flex w-full max-w-[420px] items-center gap-1.5"
+        onSubmit={(e) => { e.preventDefault(); go(); }}
+      >
+        <input
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          spellCheck={false}
+          inputMode="url"
+          aria-label="Address to open on this device"
+          className="h-8 min-w-0 flex-1 rounded-md border border-border-soft bg-card px-2.5 font-mono text-[12px] text-text-primary outline-none transition-colors focus:border-accent/50"
+        />
+        <Button type="submit" variant="secondary" size="sm" title="Open this address on the device">
+          <CornerDownLeft className="size-4" /> Go
+        </Button>
+      </form>
+
       <div className="flex flex-wrap items-center justify-center gap-2">
         <Button type="button" variant="secondary" size="sm" disabled={!live}
                 onClick={() => send({ type: "back" })} title="Back, in the device's browser">
@@ -173,7 +233,7 @@ export function LiveSession({
 
       <p className="max-w-sm text-center text-[11.5px] leading-relaxed text-text-muted">
         {live
-          ? "A real browser on the device's profile — taps arrive as touch events. It closes itself after a few minutes idle."
+          ? "A real browser on the device's profile — taps arrive as touch events, and the visit is tagged as QA so it stays out of the client's analytics. It closes itself after a few minutes idle."
           : state.phase === "connecting"
             ? "One session runs at a time."
             : "The browser has been released."}

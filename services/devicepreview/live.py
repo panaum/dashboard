@@ -64,6 +64,11 @@ _busy = asyncio.Lock()
 _spent: dict[str, float] = {}
 
 AUTH_TIMEOUT_S = 5.0
+# How long a new session waits for the slot before giving up. Typing a new
+# address replaces the session you already have, and the browser it is
+# replacing takes a moment to close — without this wait a session collided
+# with itself and told you another one was open.
+BUSY_WAIT_S = float(os.environ.get("LIVE_BUSY_WAIT_S", "5"))
 
 
 def session_open() -> bool:
@@ -167,27 +172,38 @@ async def live_session(ws: WebSocket) -> None:
                    f"{profile.label} runs on {profile.engine}, which has no frame streaming yet. "
                    "Chromium profiles only for now.")
         return
-    if _busy.locked():
-        await _bye(ws, "busy", "Another live session is open. They run one at a time on this instance.")
-        return
     if audit_running():
         await _bye(ws, "busy", "A capture run is using the browsers. Runs and sessions share one slot; "
                                "try again when it finishes.")
         return
 
-    async with _busy:
+    # Wait briefly rather than refusing outright: the session you are replacing
+    # is usually your own, and its browser needs a moment to close.
+    try:
+        await asyncio.wait_for(_busy.acquire(), timeout=BUSY_WAIT_S)
+    except asyncio.TimeoutError:
+        await _bye(ws, "busy", "Another live session is open. They run one at a time on this instance.")
+        return
+    try:
         await _drive(ws, profile, claims["url"])
+    finally:
+        _busy.release()
 
 
 async def _drive(ws: WebSocket, profile: Any, url: str) -> None:
     from playwright.async_api import async_playwright
 
+    # One outbound queue for both kinds of message. Sending JSON straight from
+    # a navigation callback while the pump is mid-frame would interleave two
+    # writers on one socket; draining both through the pump keeps a single one.
+    #
     # (jpeg, sessionId): Chromium stops sending until each frame is acked, so
     # the ack has to be awaited, not fired and forgotten. Doing it in the pump
     # after the send also gives free backpressure — the page cannot outrun the
     # socket. An earlier version acked with ensure_future and the stream
     # stalled after a couple of dozen frames; a 25-frame test did not notice.
     frames: asyncio.Queue[tuple[bytes, str]] = asyncio.Queue(maxsize=2)
+    notes: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=8)
     async with async_playwright() as pw:
         browser = await pw.chromium.launch()
         try:
@@ -202,6 +218,15 @@ async def _drive(ws: WebSocket, profile: Any, url: str) -> None:
                 frames.put_nowait((base64.b64decode(event["data"]), event["sessionId"]))
 
             cdp.on("Page.screencastFrame", on_frame)
+
+            # Where the page actually is, whenever it moves. An iframe cannot
+            # tell you this — the browser hides a cross-origin URL — but this
+            # browser is ours, so the address bar can follow a click.
+            def on_nav(frame: Any) -> None:
+                if frame is page.main_frame:
+                    notes.put_nowait({"type": "url", "url": frame.url})
+
+            page.on("framenavigated", on_nav)
             await ws.send_json({"type": "opening", "url": url, "profile": profile.id,
                                 "label": profile.label, "viewport": profile.viewport,
                                 "engine": profile.engine})
@@ -217,7 +242,7 @@ async def _drive(ws: WebSocket, profile: Any, url: str) -> None:
                 "everyNthFrame": 1})
             await ws.send_json({"type": "ready", "title": await page.title()})
 
-            pump = asyncio.create_task(_pump(ws, frames, cdp))
+            pump = asyncio.create_task(_pump(ws, frames, notes, cdp))
             try:
                 await _input_loop(ws, page)
             finally:
@@ -228,7 +253,8 @@ async def _drive(ws: WebSocket, profile: Any, url: str) -> None:
             await browser.close()
 
 
-async def _pump(ws: WebSocket, frames: asyncio.Queue[tuple[bytes, str]], cdp: Any) -> None:
+async def _pump(ws: WebSocket, frames: asyncio.Queue[tuple[bytes, str]],
+                notes: asyncio.Queue[dict[str, Any]], cdp: Any) -> None:
     """Frames out, as binary. Text is reserved for state, so the client can
     tell a picture from a message without sniffing.
 
@@ -238,6 +264,11 @@ async def _pump(ws: WebSocket, frames: asyncio.Queue[tuple[bytes, str]], cdp: An
     min_gap = 1.0 / max(MAX_FPS, 1)
     last = 0.0
     while True:
+        # Anything waiting to be said goes first: a frame is 40KB and a
+        # navigation note is a sentence, and the note is what tells the reader
+        # where they now are.
+        while not notes.empty():
+            await ws.send_json(notes.get_nowait())
         data, session_id = await frames.get()
         wait = min_gap - (time.monotonic() - last)
         if wait > 0:

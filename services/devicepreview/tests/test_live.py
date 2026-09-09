@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
@@ -71,6 +72,19 @@ class TokenContract(unittest.TestCase):
                           "an unconfigured service refuses every token")
 
 
+def next_frame(ws, tries: int = 8) -> bytes:
+    """The next picture, reading past any state the session says on the way.
+
+    Frames are binary and state is text; a session now also reports where the
+    page went, so a test waiting for a frame must not choke on a sentence.
+    """
+    for _ in range(tries):
+        m = ws.receive()
+        if m.get("bytes"):
+            return m["bytes"]
+    raise AssertionError("no frame arrived")
+
+
 class _Auto:
     """Keeps the `with` shape of the test bodies after the handshake."""
     def __init__(self, ws): self.ws = ws
@@ -107,14 +121,14 @@ class Session(unittest.TestCase):
 
             # Frames arrive as binary; state as text. A viewer can tell them
             # apart without sniffing the payload.
-            first = ws.receive_bytes()
+            first = next_frame(ws)
             self.assertGreater(len(first), 500, "a frame, not an empty buffer")
             self.assertEqual(first[:2], b"\xff\xd8", "JPEG")
 
             # Input is accepted and the page keeps streaming after it.
             ws.send_json({"type": "scroll", "dy": 300})
             ws.send_json({"type": "tap", "x": 20, "y": 20})
-            self.assertGreater(len(ws.receive_bytes()), 500)
+            self.assertGreater(len(next_frame(ws)), 500)
 
     def test_a_token_is_single_use(self):
         """Signature and expiry alone leave a two-minute window in which
@@ -169,6 +183,40 @@ class Session(unittest.TestCase):
             self.assertEqual(ws.receive_json()["code"], "unknown_profile")
 
 
+class Navigation(unittest.TestCase):
+    """The browser is ours, so it can say where a click took you — the thing an
+    iframe cannot do, and what makes the address bar able to follow along."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.live = _mod(LIVE_IDLE_TIMEOUT_S="15")
+        import importlib, server
+        importlib.reload(server)
+        from fastapi.testclient import TestClient
+        cls.client = TestClient(server.app)
+
+    def test_the_session_reports_the_address_it_opened(self):
+        page = (ROOT / "fixtures" / "clean.html").resolve().as_uri()
+        tok = self.live.sign_token(KEY, page, "galaxy-s25")
+        with self.client.websocket_connect("/api/devicepreview/live-session") as ws:
+            ws.send_json({"type": "auth", "token": tok})
+            self.assertEqual(ws.receive_json()["type"], "opening")
+            # ready, plus a url note for the navigation that just happened.
+            seen, urls = [], []
+            for _ in range(6):
+                m = ws.receive()
+                if m.get("text"):
+                    d = json.loads(m["text"])
+                    seen.append(d["type"])
+                    if d["type"] == "url":
+                        urls.append(d["url"])
+                if "ready" in seen and urls:
+                    break
+            self.assertIn("ready", seen, seen)
+            self.assertTrue(urls, f"no url reported: {seen}")
+            self.assertEqual(urls[-1], page)
+
+
 class InputLands(unittest.TestCase):
     """A tap has to reach the page as a real touch, or none of this is worth
     building — an iframe can already show you a picture.
@@ -193,11 +241,11 @@ class InputLands(unittest.TestCase):
             ws.send_json({"type": "auth", "token": tok})
             self.assertEqual(ws.receive_json()["type"], "opening")
             self.assertEqual(ws.receive_json()["type"], "ready")
-            before = ws.receive_bytes()            # the page as loaded
+            before = next_frame(ws)                # the page as loaded
             self.assertGreater(len(before), 200)
 
             ws.send_json({"type": "tap", "x": 200, "y": 400})
-            after = ws.receive_bytes()             # only exists because the page changed
+            after = next_frame(ws)                 # only exists because the page changed
             self.assertNotEqual(before, after,
                                 "the tap did not change the page: it never landed as a touch")
 

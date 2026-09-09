@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/auth";
 import { liveSocketUrl, signLiveToken } from "@/lib/devicepreview/live-token";
+import { qaUrl } from "@/lib/layout-checks/embed";
 
 // Mints the one thing the browser is allowed to hold: a short-lived token that
 // opens a live session on ONE url and ONE profile. The service key never
@@ -36,7 +37,14 @@ export async function POST(req: NextRequest) {
 
   // The token is returned separately and sent as the socket's first message:
   // in the URL it would be written to the service's access log in full.
-  return NextResponse.json({ socketUrl: liveSocketUrl(base), token: signLiveToken(key, url, profile) });
+  // A live session is a real visit to the client's site and their analytics
+  // will count it, so it carries the same QA parameters the eight-width sweep
+  // uses. Tagged HERE, before signing: the service opens what the token says,
+  // so a page cannot ask for an untagged visit.
+  return NextResponse.json({
+    socketUrl: liveSocketUrl(base),
+    token: signLiveToken(key, qaUrl(url), profile),
+  });
 }
 
 /** Profile ids are the slugs in devices.json; anything else is not one. */
