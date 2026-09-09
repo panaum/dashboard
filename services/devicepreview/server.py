@@ -59,6 +59,14 @@ SERVICE_KEY = os.environ.get("DEVICEPREVIEW_KEY", "")
 
 app = FastAPI(title="devicepreview", docs_url=None, redoc_url=None)
 
+
+# The live-session websocket lives in its own module: it is async (Playwright's
+# async API, since the endpoint runs in the event loop) while everything else
+# here drives the sync CLI in a subprocess.
+from live import router as live_router  # noqa: E402
+
+app.include_router(live_router)
+
 _runs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
 
