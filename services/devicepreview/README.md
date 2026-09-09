@@ -183,6 +183,10 @@ DEVICEPREVIEW_KEY=$(openssl rand -hex 24) ../pagecheck/.venv/bin/python server.p
 | `RUN_TIMEOUT_S` | Hard stop for one run | `900` |
 | `DEVICEPREVIEW_CONCURRENCY` | Engines run in parallel inside a run; lower it on a small instance | `2` |
 | `MAX_RUNNING` | Runs accepted at once; more get `429 run_capacity` | `1` |
+| `LIVE_TOKEN_TTL_S` | How long a live-session token may be used to open a session | `120` |
+| `LIVE_IDLE_TIMEOUT_S` | No input for this long and the browser is closed | `180` |
+| `LIVE_MAX_SESSION_S` | Hard ceiling on one live session | `900` |
+| `LIVE_MAX_FPS` / `LIVE_QUALITY` | Frame cap and JPEG quality for a live session | `20` / `60` |
 
 ```
 POST /api/devicepreview/run      {url, devices?: [...] | "all", tier?, include_edge?, landscape?,
@@ -194,6 +198,7 @@ GET  /api/devicepreview/file     ?run_id=&path=report.html | <profile>/full.png 
 GET  /api/devicepreview/image    ?run_id=&profile=&kind=fold|full|thumb|diff&max_width=1400   → JPEG, downscaled
 GET  /api/devicepreview/runs     ?url=      → retained runs for that page, newest first
 GET  /health                                → {ok, running, retained, configured, runs_dir, retain_per_site}
+WS   /api/devicepreview/live-session ?token=  → a real browser, streamed (Chromium profiles)
 ```
 
 `status` reports `done` whenever a report was written, with the CLI's exit
@@ -213,6 +218,25 @@ one is run. `originals: false` on `status` says a run has been stripped:
 `DERIVATIVE_WIDTH`, `file` answers 404 for its PNGs and gallery, and it can no
 longer serve as a `baseline` (diffing reads PNGs, so only the newest run of a
 URL can). Tests: `../pagecheck/.venv/bin/python -m unittest tests.test_server`.
+
+### Live sessions
+
+A capture answers "what did this page look like". A live session answers "let
+me use it": a Chromium context with the profile's real viewport, density, user
+agent and touch, streamed out as JPEG frames, with taps, scrolls and keys
+forwarded back in. A tap arrives at the page as `pointerdown` / `touchstart` /
+`touchend` — the thing an iframe can never do.
+
+The browser cannot hold the service key, so the Dashboard signs a short-lived
+token that **pins the url and the profile**. The service reads both from the
+token and never from the query string, so a leaked token opens exactly one page
+on one profile until it expires, and can never be used to browse elsewhere.
+
+Chromium profiles only. WebKit and Firefox have no frame-streaming API — a
+screenshot loop measured 20fps and is the obvious second slice — and a session
+on one of those is refused by name rather than quietly served as something
+else. The stream is change-driven: a still page sends nothing, and an input
+comes back as a frame in about 50ms. One session at a time.
 
 ## Tests
 
