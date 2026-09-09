@@ -62,6 +62,11 @@ export function LiveSession({
         ws.binaryType = "blob";
         socket.current = ws;
 
+        // The token goes in the first message, never the URL: a query string
+        // is written to the service's access log in full, and a token on disk
+        // is one that can be replayed until it expires.
+        ws.onopen = () => ws?.send(JSON.stringify({ type: "auth", token: data.token }));
+
         ws.onmessage = (ev) => {
           if (typeof ev.data === "string") {
             const msg = JSON.parse(ev.data);

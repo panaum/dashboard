@@ -9,42 +9,51 @@ const SECRET = "test-service-key-0123456789";
 const URL_ = "https://breezioac.com/lp/";
 const PROFILE = "galaxy-s25";
 const AT_MS = 1_757_000_000_000;
+const NONCE = "0123456789abcdef";
 const FROM_PYTHON =
-  "eyJleHAiOjE3NTcwMDAxMjAsInByb2ZpbGUiOiJnYWxheHktczI1IiwidXJsIjoiaHR0cHM6Ly9icmVlemlvYWMuY29tL2xwLyJ9" +
-  ".1a1ca31cf20c35c9e92b333b8f184c682a776d20069bf997ac4428c1703e0748";
+  "eyJleHAiOjE3NTcwMDAxMjAsImp0aSI6IjAxMjM0NTY3ODlhYmNkZWYiLCJwcm9maWxlIjoiZ2FsYXh5LXMyNSIsInVybCI6Imh0dHBzOi8vYnJlZXppb2FjLmNvbS9scC8ifQ" +
+  ".0a44b7105495954a58761c7aba85a2ac7b924ce7840c24f41f3cd54a8f47dcd1";
 
 test("a minted token is byte-for-byte what the service will accept", () => {
-  assert.equal(signLiveToken(SECRET, URL_, PROFILE, AT_MS), FROM_PYTHON);
+  assert.equal(signLiveToken(SECRET, URL_, PROFILE, AT_MS, NONCE), FROM_PYTHON);
 });
 
 test("the payload is base64url with no padding, and decodes to sorted compact JSON", () => {
   const [body] = FROM_PYTHON.split(".");
   assert.doesNotMatch(body, /[+/=]/, "base64url, unpadded");
   const json = Buffer.from(body, "base64url").toString("utf8");
-  assert.equal(json, `{"exp":1757000120,"profile":"galaxy-s25","url":"https://breezioac.com/lp/"}`);
+  assert.equal(json,
+    `{"exp":1757000120,"jti":"0123456789abcdef","profile":"galaxy-s25","url":"https://breezioac.com/lp/"}`);
 });
 
 test("the expiry is the ttl the service expects", () => {
-  const [body] = signLiveToken(SECRET, URL_, PROFILE, AT_MS).split(".");
+  const [body] = signLiveToken(SECRET, URL_, PROFILE, AT_MS, NONCE).split(".");
   const { exp } = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
   assert.equal(exp - Math.floor(AT_MS / 1000), TOKEN_TTL_S);
 });
 
-test("a different url, profile, key or minute is a different token", () => {
-  const base = signLiveToken(SECRET, URL_, PROFILE, AT_MS);
-  assert.notEqual(signLiveToken(SECRET, "https://example.com/", PROFILE, AT_MS), base);
-  assert.notEqual(signLiveToken(SECRET, URL_, "iphone-16", AT_MS), base);
-  assert.notEqual(signLiveToken("another-key", URL_, PROFILE, AT_MS), base);
-  assert.notEqual(signLiveToken(SECRET, URL_, PROFILE, AT_MS + 60_000), base);
+test("two tokens for the same page in the same second are still different", () => {
+  // Single use on the service side would otherwise refuse the second person
+  // to open that page in that second.
+  assert.notEqual(signLiveToken(SECRET, URL_, PROFILE, AT_MS), signLiveToken(SECRET, URL_, PROFILE, AT_MS));
 });
 
-test("the socket url points at the service over wss, carrying the token", () => {
+test("a different url, profile, key or minute is a different token", () => {
+  const base = signLiveToken(SECRET, URL_, PROFILE, AT_MS, NONCE);
+  assert.notEqual(signLiveToken(SECRET, "https://example.com/", PROFILE, AT_MS, NONCE), base);
+  assert.notEqual(signLiveToken(SECRET, URL_, "iphone-16", AT_MS, NONCE), base);
+  assert.notEqual(signLiveToken("another-key", URL_, PROFILE, AT_MS, NONCE), base);
+  assert.notEqual(signLiveToken(SECRET, URL_, PROFILE, AT_MS + 60_000, NONCE), base);
+});
+
+test("the socket url points at the service over wss and carries no secret", () => {
   assert.equal(
-    liveSocketUrl("https://devicepreview.up.railway.app", "abc.def"),
-    "wss://devicepreview.up.railway.app/api/devicepreview/live-session?token=abc.def",
+    liveSocketUrl("https://devicepreview.up.railway.app"),
+    "wss://devicepreview.up.railway.app/api/devicepreview/live-session",
   );
-  assert.match(liveSocketUrl("http://localhost:8000/", "t"), /^ws:\/\/localhost:8000\//,
+  assert.match(liveSocketUrl("http://localhost:8000/"), /^ws:\/\/localhost:8000\//,
     "plain http stays plain ws, for a local service");
-  assert.match(liveSocketUrl("https://x.app", "a+b/c=d"), /token=a%2Bb%2Fc%3Dd$/,
-    "the token is escaped, not pasted");
+  // The token is sent as the first message instead: a query string ends up in
+  // the service's access log, and a logged token can be replayed.
+  assert.doesNotMatch(liveSocketUrl("https://x.app"), /token|\?/);
 });

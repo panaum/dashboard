@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 
 // The live-session token, minted here and read by services/devicepreview/live.py.
 //
@@ -26,11 +26,17 @@ export function signLiveToken(
   url: string,
   profile: string,
   nowMs: number = Date.now(),
+  nonce: string = randomBytes(8).toString("hex"),
 ): string {
   // Sorted keys, no spaces: Python writes json.dumps(..., separators=(",", ":"),
   // sort_keys=True) and the signature covers the encoded bytes.
+  //
+  // jti is what makes two tokens for the same page in the same second
+  // different documents. Without it they are byte-identical, and single use
+  // would refuse the second person to open that page in that second.
   const payload = JSON.stringify({
     exp: Math.floor(nowMs / 1000) + TOKEN_TTL_S,
+    jti: nonce,
     profile,
     url,
   });
@@ -38,8 +44,12 @@ export function signLiveToken(
   return `${body}.${createHmac("sha256", secret).update(body).digest("hex")}`;
 }
 
-/** The websocket the browser opens, straight to the service. */
-export function liveSocketUrl(serviceUrl: string, token: string): string {
+/** The websocket the browser opens, straight to the service.
+ *
+ *  No token in the URL: uvicorn writes the full query string to its access
+ *  log, and Railway keeps those, so a token there is a token on disk that can
+ *  be replayed until it expires. It is sent as the socket's first message. */
+export function liveSocketUrl(serviceUrl: string): string {
   const base = serviceUrl.replace(/\/+$/, "").replace(/^http/, "ws");
-  return `${base}/api/devicepreview/live-session?token=${encodeURIComponent(token)}`;
+  return `${base}/api/devicepreview/live-session`;
 }
