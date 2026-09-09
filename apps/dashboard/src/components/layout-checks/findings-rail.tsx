@@ -3,6 +3,8 @@
 import { CheckCircle2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { explain } from "@/lib/layout-checks/explain";
+import { ms } from "@/lib/layout-checks/motion";
 import { RAIL_CAP, railSlice, type RailFinding } from "@/lib/layout-checks/findings-view";
 
 export type RailItem = RailFinding & {
@@ -24,6 +26,7 @@ export function FindingsRail({
   deviceLabel,
   items,
   heading,
+  kind = "device",
   selectedId,
   onSelect,
   expanded,
@@ -32,6 +35,8 @@ export function FindingsRail({
 }: {
   deviceLabel: string;
   items: RailItem[];
+  /** Which vocabulary the rule names belong to, for the explanation. */
+  kind?: "device" | "viewport";
   /** Optional section header, used in engine comparison. */
   heading?: ReactNode;
   selectedId: string | null;
@@ -75,6 +80,7 @@ export function FindingsRail({
               </li>
             );
           }
+          const help = on ? explain(kind, it.rule) : null;
           return (
             <li key={it.id}>
               <button
@@ -97,10 +103,28 @@ export function FindingsRail({
                 <span className="pl-4 font-mono text-[11px] leading-snug text-text-muted">
                   {it.pageLevel ? "whole page" : (it.selector ?? "—")}
                 </span>
-                {on && it.detail && (
-                  <span className="pl-4 text-[11.5px] leading-snug text-text-secondary">{it.detail}</span>
-                )}
               </button>
+
+              {/* What it means, once you have chosen it. The measurement above
+                  is the evidence; this is whether to care and what to do. */}
+              <div
+                inert={!on}
+                style={{ display: "grid", gridTemplateRows: on ? "1fr" : "0fr",
+                         transition: `grid-template-rows ${ms(180)}ms ease` }}
+              >
+                <div className="overflow-hidden">
+                  <div className="ml-4 mr-2 mb-2 mt-0.5 flex flex-col gap-1.5 border-l-2 border-border-soft pl-3 text-[11.5px] leading-relaxed">
+                    {(it.detail || it.message) && (
+                      <p className="text-text-primary">{it.detail || it.message}</p>
+                    )}
+                    {help && <p className="text-text-secondary">{help.why}</p>}
+                    {help?.fix && <p className="text-text-muted">{help.fix}</p>}
+                    {!help && !it.detail && !it.message && (
+                      <p className="text-text-muted">No further detail was recorded for this finding.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
             </li>
           );
         })}

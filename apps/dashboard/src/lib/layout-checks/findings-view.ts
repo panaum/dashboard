@@ -20,6 +20,8 @@ export type RailFinding = {
   severity: "error" | "warn" | "info";
   rule: string;
   label: string;
+  /** The tool's own sentence, with the numbers. The label is the short form. */
+  message?: string;
   selector: string | null;
   box: Box | null;
   /** About the whole page (viewport meta, layout shift, fonts): nothing to draw. */
@@ -110,6 +112,7 @@ export function railItems(findings: RawFinding[]): RailFinding[] {
       severity: (f.severity === "error" || f.severity === "warn" ? f.severity : "info") as RailFinding["severity"],
       rule: f.rule,
       label: shortLabel(f),
+      message: f.message,
       selector: f.scope === "page" ? null : (f.selector ?? null),
       box: f.scope === "page" ? null : (f.box && f.box.width > 0 && f.box.height > 0 ? f.box : null),
       pageLevel: f.scope === "page",
@@ -120,7 +123,8 @@ export function railItems(findings: RawFinding[]): RailFinding[] {
       || Number(a.pageLevel) - Number(b.pageLevel)
       || (a.box?.y ?? Infinity) - (b.box?.y ?? Infinity)
       || a._i - b._i)
-    .map(({ id, severity, rule, label, selector, box, pageLevel }) => ({ id, severity, rule, label, selector, box, pageLevel }));
+    .map(({ id, severity, rule, label, message, selector, box, pageLevel }) =>
+      ({ id, severity, rule, label, message, selector, box, pageLevel }));
 }
 
 /** The five worst, or all of them once expanded, plus how many are folded away. */
