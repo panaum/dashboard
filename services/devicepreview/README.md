@@ -187,6 +187,7 @@ DEVICEPREVIEW_KEY=$(openssl rand -hex 24) ../pagecheck/.venv/bin/python server.p
 | `LIVE_IDLE_TIMEOUT_S` | No input for this long and the browser is closed | `180` |
 | `LIVE_MAX_SESSION_S` | Hard ceiling on one live session | `900` |
 | `LIVE_MAX_FPS` / `LIVE_QUALITY` | Frame cap and JPEG quality for a live session | `20` / `60` |
+| `LIVE_BUSY_WAIT_S` | How long a new session waits for the slot before refusing | `5` |
 
 ```
 POST /api/devicepreview/run      {url, devices?: [...] | "all", tier?, include_edge?, landscape?,
@@ -264,6 +265,16 @@ curl -sI -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
 
 `running` counts capture runs only; a live session holds the same slot without
 being one, which is why `busy` exists.
+
+A session opens on the url its token was signed for, and the Dashboard's
+address bar mints a fresh token per address rather than loosening that pin.
+Within a session you may click anywhere: the pin governs what a session
+*opens*, not where the page then goes, and the service reports each navigation
+back (`{"type":"url"}`) so the address bar can follow a click — which an iframe
+cannot do, because the browser hides a cross-origin url from the page holding
+it. A new session waits up to `LIVE_BUSY_WAIT_S` for the slot, since the
+session it replaces is usually the same person's and its browser takes a
+moment to close.
 
 Chromium profiles only. WebKit and Firefox have no frame-streaming API — a
 screenshot loop measured 20fps and is the obvious second slice — and a session
