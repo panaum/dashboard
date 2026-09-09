@@ -18,11 +18,12 @@ KEY = "test-service-key-0123456789"
 FIX = (ROOT / "fixtures" / "clean.html").resolve().as_uri()
 
 
-def _mod():
+def _mod(**env: str):
     """A fresh module under a known environment (it reads env at import)."""
     for k in ("DEVICEPREVIEW_KEY", "LIVE_TOKEN_TTL_S", "LIVE_IDLE_TIMEOUT_S", "LIVE_MAX_SESSION_S"):
         os.environ.pop(k, None)
     os.environ["DEVICEPREVIEW_KEY"] = KEY
+    os.environ.update(env)
     for name in ("live", "server"):
         sys.modules.pop(name, None)
     import live
@@ -118,6 +119,38 @@ class Session(unittest.TestCase):
     def test_an_unknown_profile_is_named(self):
         with self._open(profile="nokia-3310") as ws:
             self.assertEqual(ws.receive_json()["code"], "unknown_profile")
+
+
+class InputLands(unittest.TestCase):
+    """A tap has to reach the page as a real touch, or none of this is worth
+    building — an iframe can already show you a picture.
+
+    The screencast is change-driven, so on a deliberately still fixture a frame
+    arriving after the tap IS the proof. The idle timeout is cut right down so
+    a tap that never lands fails in seconds instead of hanging.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.live = _mod(LIVE_IDLE_TIMEOUT_S="10")
+        import importlib, server
+        importlib.reload(server)
+        from fastapi.testclient import TestClient
+        cls.client = TestClient(server.app)
+
+    def test_a_tap_reaches_the_page_as_touch(self):
+        page = (ROOT / "fixtures" / "live-tap.html").resolve().as_uri()
+        tok = self.live.sign_token(KEY, page, "galaxy-s25")
+        with self.client.websocket_connect(f"/api/devicepreview/live-session?token={tok}") as ws:
+            self.assertEqual(ws.receive_json()["type"], "opening")
+            self.assertEqual(ws.receive_json()["type"], "ready")
+            before = ws.receive_bytes()            # the page as loaded
+            self.assertGreater(len(before), 200)
+
+            ws.send_json({"type": "tap", "x": 200, "y": 400})
+            after = ws.receive_bytes()             # only exists because the page changed
+            self.assertNotEqual(before, after,
+                                "the tap did not change the page: it never landed as a touch")
 
 
 if __name__ == "__main__":

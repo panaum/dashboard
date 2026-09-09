@@ -11,6 +11,7 @@ import { railItems } from "@/lib/layout-checks/findings-view";
 import { rovingTarget } from "@/lib/layout-checks/roving";
 import { ms } from "@/lib/layout-checks/motion";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
+import { LiveSession } from "@/components/layout-checks/live-session";
 import { comparableEngines, engineColumns } from "@/lib/layout-checks/engines-view";
 import { DevicePreviewRunner } from "@/components/layout-checks/device-preview-runner";
 import {
@@ -85,7 +86,10 @@ export function DevicesPanel({
   const [imageMeta, setImageMeta] = useState<{ cssHeight: number } | null>(null);
   // The selection belongs to the device; expanded/collapsed is a density
   // preference and survives the switch.
-  const pick = (profileId: string) => { setSelected(profileId); setFinding(null); setImageMeta(null); setColMeta({}); };
+  const pick = (profileId: string) => {
+    setSelected(profileId); setFinding(null); setImageMeta(null); setColMeta({});
+    setStreaming(false);            // the session is pinned to one profile
+  };
   const currentRaw = devices.find((d) => d.profile_id === current?.profileId);
   const items = useMemo(() => railItems(currentRaw?.findings ?? []), [currentRaw]);
   const selectedItem = items.find((i) => i.id === finding) ?? null;
@@ -111,8 +115,17 @@ export function DevicesPanel({
   // server can find that out — a refused frame is opaque to script.
   const [live, setLive] = useState(false);
   const [embed, setEmbed] = useState<{ checking?: boolean; reason?: string } | null>(null);
+  // Two ways to be "live", and the profile decides which you get. A Chromium
+  // profile gets a real browser on the service — real touch, real user agent,
+  // and it works on pages that refuse to be framed. Everything else falls back
+  // to the iframe, which is your own browser at that width and says so.
+  const canStream = current?.engine === "chromium";
+  const [streaming, setStreaming] = useState(false);
+
   const goLive = async () => {
+    if (streaming) { setStreaming(false); return; }
     if (live) { setLive(false); return; }
+    if (canStream) { setStreaming(true); setFinding(null); return; }
     setEmbed({ checking: true });
     try {
       const v = await (await fetch(`/api/embed-check?url=${encodeURIComponent(url)}`, { cache: "no-store" })).json();
@@ -123,6 +136,7 @@ export function DevicesPanel({
     }
   };
   const showLive = live && !showCompare;
+  const showStream = streaming && !showCompare && Boolean(current);
   // "Desktop 1440 (Firefox)" names one pill; a compared frame is the viewport
   // plus its own engine, so the pill's engine must not leak into every caption.
   const viewportName = current ? current.label.replace(/\s*\([^)]*\)\s*$/, "") : "";
@@ -287,7 +301,24 @@ export function DevicesPanel({
     </div>
   ) : null;
 
-  const frame = current && showCompare ? (
+  const frame = current && showStream ? (
+    <Fade key="stream" className="flex w-full flex-col items-center gap-2.5">
+      {toggle}
+      <div className="w-full max-w-[420px]">
+        <LiveSession
+          url={url}
+          profileId={current.profileId}
+          viewport={current.viewport}
+          hasTouch={current.shape !== "desktop"}
+          onExit={() => setStreaming(false)}
+        />
+      </div>
+      <p className="text-[12px] text-text-muted">
+        <span className="font-medium text-text-secondary">{current.label}</span>
+        {" · "}{current.engineLabel}{" · "}{current.viewportLabel}
+      </p>
+    </Fade>
+  ) : current && showCompare ? (
     <Fade key="compare" className="flex w-full flex-col items-center gap-3">
       {toggle}
       <div className="grid w-full gap-3 md:grid-cols-3">
@@ -347,16 +378,19 @@ export function DevicesPanel({
         {!showCompare && (
           <Button
             type="button"
-            variant={showLive ? "primary" : "secondary"}
+            variant={showLive || showStream ? "primary" : "secondary"}
             size="sm"
-            aria-pressed={showLive}
+            aria-pressed={showLive || showStream}
             onClick={goLive}
             disabled={Boolean(embed?.checking)}
-            title={showLive ? "Back to the captured screenshot, where findings can be drawn."
-                            : "Loads the real page inside the frame at this viewport."}
+            title={showLive || showStream ? "Back to the captured screenshot, where findings can be drawn."
+                   : canStream ? "Runs a real browser on this device profile — taps arrive as touch events."
+                   : "Loads the real page inside the frame at this viewport."}
           >
             {embed?.checking ? <Loader2 className="size-4 animate-spin" /> : <Globe className="size-4" />}
-            {embed?.checking ? "Checking…" : showLive ? "Show the capture" : "Open live here"}
+            {embed?.checking ? "Checking…"
+              : showStream || showLive ? "Show the capture"
+              : canStream ? "Use it live" : "Open live here"}
           </Button>
         )}
         <Button
@@ -420,6 +454,7 @@ export function DevicesPanel({
           // A box is drawn on the capture, so choosing a finding comes back
           // from the live page rather than selecting into nothing.
           setLive(false);
+          setStreaming(false);
           setFinding((cur) => (cur === id ? null : id));
         }}
         expanded={expanded}

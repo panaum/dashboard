@@ -34,6 +34,7 @@ const SESSION_GUARDED = [
   "src/app/api/devicepreview/view/[runId]/[[...path]]/route.ts",
   "src/app/api/devicepreview/shot/route.ts",
   "src/app/api/devicepreview/live/route.ts",
+  "src/app/api/devicepreview/live-token/route.ts",
   "src/app/api/embed-check/route.ts",
 ];
 
