@@ -604,9 +604,28 @@ AUDIT_JS = """(cfg) => {
     // only the 44px AAA ideal (2.5.5): info. Without the split a 130×34 header
     // button and a 22px-tall footer link read as the same problem.
     const small = (r) => Math.min(r.width, r.height) < 44;
+    const undersized = (r) => Math.min(r.width, r.height) < 24;   // what 2.5.8 covers
+    const mid = (r) => ({ x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 });
+    const gapToBox = (c, r) => Math.hypot(Math.max(r.left - c.x, 0, c.x - r.right),
+                                          Math.max(r.top - c.y, 0, c.y - r.bottom));
+    // 2.5.8 carries an Inline exception: a target "in a sentence, or whose
+    // size is otherwise constrained by the line-height of non-target text".
+    // An inline box IS its line box — vertical padding does not grow it — so
+    // an inline link cannot be given a 24px tap area without changing the
+    // text around it. Measured before this was added: of the AA warnings on
+    // apexure.com every one was an inline prose link, and on breezioac.com
+    // nine of ten were. Calling those failures is a false FAIL, so they are
+    // reported as notes that name the exception instead of disappearing.
+    const inlineText = (el) => getComputedStyle(el).display === 'inline';
     const sevFor = (r) => Math.min(r.width, r.height) < 24 ? 'warn' : 'info';
+    const sevOf = (el, r) => inlineText(el) ? 'info' : sevFor(r);
     if (rules['tap-small']) {
-      let n = 0, total = 0, unlistedWarn = 0, unlistedInfo = 0;
+      // A row each for the AA failures, which someone has to act on. The
+      // 24-to-44px band is the AAA ideal that almost no site meets, and listing
+      // it one element at a time is what made this rule read as noise: a menu
+      // of twelve identical 345×29 links produced twelve near-identical rows
+      // and forty-three more in the tail. It is one note with a count now.
+      let n = 0, aaa = 0, exempt = 0, unlistedWarn = 0, smallest = null;
       for (let i = 0; i < inter.length; i++) {
         const el = inter[i], r = rects[i];
         if (!small(r)) continue;
@@ -616,26 +635,43 @@ AUDIT_JS = """(cfg) => {
           const hr = host.getBoundingClientRect();
           if (hr.width >= 44 && hr.height >= 44) continue;
         }
-        total++;
-        if (n >= 12) { if (sevFor(r) === 'warn') unlistedWarn++; else unlistedInfo++; continue; }
-        {
-          const sv = sevFor(r);
-          findings.push({ severity: sv, rule: 'tap-small',
-            message: sel(el) + ' is ' + Math.round(r.width) + '×' + Math.round(r.height) + 'px — '
-              + (sv === 'warn' ? 'under the 24px WCAG AA minimum' : 'meets 24px AA but under the 44px AAA target'),
-            selector: sel(el), box: box(r), text: snippet(el) });
-          n++;
+        if (inlineText(el)) { exempt++; continue; }
+        if (sevOf(el, r) !== 'warn') {
+          aaa++;
+          const side = Math.min(r.width, r.height);
+          if (!smallest || side < smallest.side) smallest = { el: el, r: r, side: side };
+          continue;
         }
+        if (n >= 12) { unlistedWarn++; continue; }
+        findings.push({ severity: 'warn', rule: 'tap-small',
+          message: sel(el) + ' is ' + Math.round(r.width) + '×' + Math.round(r.height)
+            + 'px — under the 24px WCAG AA minimum',
+          selector: sel(el), box: box(r), text: snippet(el) });
+        n++;
       }
-      // The rollup takes the severity of what it hides and says how many of
-      // each, so an unlisted tail of AAA-only misses cannot inflate the
-      // warning count.
-      if (unlistedWarn + unlistedInfo > 0) findings.push({
-        severity: unlistedWarn ? 'warn' : 'info', rule: 'tap-small',
-        message: (unlistedWarn + unlistedInfo) + ' more small tap target(s) not listed'
-          + (unlistedWarn ? ' — ' + unlistedWarn + ' under the 24px AA minimum' : '')
-          + (unlistedInfo ? (unlistedWarn ? ', ' : ' — ') + unlistedInfo + ' between 24 and 44px' : ''),
+      if (unlistedWarn > 0) findings.push({
+        severity: 'warn', rule: 'tap-small',
+        message: unlistedWarn + ' more tap target(s) under the 24px AA minimum, not listed',
         selector: 'body', box: { x: 0, y: 0, width: vw, height: vh } });
+      // Two different things, counted apart: a link inside a sentence is
+      // exempt at any size, and lumping it into the AAA band produced a note
+      // whose "smallest" example was a 16px inline link that plainly does not
+      // meet the 24px minimum it claimed to.
+      if (exempt > 0) findings.push({
+        severity: 'info', rule: 'tap-small',
+        message: exempt + ' small tap target(s) are inline text links, exempt from the '
+          + '24px minimum (WCAG 2.5.8 Inline)',
+        selector: 'body', box: { x: 0, y: 0, width: vw, height: vh } });
+      // One note for the whole AAA band, pointed at the smallest of them so
+      // there is still something to look at.
+      if (aaa > 0) findings.push({
+        severity: 'info', rule: 'tap-small',
+        message: aaa + ' tap target(s) meet the 24px AA minimum but not the 44px AAA ideal'
+          + (smallest ? ' — smallest is ' + sel(smallest.el) + ' at ' + Math.round(smallest.r.width)
+             + '×' + Math.round(smallest.r.height) + 'px' : ''),
+        selector: smallest ? sel(smallest.el) : 'body',
+        box: smallest ? box(smallest.r) : { x: 0, y: 0, width: vw, height: vh },
+        text: smallest ? snippet(smallest.el) : undefined });
     }
 
     if (rules['tap-close']) {
@@ -647,22 +683,43 @@ AUDIT_JS = """(cfg) => {
           const a = inter[i], b = inter[j];
           if (a.contains(b) || b.contains(a)) continue;
           const ra = rects[i], rb = rects[j];
-          // Spacing matters when precision is required. Two full-width 52px
-          // accordion rows touching is ordinary list UI, not a defect; a
-          // pair only counts when at least one target is under 44px.
-          if (!small(ra) && !small(rb)) continue;
+          // WCAG 2.5.8's own Spacing exception rather than a flat gap on
+          // anything under 44px. The SC covers UNDERSIZED targets — under 24px
+          // — and even those pass when a 24px circle centred on each does not
+          // reach the other, i.e. the centres are 24px apart. A stacked menu of
+          // 345×29 rows is neither undersized nor a mis-tap risk, and the old
+          // test reported every adjacent pair of it: seven findings for one
+          // list, which is what made this rule read as repetitive.
+          if (!undersized(ra) && !undersized(rb)) continue;
+          // The spec's test, precisely: the 24px circle centred on an
+          // undersized target must not reach the OTHER TARGET's box, nor the
+          // other undersized target's circle. Centre-to-centre alone is only
+          // the circle-vs-circle half of it.
+          const ua = undersized(ra), ub = undersized(rb);
+          const ca = mid(ra), cb = mid(rb);
+          const touches = ua && ub
+            ? Math.hypot(ca.x - cb.x, ca.y - cb.y) < 24
+            : ua ? gapToBox(ca, rb) < 12 : gapToBox(cb, ra) < 12;
+          if (!touches) continue;
           const dx = Math.max(0, Math.max(ra.left, rb.left) - Math.min(ra.right, rb.right));
           const dy = Math.max(0, Math.max(ra.top, rb.top) - Math.min(ra.bottom, rb.bottom));
-          if (dx >= 8 || dy >= 8) continue;
-          const key = sel(a) + '|' + sel(b);
+          // Order-independent, or the same pair is reported twice: one client
+          // page listed "a and summary" and "summary and a" as two findings.
+          const key = [sel(a), sel(b)].sort().join('|');
           if (seen.has(key)) continue;
           seen.add(key);
           const smaller = Math.min(ra.width, ra.height) <= Math.min(rb.width, rb.height) ? ra : rb;
           // One decimal: a 7.6px gap rounded to "8px apart; need 8px" reads as a
           // false alarm to anyone checking the arithmetic.
           const gap = Math.max(dx, dy);
-          findings.push({ severity: sevFor(smaller), rule: 'tap-close',
-            message: sel(a) + ' and ' + sel(b) + ' are ' + (gap < 1 ? 'touching' : gap.toFixed(1) + 'px apart') + '; small touch targets need 8px between them',
+          // Two words in a sentence sit a few px apart because that is what a
+          // line of text does. The Inline exception applies to the pair for the
+          // same reason it applies to the size.
+          const inlinePair = inlineText(a) && inlineText(b);
+          findings.push({ severity: inlinePair ? 'info' : sevFor(smaller), rule: 'tap-close',
+            message: sel(a) + ' and ' + sel(b) + ' are ' + (gap < 1 ? 'touching' : gap.toFixed(1) + 'px apart')
+              + (inlinePair ? '; both are inline text links (WCAG 2.5.8 Inline exception)'
+                 : '; their 24px tap circles overlap (WCAG 2.5.8 Spacing)'),
             selector: sel(a), box: box(ra), related: sel(b), relatedBox: box(rb),
             text: snippet(a) });
           if (++n >= 8) break outer;

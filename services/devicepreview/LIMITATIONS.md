@@ -50,6 +50,14 @@ tool measured, tried, or learned the hard way; none is hypothetical.
   AA) or text under 12 px on a phone is reported; whether a layout is ugly is
   not. A run with zero findings means nothing the rules measure is wrong —
   look at the capture anyway.
+- Tap targets carry the standard's own **Inline exception**: a link whose
+  computed `display` is `inline` sits in a line box it does not control, so it
+  is reported as a note naming the exception, never as a failure. This is not
+  a softening — before it was added, every AA warning on apexure.com and nine
+  of ten on breezioac.com were inline links inside prose, which 2.5.8 exempts.
+  A control the author can size (a button, anything `inline-block` or `block`)
+  is still a warning under 24 px. Two inline links a few pixels apart are the
+  same exception, because that spacing is the line, not the layout.
 - Off-canvas and hidden elements are ignored on purpose (an off-screen menu
   once produced thirty tap-target findings for links nobody could see).
   Content inside carousels, sliders, marquees and tickers is excluded from
@@ -119,6 +127,13 @@ tool measured, tried, or learned the hard way; none is hypothetical.
   volume mounted there, a redeploy discards every gallery; the Dashboard keeps
   each run's report and a JPEG of each fold, so verdicts survive, but the
   full-page images and the ability to diff against that run do not.
+- With the volume, the service keeps the newest `RETAIN_PER_SITE` (default 2)
+  runs of each URL and deletes the rest. Only the newest run of a URL keeps
+  its PNG originals and gallery; the older kept run has its report and a
+  900 px JPEG of every capture. So a baseline diff is only possible against
+  the newest run of a page, an older run's gallery link answers "no longer
+  kept", and what the Dashboard shows for an older run's full page is the
+  JPEG, not the pixel-exact capture.
 - One run at a time (`MAX_RUNNING`), because three browser engines on a
   small instance are enough; a second request gets `429 run_capacity` and the
   caller retries later rather than queueing.
