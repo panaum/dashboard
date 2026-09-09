@@ -100,17 +100,28 @@ class TapCloseRule(unittest.TestCase):
         dev = next(d for d in rep["devices"])
         close = [f for f in dev["findings"] if f["rule"] == "tap-close"]
         pairs = {frozenset((f["selector"], f["related"])) for f in close}
-        # B (48×48) next to C (30×30): spacing matters because C is small.
+        # B (48×48) next to C (20×20): C is undersized and its 24px spacing
+        # circle reaches B's box, which is what WCAG 2.5.8 actually tests.
         self.assertIn(frozenset({"button#b", "button#c"}), pairs, f"got {pairs}")
-        # A next to B: both large, 2px apart, and that is ordinary UI.
+        # A next to B: both large, 1px apart, and that is ordinary UI.
         self.assertNotIn(frozenset({"button#a", "button#b"}), pairs, "two large adjacent targets are not a defect")
-        self.assertEqual(len(close), 1)
-        self.assertIn("2.0px apart", close[0]["message"])
-        # C is 30×30: meets the 24px AA floor, misses the 44px AAA target → info.
-        self.assertEqual(close[0]["severity"], "info")
+        # The stacked 300×30 links are flush but not undersized: a menu is not
+        # a defect, and reporting each adjacent pair of one is what made this
+        # rule read as repetitive on real pages.
+        self.assertEqual(len(close), 1, f"only the undersized pair: {[f['message'] for f in close]}")
+        self.assertIn("1.0px apart", close[0]["message"])
+        self.assertIn("24px tap circles overlap", close[0]["message"])
+        self.assertEqual(close[0]["severity"], "warn", "C is under the 24px AA minimum")
         smalls = [f for f in dev["findings"] if f["rule"] == "tap-small"]
-        self.assertEqual([f["selector"] for f in smalls], ["button#c"])
-        self.assertEqual(smalls[0]["severity"], "info")
+        listed = [f for f in smalls if f["severity"] == "warn"]
+        self.assertEqual([f["selector"] for f in listed], ["button#c"],
+                         "C is the only target under the 24px minimum")
+        # The three 300×30 menu links are over the minimum, so they are one
+        # note with a count rather than three rows of their own.
+        band = [f for f in smalls if "44px AAA ideal" in f["message"]]
+        self.assertEqual(len(band), 1, f"one note for the band, got {[f['message'] for f in smalls]}")
+        self.assertEqual(band[0]["severity"], "info")
+        self.assertIn("3 tap target(s)", band[0]["message"])
 
 
 class TapSeverity(unittest.TestCase):
@@ -129,18 +140,19 @@ class TapInlineException(unittest.TestCase):
     itself exempts. They are still reported, as notes, naming the exception.
     """
 
-    def test_inline_links_in_a_sentence_are_notes_not_failures(self):
+    def test_inline_links_in_a_sentence_are_counted_not_failed(self):
         _, rep = run("tap-inline.html", TOUCH)
         dev = next(d for d in rep["devices"])
         smalls = [f for f in dev["findings"] if f["rule"] == "tap-small"]
         inline = [f for f in smalls if "inline text link" in f["message"]]
-        self.assertGreaterEqual(len(inline), 2, f"both sentence links should be reported: {smalls}")
-        for f in inline:
-            self.assertEqual(f["severity"], "info", f["message"])
-            self.assertIn("WCAG 2.5.8 Inline", f["message"])
-        # Still measured and still drawable: an exemption is not a deletion.
-        for f in inline:
-            self.assertTrue(f["box"]["width"] > 0 and f["box"]["height"] > 0)
+        # Both sentence links are counted, in one note rather than a row each:
+        # an exemption nobody has to act on does not deserve two lines.
+        self.assertEqual(len(inline), 1, f"one note, got {[f['message'] for f in smalls]}")
+        self.assertEqual(inline[0]["severity"], "info")
+        self.assertIn("2 small tap target(s)", inline[0]["message"])
+        self.assertIn("WCAG 2.5.8 Inline", inline[0]["message"])
+        # Counted, not deleted: nothing here is a warning.
+        self.assertFalse([f for f in inline if f["severity"] == "warn"])
 
     def test_an_inline_block_button_keeps_its_warning(self):
         _, rep = run("tap-inline.html", TOUCH)
