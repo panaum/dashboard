@@ -56,14 +56,18 @@ export function devicesVerdict(cur: DevicesRun | null, prev: DevicesRun | null, 
     return { errors: k.errorCount + k.regressedCount, warnings: k.warnCount, checkedAt: r.checkedAt };
   };
   const compare = compareLine(counts(cur), prev ? counts(prev) : null, nowMs);
+  const walls = (s.devicesBlocked ?? []).length + (s.devicesFailed ?? []).length;
+  // A device that never rendered vouches for nothing, and a headline about
+  // errors alone implies all fourteen were looked at. Say it either way.
+  const missed = walls ? ` · ${walls} not captured` : "";
   if (c.errorCount > 0) {
     return { tone: "error", compare,
-      headline: `${plural(c.errorCount, "ship-blocking issue")} on ${s.devicesWithErrors.length} of ${n} devices` };
+      headline: `${plural(c.errorCount, "ship-blocking issue")} on ${s.devicesWithErrors.length} of ${n} devices${missed}` };
   }
   if (c.regressedCount > 0) {
-    return { tone: "error", compare, headline: `Visual regression on ${plural(c.regressedCount, "device")} since the last run` };
+    return { tone: "error", compare,
+      headline: `Visual regression on ${plural(c.regressedCount, "device")} since the last run${missed}` };
   }
-  const walls = (s.devicesBlocked ?? []).length + (s.devicesFailed ?? []).length;
   if (walls) {
     return { tone: "neutral", compare, headline: `Inconclusive on ${plural(walls, "device")} of ${n} — blocked or failed to capture` };
   }

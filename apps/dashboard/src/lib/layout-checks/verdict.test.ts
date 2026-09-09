@@ -51,3 +51,24 @@ test("viewports: same shape, its own words", () => {
   assert.equal(viewportsVerdict({ findings: [f("WARN", "a")], widths, checkedAt: at(0) }, null, NOW).headline, "No breaks · 1 thing worth a look across 8 widths");
   assert.equal(viewportsVerdict({ findings: [f("SKIP", "a")], widths, checkedAt: at(0) }, null, NOW).tone, "neutral");
 });
+
+test("a headline about errors still says how many devices were never captured", () => {
+  // The real case, on wbiwarm.com: a page too tall for a 3x screenshot lost
+  // four Apple profiles outright while other devices reported genuine errors.
+  // "4 ship-blocking issues on 4 of 14 devices" implies all fourteen were
+  // looked at, and four of them were not.
+  const withWalls = devicesVerdict(
+    { report: report({ errors: 4, devicesWithErrors: ["a", "b", "c", "d"], devicesFailed: ["w", "x", "y", "z"] }), checkedAt: at(0) },
+    null, NOW);
+  assert.match(withWalls.headline, /4 ship-blocking issues on 4 of 14 devices/);
+  assert.match(withWalls.headline, / · 4 not captured$/);
+  assert.equal(withWalls.tone, "error");
+
+  const regressed = devicesVerdict(
+    { report: report({ devicesRegressed: ["a"], devicesBlocked: ["b", "c"] }), checkedAt: at(0) }, null, NOW);
+  assert.match(regressed.headline, /Visual regression on 1 device since the last run · 2 not captured/);
+
+  const noWalls = devicesVerdict(
+    { report: report({ errors: 4, devicesWithErrors: ["a", "b", "c", "d"] }), checkedAt: at(0) }, null, NOW);
+  assert.doesNotMatch(noWalls.headline, /not captured/, "nothing missing, nothing said");
+});

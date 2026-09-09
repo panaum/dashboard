@@ -129,8 +129,11 @@ export function DevicesPanel({
 
   // Try the live full page only where it can exist; a request the page knows
   // will fail is a blank frame for as long as it takes to fail.
-  const liveShot = current && runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(current.profileId)}&kind=full` : null;
-  const fold = current && runId && stored.has(current.profileId) ? `/api/devicepreview/shot?runId=${runId}&profile=${encodeURIComponent(current.profileId)}` : null;
+  // A device that was blocked or failed to capture has no image anywhere, and
+  // asking for one puts a broken-image icon where the explanation should be.
+  const captured = current?.status === "ok";
+  const liveShot = captured && runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(current!.profileId)}&kind=full` : null;
+  const fold = captured && runId && stored.has(current!.profileId) ? `/api/devicepreview/shot?runId=${runId}&profile=${encodeURIComponent(current!.profileId)}` : null;
 
   const runLine = running || progress.phase === "failed" ? (
     <div className="flex flex-col gap-1.5" role="status" aria-live="polite">
