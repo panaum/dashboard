@@ -63,7 +63,7 @@ app = FastAPI(title="devicepreview", docs_url=None, redoc_url=None)
 # The live-session websocket lives in its own module: it is async (Playwright's
 # async API, since the endpoint runs in the event loop) while everything else
 # here drives the sync CLI in a subprocess.
-from live import router as live_router  # noqa: E402
+from live import router as live_router, session_open as live_session_open  # noqa: E402
 
 app.include_router(live_router)
 
@@ -299,6 +299,14 @@ async def start_run(request: Request, authorization: str | None = Header(default
     url = str(body.get("url") or "").strip()
     if not re.match(r"^https?://[^\s]+$", url) and not url.startswith("file://"):
         return JSONResponse({"error": "a valid http(s) url is required"}, status_code=400)
+    # A live session holds a browser open for minutes. Counting it against the
+    # same slot is the point: without this the instance can end up running an
+    # audit's three engines and a live Chromium at once, which is where a small
+    # container starts swapping.
+    if live_session_open():
+        return JSONResponse({"error": "run_capacity",
+                             "detail": "a live session is open; runs and sessions share one slot"},
+                            status_code=429)
     with _lock:
         running = sum(1 for e in _runs.values() if e["status"] == "running")
         if running >= MAX_RUNNING:

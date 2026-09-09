@@ -71,6 +71,13 @@ class TokenContract(unittest.TestCase):
                           "an unconfigured service refuses every token")
 
 
+class _Auto:
+    """Keeps the `with` shape of the test bodies after the handshake."""
+    def __init__(self, ws): self.ws = ws
+    def __enter__(self): return self.ws
+    def __exit__(self, *a): return self.ws.__exit__(*a)
+
+
 class Session(unittest.TestCase):
     """The real thing: a browser launched, streamed, and driven."""
 
@@ -82,8 +89,13 @@ class Session(unittest.TestCase):
         cls.client = TestClient(server.app)
 
     def _open(self, profile="galaxy-s25", url=FIX, token=None):
+        """Connect and authenticate. The token is the socket's first message,
+        never the URL — a query string lands in the access log verbatim."""
         t = token if token is not None else self.live.sign_token(KEY, url, profile)
-        return self.client.websocket_connect(f"/api/devicepreview/live-session?token={t}")
+        ws = self.client.websocket_connect("/api/devicepreview/live-session")
+        ws.__enter__()
+        ws.send_json({"type": "auth", "token": t})
+        return _Auto(ws)
 
     def test_a_session_opens_streams_and_takes_input(self):
         with self._open() as ws:
@@ -103,6 +115,42 @@ class Session(unittest.TestCase):
             ws.send_json({"type": "scroll", "dy": 300})
             ws.send_json({"type": "tap", "x": 20, "y": 20})
             self.assertGreater(len(ws.receive_bytes()), 500)
+
+    def test_a_token_is_single_use(self):
+        """Signature and expiry alone leave a two-minute window in which
+        anything that saw the token — a log line, a proxy — can open sessions
+        with it. Spent once, it is spent."""
+        t = self.live.sign_token(KEY, FIX, "galaxy-s25")
+        with self._open(token=t) as ws:
+            self.assertEqual(ws.receive_json()["type"], "opening")
+            self.assertEqual(ws.receive_json()["type"], "ready")
+        with self._open(token=t) as ws:
+            msg = ws.receive_json()
+            self.assertEqual(msg["type"], "closed")
+            self.assertEqual(msg["code"], "token_spent", msg)
+
+    def test_no_token_at_all_is_refused(self):
+        ws = self.client.websocket_connect("/api/devicepreview/live-session")
+        ws.__enter__()
+        try:
+            ws.send_json({"type": "auth"})            # a hello with nothing in it
+            self.assertEqual(ws.receive_json()["code"], "unauthorized")
+        finally:
+            ws.__exit__(None, None, None)
+
+    def test_the_url_cannot_be_overridden_from_the_query_string(self):
+        """The session opens on what was SIGNED, not what was asked for."""
+        t = self.live.sign_token(KEY, FIX, "galaxy-s25")
+        ws = self.client.websocket_connect(
+            "/api/devicepreview/live-session?url=https://example.com/&profile=iphone-16")
+        ws.__enter__()
+        try:
+            ws.send_json({"type": "auth", "token": t})
+            opening = ws.receive_json()
+            self.assertEqual(opening["url"], FIX)
+            self.assertEqual(opening["profile"], "galaxy-s25")
+        finally:
+            ws.__exit__(None, None, None)
 
     def test_an_invalid_token_is_told_so_and_closed(self):
         with self._open(token="not-a-token") as ws:
@@ -141,7 +189,8 @@ class InputLands(unittest.TestCase):
     def test_a_tap_reaches_the_page_as_touch(self):
         page = (ROOT / "fixtures" / "live-tap.html").resolve().as_uri()
         tok = self.live.sign_token(KEY, page, "galaxy-s25")
-        with self.client.websocket_connect(f"/api/devicepreview/live-session?token={tok}") as ws:
+        with self.client.websocket_connect("/api/devicepreview/live-session") as ws:
+            ws.send_json({"type": "auth", "token": tok})
             self.assertEqual(ws.receive_json()["type"], "opening")
             self.assertEqual(ws.receive_json()["type"], "ready")
             before = ws.receive_bytes()            # the page as loaded

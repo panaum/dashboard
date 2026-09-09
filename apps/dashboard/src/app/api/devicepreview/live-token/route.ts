@@ -34,7 +34,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "A valid url and profile are required." }, { status: 400 });
   }
 
-  return NextResponse.json({ socketUrl: liveSocketUrl(base, signLiveToken(key, url, profile)) });
+  // The token is returned separately and sent as the socket's first message:
+  // in the URL it would be written to the service's access log in full.
+  return NextResponse.json({ socketUrl: liveSocketUrl(base), token: signLiveToken(key, url, profile) });
 }
 
 /** Profile ids are the slugs in devices.json; anything else is not one. */
