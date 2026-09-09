@@ -186,7 +186,7 @@ DEVICEPREVIEW_KEY=$(openssl rand -hex 24) ../pagecheck/.venv/bin/python server.p
 | `LIVE_TOKEN_TTL_S` | How long a live-session token may be used to open a session | `120` |
 | `LIVE_IDLE_TIMEOUT_S` | No input for this long and the browser is closed | `180` |
 | `LIVE_MAX_SESSION_S` | Hard ceiling on one live session | `900` |
-| `LIVE_MAX_FPS` / `LIVE_QUALITY` | Frame cap and JPEG quality for a live session | `20` / `60` |
+| `LIVE_MAX_FPS` / `LIVE_QUALITY` | Frame cap and JPEG quality for a live session | `30` / `60` |
 | `LIVE_BUSY_WAIT_S` | How long a new session waits for the slot before refusing | `5` |
 
 ```
@@ -265,6 +265,12 @@ curl -sI -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
 
 `running` counts capture runs only; a live session holds the same slot without
 being one, which is why `busy` exists.
+
+Measured in a browser while scrolling a real page: **27fps at about 1MB/s**.
+A page with nothing moving streams almost nothing; a page with an animated
+widget on it keeps producing frames, so "idle" depends on the page rather than
+on the session. Lower `LIVE_MAX_FPS` on a metered connection — at 20 the same
+scroll ran at 19fps and read as choppy.
 
 A session opens on the url its token was signed for, and the Dashboard's
 address bar mints a fresh token per address rather than loosening that pin.

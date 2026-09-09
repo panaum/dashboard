@@ -126,11 +126,21 @@ export function LiveSession({
 
     return () => {
       live = false;
+      // No need to cancel a pending wheel flush: send() checks the socket, and
+      // the socket is dropped on the next line, so a late frame does nothing.
       ws?.close();
       socket.current = null;
       if (lastUrl.current) URL.revokeObjectURL(lastUrl.current);
     };
   }, [target, profileId]);
+
+  // A trackpad emits wheel events far faster than any browser can act on them,
+  // and one message per event puts a queue between your fingers and the page:
+  // the service applies each wheel as its own round trip, in order. Deltas are
+  // accumulated and flushed once per animation frame instead, so a flick
+  // becomes a few large scrolls rather than a hundred small ones.
+  const wheel = useRef({ dx: 0, dy: 0 });
+  const wheelFrame = useRef<number | null>(null);
 
   const send = useCallback((ev: Record<string, unknown>) => {
     const ws = socket.current;
@@ -167,7 +177,17 @@ export function LiveSession({
           const p = toDevice(e.clientX, e.clientY);
           if (p) send({ type: hasTouch ? "tap" : "click", ...p });
         }}
-        onWheel={(e) => send({ type: "scroll", dx: e.deltaX, dy: e.deltaY })}
+        onWheel={(e) => {
+          wheel.current.dx += e.deltaX;
+          wheel.current.dy += e.deltaY;
+          if (wheelFrame.current !== null) return;
+          wheelFrame.current = requestAnimationFrame(() => {
+            wheelFrame.current = null;
+            const { dx, dy } = wheel.current;
+            wheel.current = { dx: 0, dy: 0 };
+            if (dx || dy) send({ type: "scroll", dx, dy });
+          });
+        }}
         onKeyDown={(e) => {
           if (e.key.length === 1) send({ type: "type", text: e.key });
           else send({ type: "key", key: e.key });
