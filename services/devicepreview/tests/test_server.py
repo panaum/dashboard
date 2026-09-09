@@ -57,7 +57,14 @@ class Service(unittest.TestCase):
         self.assertEqual(r.status_code, 401)
         r = self.client.get("/api/devicepreview/status", params={"run_id": "x" * 8}, headers={"X-Api-Key": KEY})
         self.assertEqual(r.json(), {"status": "not_found"}, "X-Api-Key is accepted like the LinkSpy service")
-        self.assertTrue(self.client.get("/health").json()["configured"])
+        health = self.client.get("/health").json()
+        self.assertTrue(health["configured"])
+        # The field's presence is how an operator tells a build with live
+        # sessions from one without: the websocket route answers a plain GET
+        # with 404, exactly like a path that does not exist.
+        self.assertIn("live_session", health)
+        self.assertFalse(health["live_session"], "nothing open on a fresh service")
+        self.assertFalse(health["busy"])
 
     def test_unconfigured_service_refuses_everything(self):
         mod = _load({"RUNS_DIR": str(self.runs)})          # no DEVICEPREVIEW_KEY
