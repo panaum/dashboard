@@ -304,7 +304,9 @@ async def start_run(request: Request, authorization: str | None = Header(default
     # audit's three engines and a live Chromium at once, which is where a small
     # container starts swapping.
     if live_session_open():
-        return JSONResponse({"error": "run_capacity",
+        # Its own code, not run_capacity: the two are both "busy" but a reader
+        # needs to know which, and "another preview is running" would be wrong.
+        return JSONResponse({"error": "live_session_open",
                              "detail": "a live session is open; runs and sessions share one slot"},
                             status_code=429)
     with _lock:

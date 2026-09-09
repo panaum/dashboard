@@ -423,6 +423,15 @@ environment. **Fails closed:** with `DEVICEPREVIEW_KEY` unset every request is
 | `MAX_RUNNING` | Runs accepted at once; more get `429 run_capacity` | tuning | — | No — default `1` |
 | `PORT` | Injected by Railway; consumed by the Dockerfile `CMD` | platform | — | Injected |
 
+**Railway logs cannot be purged.** Retention is time-based only and set by the
+plan (Hobby 7 days, Pro 30, Enterprise up to 90); there is no dashboard action
+or API to delete logs early, and upgrading a plan *restores* previously aged-out
+logs rather than removing any. So anything the service writes to stdout —
+including anything uvicorn puts in an access line, which is the full query
+string — is retained for the plan's window and cannot be taken back. Nothing
+secret may travel in a URL to this service. (Checked against Railway's docs,
+2026-09-09.)
+
 **Live sessions reach this service directly from the browser.** The Dashboard
 mints a short-lived token (`/api/devicepreview/live-token`, signed with
 `DEVICEPREVIEW_KEY`) and the page opens a websocket straight to
