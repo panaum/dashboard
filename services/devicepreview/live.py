@@ -51,8 +51,10 @@ MAX_SESSION_S = int(os.environ.get("LIVE_MAX_SESSION_S", "900"))    # a hard cei
 JPEG_QUALITY = int(os.environ.get("LIVE_QUALITY", "60"))
 # Chromium will hand over frames as fast as the socket drains them — measured
 # at 50fps and 1.9MB/s on a real page, which is bandwidth spent on frames no
-# eye resolves. Capped, the session costs about 0.8MB/s.
-MAX_FPS = int(os.environ.get("LIVE_MAX_FPS", "20"))
+# eye resolves. 20 was the first cap and scrolling read as choppy at it; 30 is
+# the step where a flick looks continuous, at about 1.4MB/s while moving and
+# nothing at all while still. Lower it on a metered connection.
+MAX_FPS = int(os.environ.get("LIVE_MAX_FPS", "30"))
 
 # One at a time. Three browser engines on a small instance are already the
 # limit; a live session holds one open for minutes rather than seconds.
