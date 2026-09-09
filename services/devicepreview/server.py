@@ -283,8 +283,16 @@ def _run_job(run_id: str) -> None:
 @app.get("/health")
 def health():
     running = sum(1 for e in _runs.values() if e["status"] == "running")
+    # `running` counts capture runs. A live session holds the same slot without
+    # being one of them, so a health check that omitted it could report a free
+    # instance while a browser was open. The FIELD's presence also answers the
+    # question you cannot otherwise ask from outside: whether this build has
+    # live sessions at all — the websocket route 404s to a plain GET exactly
+    # like a path that does not exist.
     return {"ok": True, "running": running, "retained": sum(1 for e in _runs.values() if e["status"] == "done"),
-            "configured": bool(SERVICE_KEY), "runs_dir": str(RUNS_DIR), "retain_per_site": RETAIN_PER_SITE}
+            "configured": bool(SERVICE_KEY), "runs_dir": str(RUNS_DIR), "retain_per_site": RETAIN_PER_SITE,
+            "live_session": live_session_open(),
+            "busy": running > 0 or live_session_open()}
 
 
 @app.post("/api/devicepreview/run")

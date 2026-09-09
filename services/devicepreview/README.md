@@ -197,7 +197,7 @@ GET  /api/devicepreview/report   ?run_id=   → report.json
 GET  /api/devicepreview/file     ?run_id=&path=report.html | <profile>/full.png | <profile>/diff.png …
 GET  /api/devicepreview/image    ?run_id=&profile=&kind=fold|full|thumb|diff&max_width=1400   → JPEG, downscaled
 GET  /api/devicepreview/runs     ?url=      → retained runs for that page, newest first
-GET  /health                                → {ok, running, retained, configured, runs_dir, retain_per_site}
+GET  /health                                → {ok, running, retained, configured, runs_dir, retain_per_site, live_session, busy}
 WS   /api/devicepreview/live-session ?token=  → a real browser, streamed (Chromium profiles)
 ```
 
@@ -248,6 +248,22 @@ running, and a capture returns `429 run_capacity` while a session is open.
 Without that, an instance could hold an audit's three engines and a live
 Chromium at once. Closing the tab ends the session — the browser is released
 within a fraction of a second, not at the idle timeout.
+
+**Is live streaming deployed here?** `/health` carries a `live_session` field on
+builds that have it, so its presence is the answer and its value is whether a
+browser is open right now. Do not probe the websocket path with a plain GET: it
+answers `404`, exactly like a path that does not exist. A real upgrade
+handshake distinguishes them — `101` where the route exists, `403` where it
+does not:
+
+```bash
+curl -sI -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+     -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+     https://<service>/api/devicepreview/live-session | head -1
+```
+
+`running` counts capture runs only; a live session holds the same slot without
+being one, which is why `busy` exists.
 
 Chromium profiles only. WebKit and Firefox have no frame-streaming API — a
 screenshot loop measured 20fps and is the obvious second slice — and a session
