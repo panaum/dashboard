@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: inline text links are exempt</title><link rel="stylesheet" href="_base.css">
+<style>
+  /* Nothing here sets a size: the links are inline, so their height is the
+     line box of the sentence around them — which is exactly the condition
+     WCAG 2.5.8 names in its Inline exception. */
+  p { font-size: 15px; line-height: 1.35; }
+  #block { display: inline-block; width: 20px; height: 20px; padding: 0; }
+</style></head>
+<body>
+<p>A sentence with a <a href="#a">first link</a> and a <a href="#b">second link</a> in it.
+Both are inline, both are under 24px tall, and both are exempt — reported as notes, never as failures.</p>
+<p>The button below is inline-block, so its box is its own and the exception does not apply to it:
+<button id="block" aria-label="close">×</button></p>
+</body></html>

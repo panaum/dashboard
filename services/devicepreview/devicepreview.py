@@ -604,7 +604,17 @@ AUDIT_JS = """(cfg) => {
     // only the 44px AAA ideal (2.5.5): info. Without the split a 130×34 header
     // button and a 22px-tall footer link read as the same problem.
     const small = (r) => Math.min(r.width, r.height) < 44;
+    // 2.5.8 carries an Inline exception: a target "in a sentence, or whose
+    // size is otherwise constrained by the line-height of non-target text".
+    // An inline box IS its line box — vertical padding does not grow it — so
+    // an inline link cannot be given a 24px tap area without changing the
+    // text around it. Measured before this was added: of the AA warnings on
+    // apexure.com every one was an inline prose link, and on breezioac.com
+    // nine of ten were. Calling those failures is a false FAIL, so they are
+    // reported as notes that name the exception instead of disappearing.
+    const inlineText = (el) => getComputedStyle(el).display === 'inline';
     const sevFor = (r) => Math.min(r.width, r.height) < 24 ? 'warn' : 'info';
+    const sevOf = (el, r) => inlineText(el) ? 'info' : sevFor(r);
     if (rules['tap-small']) {
       let n = 0, total = 0, unlistedWarn = 0, unlistedInfo = 0;
       for (let i = 0; i < inter.length; i++) {
@@ -617,12 +627,14 @@ AUDIT_JS = """(cfg) => {
           if (hr.width >= 44 && hr.height >= 44) continue;
         }
         total++;
-        if (n >= 12) { if (sevFor(r) === 'warn') unlistedWarn++; else unlistedInfo++; continue; }
+        if (n >= 12) { if (sevOf(el, r) === 'warn') unlistedWarn++; else unlistedInfo++; continue; }
         {
-          const sv = sevFor(r);
+          const sv = sevOf(el, r);
           findings.push({ severity: sv, rule: 'tap-small',
             message: sel(el) + ' is ' + Math.round(r.width) + '×' + Math.round(r.height) + 'px — '
-              + (sv === 'warn' ? 'under the 24px WCAG AA minimum' : 'meets 24px AA but under the 44px AAA target'),
+              + (inlineText(el) ? 'an inline text link, exempt from the 24px minimum (WCAG 2.5.8 Inline)'
+                 : sv === 'warn' ? 'under the 24px WCAG AA minimum'
+                 : 'meets 24px AA but under the 44px AAA target'),
             selector: sel(el), box: box(r), text: snippet(el) });
           n++;
         }
@@ -661,8 +673,14 @@ AUDIT_JS = """(cfg) => {
           // One decimal: a 7.6px gap rounded to "8px apart; need 8px" reads as a
           // false alarm to anyone checking the arithmetic.
           const gap = Math.max(dx, dy);
-          findings.push({ severity: sevFor(smaller), rule: 'tap-close',
-            message: sel(a) + ' and ' + sel(b) + ' are ' + (gap < 1 ? 'touching' : gap.toFixed(1) + 'px apart') + '; small touch targets need 8px between them',
+          // Two words in a sentence sit a few px apart because that is what a
+          // line of text does. The Inline exception applies to the pair for the
+          // same reason it applies to the size.
+          const inlinePair = inlineText(a) && inlineText(b);
+          findings.push({ severity: inlinePair ? 'info' : sevFor(smaller), rule: 'tap-close',
+            message: sel(a) + ' and ' + sel(b) + ' are ' + (gap < 1 ? 'touching' : gap.toFixed(1) + 'px apart')
+              + (inlinePair ? '; both are inline text links (WCAG 2.5.8 Inline exception)'
+                 : '; small touch targets need 8px between them'),
             selector: sel(a), box: box(ra), related: sel(b), relatedBox: box(rb),
             text: snippet(a) });
           if (++n >= 8) break outer;

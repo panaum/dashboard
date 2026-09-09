@@ -13,7 +13,18 @@ import { progressPercent } from "@/lib/linkspy/responsive-view";
 
 type Phase = "idle" | "running" | "saving" | "done" | "failed";
 
-export function CheckRunner({ url, label }: { url: string; label?: string }) {
+export function CheckRunner({
+  url,
+  label,
+  size = "md",
+  variant = "primary",
+}: {
+  url: string;
+  label?: string;
+  /** Smaller and quieter in a list row than beside a page heading. */
+  size?: "sm" | "md";
+  variant?: "primary" | "secondary";
+}) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [note, setNote] = useState("");
   const [pct, setPct] = useState(0);
@@ -76,7 +87,7 @@ export function CheckRunner({ url, label }: { url: string; label?: string }) {
 
   return (
     <div className="flex flex-col items-end gap-2">
-      <Button onClick={run} disabled={busy}>
+      <Button onClick={run} disabled={busy} size={size} variant={variant}>
         {busy ? (
           <>
             <RefreshCw className="size-4 animate-spin" /> Checking…

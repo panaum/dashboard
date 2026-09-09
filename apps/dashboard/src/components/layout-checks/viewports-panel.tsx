@@ -149,6 +149,7 @@ export function ViewportsPanel({
   ) : (
     <FindingsRail
       deviceLabel={perWidth ? `${current}px` : "this run"}
+      kind="viewport"
       items={items}
       selectedId={finding}
       onSelect={select}

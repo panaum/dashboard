@@ -68,7 +68,7 @@ export async function saveLayoutRun(input: {
   url: string;
   checkId: string;
   report: { findings?: ResponsiveFinding[]; shot_widths?: number[] };
-}): Promise<{ ok?: boolean; error?: string; runId?: string }> {
+}): Promise<{ ok?: boolean; error?: string; runId?: string; siteId?: string }> {
   await requireAuth();
   const url = normaliseUrl(input.url);
   if (!url) return { error: "Invalid URL." };
@@ -112,7 +112,7 @@ export async function saveLayoutRun(input: {
   await pruneShots(site.id);
   revalidatePath("/dashboard/layout-checks");
   revalidatePath(`/dashboard/layout-checks/${site.id}`);
-  return { ok: true, runId: run.id };
+  return { ok: true, runId: run.id, siteId: site.id };
 }
 
 /** Keep images for the newest runs only; findings history is untouched. */

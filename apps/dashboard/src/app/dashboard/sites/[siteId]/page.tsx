@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink } from "lucide-react";
+import { db } from "@/lib/db";
 import { PageHeader } from "@/components/shared/page-header";
 import { SiteTabs } from "@/components/linkspy/site-tabs";
 import { ResponsivePanel } from "@/components/linkspy/responsive-panel";
@@ -55,6 +56,18 @@ export default async function SiteDetailPage({
       fetchIntentMap(siteId),
       fetchConsent(siteId),
     ]);
+  // Layout checks are per page, this view is per site, so the two are matched
+  // by host: every kept page on this domain, linked from the Layout tab.
+  const pageHost = hostOf(site?.url ?? u ?? null);
+  const watched = pageHost
+    ? (await db.layoutSite.findMany({
+        where: { url: { contains: pageHost, mode: "insensitive" } },
+        select: { id: true, url: true, label: true },
+        orderBy: { createdAt: "desc" },
+        take: 6,
+      })).filter((w) => hostOf(w.url) === pageHost)
+    : [];
+
   const incidents = buildIncidentsView(incidentsPayload);
   const vitals = buildVitalsView(vitalsPayload);
   const history = buildHistoryView(historyPayload);
@@ -88,7 +101,7 @@ export default async function SiteDetailPage({
       />
 
       <SiteTabs
-        layout={<ResponsivePanel url={site?.url ?? u ?? null} />}
+        layout={<ResponsivePanel url={site?.url ?? u ?? null} watched={watched} />}
         overview={
           <>
         {/* Vitals — LinkSpy's own guard cards (SSL / domain / indexability /
