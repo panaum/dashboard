@@ -604,17 +604,7 @@ AUDIT_JS = """(cfg) => {
     // only the 44px AAA ideal (2.5.5): info. Without the split a 130×34 header
     // button and a 22px-tall footer link read as the same problem.
     const small = (r) => Math.min(r.width, r.height) < 44;
-    // 2.5.8 carries an Inline exception: a target "in a sentence, or whose
-    // size is otherwise constrained by the line-height of non-target text".
-    // An inline box IS its line box — vertical padding does not grow it — so
-    // an inline link cannot be given a 24px tap area without changing the
-    // text around it. Measured before this was added: of the AA warnings on
-    // apexure.com every one was an inline prose link, and on breezioac.com
-    // nine of ten were. Calling those failures is a false FAIL, so they are
-    // reported as notes that name the exception instead of disappearing.
-    const inlineText = (el) => getComputedStyle(el).display === 'inline';
     const sevFor = (r) => Math.min(r.width, r.height) < 24 ? 'warn' : 'info';
-    const sevOf = (el, r) => inlineText(el) ? 'info' : sevFor(r);
     if (rules['tap-small']) {
       let n = 0, total = 0, unlistedWarn = 0, unlistedInfo = 0;
       for (let i = 0; i < inter.length; i++) {
@@ -627,14 +617,12 @@ AUDIT_JS = """(cfg) => {
           if (hr.width >= 44 && hr.height >= 44) continue;
         }
         total++;
-        if (n >= 12) { if (sevOf(el, r) === 'warn') unlistedWarn++; else unlistedInfo++; continue; }
+        if (n >= 12) { if (sevFor(r) === 'warn') unlistedWarn++; else unlistedInfo++; continue; }
         {
-          const sv = sevOf(el, r);
+          const sv = sevFor(r);
           findings.push({ severity: sv, rule: 'tap-small',
             message: sel(el) + ' is ' + Math.round(r.width) + '×' + Math.round(r.height) + 'px — '
-              + (inlineText(el) ? 'an inline text link, exempt from the 24px minimum (WCAG 2.5.8 Inline)'
-                 : sv === 'warn' ? 'under the 24px WCAG AA minimum'
-                 : 'meets 24px AA but under the 44px AAA target'),
+              + (sv === 'warn' ? 'under the 24px WCAG AA minimum' : 'meets 24px AA but under the 44px AAA target'),
             selector: sel(el), box: box(r), text: snippet(el) });
           n++;
         }
@@ -673,14 +661,8 @@ AUDIT_JS = """(cfg) => {
           // One decimal: a 7.6px gap rounded to "8px apart; need 8px" reads as a
           // false alarm to anyone checking the arithmetic.
           const gap = Math.max(dx, dy);
-          // Two words in a sentence sit a few px apart because that is what a
-          // line of text does. The Inline exception applies to the pair for the
-          // same reason it applies to the size.
-          const inlinePair = inlineText(a) && inlineText(b);
-          findings.push({ severity: inlinePair ? 'info' : sevFor(smaller), rule: 'tap-close',
-            message: sel(a) + ' and ' + sel(b) + ' are ' + (gap < 1 ? 'touching' : gap.toFixed(1) + 'px apart')
-              + (inlinePair ? '; both are inline text links (WCAG 2.5.8 Inline exception)'
-                 : '; small touch targets need 8px between them'),
+          findings.push({ severity: sevFor(smaller), rule: 'tap-close',
+            message: sel(a) + ' and ' + sel(b) + ' are ' + (gap < 1 ? 'touching' : gap.toFixed(1) + 'px apart') + '; small touch targets need 8px between them',
             selector: sel(a), box: box(ra), related: sel(b), relatedBox: box(rb),
             text: snippet(a) });
           if (++n >= 8) break outer;
@@ -1159,8 +1141,15 @@ class LocalBackend(Backend):
                 # need re-learning.
                 sh = int(res.page.get("scrollHeight") or 0)
                 if sh > 0:
+                    h = capture_height(sh, profile.device_scale_factor)
                     page.screenshot(path=str(full), full_page=True,
-                                    clip={"x": 0, "y": 0, "width": w, "height": min(sh, 30000)})
+                                    clip={"x": 0, "y": 0, "width": w, "height": h})
+                    if h < sh:
+                        res.notes.append(
+                            f"the page is {sh}px tall and this capture stops at {h}px: at "
+                            f"{profile.device_scale_factor}x that is the most a screenshot can "
+                            f"hold ({SHOT_LIMIT_PX}px). Findings below it were still measured "
+                            "from the DOM, but cannot be drawn on the image")
                 else:
                     page.screenshot(path=str(full), full_page=True)
                 # Relative to the run directory, so report.html beside them can
@@ -1303,6 +1292,25 @@ def _rel(path: Path, base: Path) -> str:
         return path.relative_to(base).as_posix()
     except ValueError:                     # a backend wrote somewhere else; keep the truth
         return path.as_posix()
+
+
+# The engines refuse any screenshot dimension over this many DEVICE pixels.
+SHOT_LIMIT_PX = 32767
+
+
+def capture_height(scroll_height: int, dpr: float, limit: int = SHOT_LIMIT_PX) -> int:
+    """How much of a page one full-page capture may cover, in CSS pixels.
+
+    The clip is given in CSS px but the file comes out at CSS × dpr, so the
+    ceiling is limit/dpr — not a flat number. A flat 30000 was safe only at 1x:
+    every phone and tablet in the matrix is 2x or more, so a tall page asked
+    for up to 105000 device px and the capture failed outright with "Cannot
+    take screenshot larger than 32767 pixels on any dimension", losing that
+    device from the run entirely. Desktop profiles are 1x, which is why they
+    were the only ones that kept working.
+    """
+    ceiling = int((limit - 8) // max(float(dpr), 1.0))   # a little margin for rounding
+    return max(1, min(int(scroll_height), ceiling))
 
 
 def _thumbnail(src: Path, dst: Path, width: int) -> Path | None:
