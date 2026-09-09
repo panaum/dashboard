@@ -229,8 +229,25 @@ forwarded back in. A tap arrives at the page as `pointerdown` / `touchstart` /
 
 The browser cannot hold the service key, so the Dashboard signs a short-lived
 token that **pins the url and the profile**. The service reads both from the
-token and never from the query string, so a leaked token opens exactly one page
-on one profile until it expires, and can never be used to browse elsewhere.
+token and never from the query string, so a token opens exactly one page on one
+profile and can never be used to browse elsewhere. It is also:
+
+- **sent as the socket's first message, never in the URL** — uvicorn writes
+  query strings to the access log in full, and Railway keeps those, so a token
+  in the URL is a token on disk;
+- **single use** — signature and expiry alone left a two-minute window in which
+  anything that saw the token could open session after session. A spent
+  signature is remembered until it expires, and a second use is refused with
+  `token_spent`. Each token carries a nonce, so two people opening the same
+  page in the same second get different tokens;
+- **valid for 120 seconds**, and only to *open* a session. Once open, the
+  session runs under its own idle and hard limits.
+
+Runs and sessions **share one slot**: a live session refuses while a capture is
+running, and a capture returns `429 run_capacity` while a session is open.
+Without that, an instance could hold an audit's three engines and a live
+Chromium at once. Closing the tab ends the session — the browser is released
+within a fraction of a second, not at the idle timeout.
 
 Chromium profiles only. WebKit and Firefox have no frame-streaming API — a
 screenshot loop measured 20fps and is the obvious second slice — and a session

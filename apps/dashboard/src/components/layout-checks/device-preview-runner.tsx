@@ -53,6 +53,10 @@ export function DevicePreviewRunner({
       const id = started?.run_id;
       if (!id) {
         push({ phase: "failed", message: started?.unavailable ? "The preview service is not configured on this deployment."
+          // Runs and live sessions share one slot on the service, so "busy"
+          // has two causes and they are not interchangeable to a reader.
+          : started?.error === "live_session_open"
+            ? "The preview service is busy with a live session. End it, or try again in a moment."
           : started?.error === "run_capacity" ? "Another preview is running right now. Try again in a minute."
           : started?.detail ?? started?.error ?? "Could not start the preview." });
         return;
