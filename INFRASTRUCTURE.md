@@ -422,6 +422,24 @@ environment. **Fails closed:** with `DEVICEPREVIEW_KEY` unset every request is
 | `DEVICEPREVIEW_CONCURRENCY` | Engines in parallel inside a run; lower on a small instance | tuning | — | No — default `2` |
 | `MAX_RUNNING` | Runs accepted at once; more get `429 run_capacity` | tuning | — | No — default `1` |
 | `PORT` | Injected by Railway; consumed by the Dockerfile `CMD` | platform | — | Injected |
+
+**Railway logs cannot be purged.** Retention is time-based only and set by the
+plan (Hobby 7 days, Pro 30, Enterprise up to 90); there is no dashboard action
+or API to delete logs early, and upgrading a plan *restores* previously aged-out
+logs rather than removing any. So anything the service writes to stdout —
+including anything uvicorn puts in an access line, which is the full query
+string — is retained for the plan's window and cannot be taken back. Nothing
+secret may travel in a URL to this service. (Checked against Railway's docs,
+2026-09-09.)
+
+**Live sessions reach this service directly from the browser.** The Dashboard
+mints a short-lived token (`/api/devicepreview/live-token`, signed with
+`DEVICEPREVIEW_KEY`) and the page opens a websocket straight to
+`wss://<this service>/api/devicepreview/live-session`. Vercel does not hold
+websockets, and proxying frames through it would double the bandwidth for no
+gain — so the Railway service must be reachable from the public internet, which
+it already is. The service key never leaves the server; the token pins one url
+and one profile for two minutes.
 | `BROWSERSTACK_USERNAME` | Basic-auth user for the Screenshots REST API (`devicepreview.py` `browserstack_credentials`) | secret | — | Only with `--backend browserstack`; unset ⇒ the backend stops and prints how to enable it |
 | `BROWSERSTACK_ACCESS_KEY` | Basic-auth key for the same | secret | — | As above |
 | `BROWSERSTACK_KEY` | Alternative single value `user:key` (the spec's name) | secret | — | Alternative to the pair |

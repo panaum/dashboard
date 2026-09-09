@@ -17,9 +17,17 @@ is the second slice, not the first.
 
 Auth: the browser cannot hold the service key, so the Dashboard signs a
 short-lived token that PINS the url and profile. The service reads both from
-the token and never from the query string, so a leaked token opens exactly one
-page on one profile until it expires — it can never be used to browse the
-service somewhere else.
+the token and never from the query string, so a token opens exactly one page
+on one profile — it can never be used to browse the service somewhere else.
+
+Two things that review caught, both now closed:
+
+  * The token arrives as the FIRST MESSAGE on the socket, not as a query
+    parameter. A query string is written to the access log in full, and
+    Railway keeps those logs, so a token in the URL is a token on disk.
+  * It is SINGLE USE. Signature and expiry alone left a two-minute window in
+    which the same token could open session after session; a used signature is
+    now remembered until it expires.
 """
 from __future__ import annotations
 
@@ -28,6 +36,7 @@ import base64
 import hmac
 import json
 import os
+import secrets
 import time
 from hashlib import sha256
 from typing import Any
@@ -49,10 +58,51 @@ MAX_FPS = int(os.environ.get("LIVE_MAX_FPS", "20"))
 # limit; a live session holds one open for minutes rather than seconds.
 _busy = asyncio.Lock()
 
+# Signatures already spent, with the moment they expire. A token is good for
+# one session: without this, anything that saw it — a log line, a proxy, a
+# screen — could open sessions with it until it expired.
+_spent: dict[str, float] = {}
 
-def sign_token(secret: str, url: str, profile: str, now: float | None = None) -> str:
-    """The Dashboard mints these; kept here so both sides read one implementation."""
+AUTH_TIMEOUT_S = 5.0
+
+
+def session_open() -> bool:
+    """Whether a browser is currently held by a live session."""
+    return _busy.locked()
+
+
+def audit_running() -> bool:
+    """Whether a capture run holds the instance. Imported late: server.py
+    imports this module at load, so the dependency only goes one way there."""
+    try:
+        import server
+        return any(e["status"] in ("running", "finishing") for e in server._runs.values())
+    except Exception:                                             # noqa: BLE001 — never block a session on a lookup
+        return False
+
+
+def spend_token(sig: str, exp: float, now: float | None = None) -> bool:
+    """True the first time a signature is presented, False every time after."""
+    t = now if now is not None else time.time()
+    for k, v in list(_spent.items()):
+        if v <= t:
+            _spent.pop(k, None)
+    if sig in _spent:
+        return False
+    _spent[sig] = exp
+    return True
+
+
+def sign_token(secret: str, url: str, profile: str, now: float | None = None,
+               nonce: str | None = None) -> str:
+    """The Dashboard mints these; kept here so both sides read one implementation.
+
+    `jti` is what makes two tokens for the same page in the same second
+    different documents. Without it they are byte-identical, and single use
+    would refuse the second person to open that page in that second.
+    """
     payload = json.dumps({"url": url, "profile": profile,
+                          "jti": nonce or secrets.token_hex(8),
                           "exp": int((now if now is not None else time.time()) + SESSION_TTL_S)},
                          separators=(",", ":"), sort_keys=True)
     body = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
@@ -88,10 +138,23 @@ async def live_session(ws: WebSocket) -> None:
     from devicepreview import load_devices          # local: keeps CLI import cost off startup
 
     secret = os.environ.get("DEVICEPREVIEW_KEY", "")
-    claims = read_token(secret, ws.query_params.get("token", ""))
     await ws.accept()
+    # The token is the first message, never the URL: a query string is written
+    # to the access log in full, and a token on disk is a token that can be
+    # replayed within its window.
+    try:
+        hello = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=AUTH_TIMEOUT_S))
+        token = str(hello.get("token", ""))
+    except (asyncio.TimeoutError, ValueError, TypeError, KeyError, WebSocketDisconnect):
+        await _bye(ws, "unauthorized", "No session token was sent.")
+        return
+
+    claims = read_token(secret, token)
     if not claims:
-        await _bye(ws, "unauthorized", "That session link is not valid, or it has expired.")
+        await _bye(ws, "unauthorized", "That session token is not valid, or it has expired.")
+        return
+    if not spend_token(token.rpartition(".")[2], float(claims["exp"])):
+        await _bye(ws, "token_spent", "That session token has already been used. Start a new session.")
         return
 
     profile = next((p for p in load_devices(None) if p.id == claims["profile"]), None)
@@ -106,6 +169,10 @@ async def live_session(ws: WebSocket) -> None:
         return
     if _busy.locked():
         await _bye(ws, "busy", "Another live session is open. They run one at a time on this instance.")
+        return
+    if audit_running():
+        await _bye(ws, "busy", "A capture run is using the browsers. Runs and sessions share one slot; "
+                               "try again when it finishes.")
         return
 
     async with _busy:
