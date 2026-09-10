@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { readWidthView, syncQuery } from "@/lib/layout-checks/deep-link";
 import { ExternalLink } from "lucide-react";
 import { BarLabel, CheckShell, ON_STAGE, revealStage, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame } from "@/components/layout-checks/device-frame";
@@ -42,9 +44,12 @@ export function ViewportsPanel({
 }) {
   const asc = useMemo(() => [...widths].sort((a, b) => a - b), [widths]);
   const perWidth = hasPerWidth(findings);
-  const [selected, setSelected] = useState<number | null>(() => defaultWidth(findings, asc));
+  const params = useSearchParams();
+  const asked = readWidthView(params, asc);
+  const [selected, setSelected] = useState<number | null>(() => asked.width ?? defaultWidth(findings, asc));
   const current = asc.includes(selected ?? -1) ? (selected as number) : asc[0] ?? null;
-  const [finding, setFinding] = useState<string | null>(null);
+  const [finding, setFinding] = useState<string | null>(asked.finding);
+  useEffect(() => { syncQuery({ width: selected, finding }); }, [selected, finding]);
   const [expanded, setExpanded] = useState(false);
 
   const items = useMemo(
@@ -108,6 +113,7 @@ export function ViewportsPanel({
         highlight={null}
         maxHeight="fill"
         frameClassName={ON_STAGE}
+        minimap
       />
       <StageCaption title={`${current}px`}>{" · "}{SHAPE_WORD[widthShape(current)]}{" · "}{widthViewport(current).width} × {widthViewport(current).height}</StageCaption>
     </div>

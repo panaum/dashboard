@@ -8,6 +8,7 @@ import { ms } from "@/lib/layout-checks/motion";
 import { placePins, type Pin } from "@/lib/layout-checks/pins";
 import { useStageHeight } from "@/components/layout-checks/check-shell";
 import { cutoutBox, skinFor } from "@/lib/layout-checks/device-skin";
+import { bandFor, clusterDots, scrollFor, worthMapping } from "@/lib/layout-checks/minimap";
 
 // A generic frame per platform — a bezelled rounded rectangle for phones, a
 // wider one for tablets, a browser chrome bar for desktop — sized to the
@@ -19,6 +20,8 @@ import { cutoutBox, skinFor } from "@/lib/layout-checks/device-skin";
 const BODY = "#15181e";        // the handset body
 const HARDWARE = "#31363f";    // buttons, and the SE's earpiece
 const CHROME_H = 34;          // the desktop title bar
+const MAP_W = 56;             // the page map beside the body
+const MAP_GAP = 16;
 const FADE_MS = 150;
 
 // `tried` — the fallback has already been swapped in, so a second error is
@@ -52,6 +55,7 @@ export function DeviceFrame({
   pins = [],
   onPinSelect,
   selectedPin = null,
+  minimap = false,
   children,
 }: {
   shape: Shape;
@@ -84,6 +88,8 @@ export function DeviceFrame({
   pins?: PinMarker[];
   onPinSelect?: (id: string) => void;
   selectedPin?: string | null;
+  /** Draw the page map beside the body when the page is taller than the window. */
+  minimap?: boolean;
   children?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -101,7 +107,9 @@ export function DeviceFrame({
   const chrome = shape === "desktop" ? CHROME_H : 0;
   const room = useStageHeight();
   const ceiling = maxHeight === "fill" ? (room ?? 640) : maxHeight;
-  const maxW = Math.max(0, avail - 2 * skin.bezelX);
+  // The map's column is reserved whenever it may appear, so the body does not
+  // shift the moment a tall page finishes loading.
+  const maxW = Math.max(0, avail - 2 * skin.bezelX - (minimap ? MAP_W + MAP_GAP : 0));
   const maxH = Math.max(0, ceiling - skin.bezelTop - skin.bezelBottom - chrome);
   // "Fit" is the frame the column can hold; "actual" is the page's own pixels,
   // which is the only way to judge whether 11px text or a 24px target really
@@ -205,6 +213,23 @@ export function DeviceFrame({
 
   const cut = cutoutBox(skin, screenW);
 
+  // Where the window is on the page, for the map. Read on scroll, one state
+  // update per frame at most; the div itself is the truth in between.
+  const [scrollTop, setScrollTop] = useState(0);
+  const raf = useRef(0);
+  const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const t = e.currentTarget.scrollTop;
+    cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => setScrollTop(t));
+  };
+  const imageH = cssHeight === null ? null : cssHeight * scale;
+  const showMap = minimap && !liveSrc && sized && worthMapping(imageH, screenH);
+  const jumpTo = (fraction: number) => {
+    const el = screenRef.current;
+    if (!el || imageH === null) return;
+    el.scrollTo({ top: scrollFor(fraction, imageH, screenH), behavior: ms(200) === 0 ? "auto" : "smooth" });
+  };
+
   // Nothing on screen yet and nothing has given up: still fetching. Once any
   // layer has painted, a swap crossfades over it rather than blanking it.
   const top = layers[layers.length - 1];
@@ -217,9 +242,10 @@ export function DeviceFrame({
 
   return (
     <div ref={host} className={cn("w-full", zoom === "actual" && "overflow-x-auto")}>
+     <div className="mx-auto flex w-fit items-start" style={{ gap: MAP_GAP }}>
       <div
         ref={frameRef}
-        className={cn("relative mx-auto shadow-md", shape === "desktop" ? "rounded-xl" : "", frameClassName)}
+        className={cn("relative shadow-md", shape === "desktop" ? "rounded-xl" : "", frameClassName)}
         style={{
           width: screenW + 2 * skin.bezelX,
           height: screenH + skin.bezelTop + skin.bezelBottom + chrome,
@@ -282,6 +308,7 @@ export function DeviceFrame({
             // device; a capture is one tall image the frame scrolls instead.
             liveSrc ? "overflow-hidden" : "overflow-y-auto overflow-x-hidden")}
           style={{ width: screenW, height: screenH, borderRadius: skin.screenRadius }}
+          onScroll={liveSrc ? undefined : onScroll}
         >
           {liveSrc ? (
             // Laid out at the profile's real width and then scaled, so the
@@ -371,6 +398,56 @@ export function DeviceFrame({
           {children}
         </div>
       </div>
+
+      {/* The page map: the whole capture squashed into a column the height
+          of the screen, the window's band over it, a dot per pin. It answers
+          "where am I on this 20,000px page" and "where are the problems"
+          before either is read; a click jumps there. Squashing a page this
+          much turns text to texture, and that is the point — a dark header,
+          a white body and a red button read as landmarks at this size. */}
+      {showMap && imageH !== null && cssHeight !== null && (
+        <div
+          role="group"
+          aria-label="Page map"
+          className="relative shrink-0 cursor-pointer overflow-hidden rounded-md bg-white ring-1 ring-border-soft"
+          style={{ width: MAP_W, height: screenH, marginTop: skin.bezelTop + chrome }}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            jumpTo((e.clientY - r.top) / r.height);
+          }}
+        >
+          {shown && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={shown} alt="" aria-hidden draggable={false}
+                 className="absolute inset-0 h-full w-full select-none opacity-90" style={{ objectFit: "fill" }} />
+          )}
+          {(() => {
+            const band = bandFor(scrollTop, imageH, screenH, screenH);
+            return (
+              <div aria-hidden className="absolute inset-x-0 bg-accent/15 ring-1 ring-inset ring-accent/70"
+                   style={{ top: band.top, height: band.height }} />
+            );
+          })()}
+          {clusterDots(pins, viewport.width, cssHeight, MAP_W, screenH).map((d) => {
+            const on = selectedPin !== null && d.ids.includes(selectedPin);
+            const label = d.ns.length === 1 ? `Finding ${d.ns[0]}` : `Findings ${d.ns.join(", ")}`;
+            return (
+              <button
+                key={d.ids[0]}
+                type="button"
+                aria-label={label}
+                title={label}
+                aria-pressed={on}
+                onClick={(e) => { e.stopPropagation(); onPinSelect?.(d.ids[0]); }}
+                className={cn("absolute size-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-white transition-transform hover:scale-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+                              PIN_TONE[d.severity], on && "scale-150 ring-accent")}
+                style={{ left: d.left, top: d.top }}
+              />
+            );
+          })}
+        </div>
+      )}
+     </div>
     </div>
   );
 }

@@ -26,7 +26,7 @@ export type CopyFinding = {
 const SEV: Record<string, string> = { error: "Error", warn: "Warning", info: "Note" };
 
 /** One finding, as pasteable text. */
-export function findingText(f: CopyFinding, url: string): string {
+export function findingText(f: CopyFinding, url: string, link?: string): string {
   const head = [f.pin ? `#${f.pin}` : null, f.severity ? `[${SEV[f.severity] ?? f.severity}]` : null, f.label]
     .filter(Boolean).join(" ");
   const lines = [
@@ -38,13 +38,14 @@ export function findingText(f: CopyFinding, url: string): string {
   if (f.why) lines.push(`Why it matters: ${f.why}`);
   if (f.fix) lines.push(`Usual fix: ${f.fix}`);
   lines.push(`Page: ${url}`);
+  if (link) lines.push(`View: ${link}`);
   return lines.join("\n");
 }
 
 /** Every finding shown, under one heading. */
-export function allFindingsText(findings: CopyFinding[], url: string, heading: string): string {
-  if (!findings.length) return `${heading}\nNothing to fix.\nPage: ${url}`;
+export function allFindingsText(findings: CopyFinding[], url: string, heading: string, link?: string): string {
+  if (!findings.length) return `${heading}\nNothing to fix.\nPage: ${url}` + (link ? `\nView: ${link}` : "");
   const body = findings.map((f) => findingText({ ...f, }, url)
     .split("\n").filter((l) => !l.startsWith("Page: ")).join("\n"));
-  return [`${heading} — ${findings.length} finding${findings.length === 1 ? "" : "s"}`, "", ...body.map((b) => b + "\n"), `Page: ${url}`].join("\n");
+  return [`${heading} — ${findings.length} finding${findings.length === 1 ? "" : "s"}`, "", ...body.map((b) => b + "\n"), `Page: ${url}`, ...(link ? [`View: ${link}`] : [])].join("\n");
 }
