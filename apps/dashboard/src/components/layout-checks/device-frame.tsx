@@ -20,8 +20,8 @@ import { bandFor, clusterDots, scrollFor, worthMapping } from "@/lib/layout-chec
 const BODY = "#15181e";        // the handset body
 const HARDWARE = "#31363f";    // buttons, and the SE's earpiece
 const CHROME_H = 34;          // the desktop title bar
-const MAP_W = 56;             // the page map beside the body
-const MAP_GAP = 16;
+const MAP_W = 10;             // the overview ruler beside the body
+const MAP_GAP = 12;
 const FADE_MS = 150;
 
 // `tried` — the fallback has already been swapped in, so a second error is
@@ -399,32 +399,28 @@ export function DeviceFrame({
         </div>
       </div>
 
-      {/* The page map: the whole capture squashed into a column the height
-          of the screen, the window's band over it, a dot per pin. It answers
-          "where am I on this 20,000px page" and "where are the problems"
-          before either is read; a click jumps there. Squashing a page this
-          much turns text to texture, and that is the point — a dark header,
-          a white body and a red button read as landmarks at this size. */}
+      {/* The overview ruler: a scrollbar that also knows where the findings
+          are. A thin track the height of the screen, the window's thumb on
+          it, and a mark per finding in its severity's colour — the same
+          device as a code editor's scroll gutter, which everyone already
+          reads without being told. It says "where am I" and "where are the
+          problems" without drawing anything of the page itself. A click on
+          the track jumps there; a click on a mark selects that finding. */}
       {showMap && imageH !== null && cssHeight !== null && (
         <div
           role="group"
           aria-label="Page map"
-          className="relative shrink-0 cursor-pointer overflow-hidden rounded-md bg-white ring-1 ring-border-soft"
+          className="relative shrink-0 cursor-pointer rounded-full bg-card-soft ring-1 ring-border-soft"
           style={{ width: MAP_W, height: screenH, marginTop: skin.bezelTop + chrome }}
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             jumpTo((e.clientY - r.top) / r.height);
           }}
         >
-          {shown && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={shown} alt="" aria-hidden draggable={false}
-                 className="absolute inset-0 h-full w-full select-none opacity-90" style={{ objectFit: "fill" }} />
-          )}
           {(() => {
             const band = bandFor(scrollTop, imageH, screenH, screenH);
             return (
-              <div aria-hidden className="absolute inset-x-0 bg-accent/15 ring-1 ring-inset ring-accent/70"
+              <div aria-hidden className="absolute inset-x-0 rounded-full bg-text-primary/20"
                    style={{ top: band.top, height: band.height }} />
             );
           })()}
@@ -439,9 +435,9 @@ export function DeviceFrame({
                 title={label}
                 aria-pressed={on}
                 onClick={(e) => { e.stopPropagation(); onPinSelect?.(d.ids[0]); }}
-                className={cn("absolute size-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-white transition-transform hover:scale-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
-                              PIN_TONE[d.severity], on && "scale-150 ring-accent")}
-                style={{ left: d.left, top: d.top }}
+                className={cn("absolute inset-x-0 h-[3px] -translate-y-1/2 rounded-sm transition-transform hover:scale-y-[1.8] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+                              PIN_TONE[d.severity], on && "z-10 scale-y-[1.8] ring-2 ring-accent")}
+                style={{ top: d.top }}
               />
             );
           })}
