@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Check, ChevronRight, Columns3, ExternalLink, Globe, Loader2 } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { Columns3, ExternalLink, Globe, Loader2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { CheckShell } from "@/components/layout-checks/check-shell";
+import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
+import { CheckShell, ON_STAGE, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
+import { Glance, type GlanceRow, type GlanceTone } from "@/components/layout-checks/glance";
 import { railItems } from "@/lib/layout-checks/findings-view";
-import { rovingTarget } from "@/lib/layout-checks/roving";
-import { ms } from "@/lib/layout-checks/motion";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
 import { LiveSession } from "@/components/layout-checks/live-session";
 import { comparableEngines, engineColumns } from "@/lib/layout-checks/engines-view";
@@ -19,23 +19,20 @@ import {
 } from "@/lib/layout-checks/run-progress";
 import type { TabVerdict } from "@/lib/layout-checks/verdict";
 import {
-  defaultSelection, groupDevices, groupOfProfile, groupSummary, toView,
-  type DeviceInput, type DeviceView, type Group, type Severity,
+  defaultSelection, groupDevices, toView,
+  type DeviceInput, type DeviceView, type Severity,
 } from "@/lib/layout-checks/devices-view";
 
-// The Devices tab: pick one device, see that device. The picker carries a
-// severity dot (red: errors, amber: warnings only, nothing when clean) and an
-// engine tag on every device, sorted worst first within Apple / Android /
-// Tablet / Desktop, with the worst one selected on load — so the broken ones
-// are found without clicking through all fourteen.
+// The Devices tab: pick one device, see that device. The picker is a dropdown
+// grouped Apple / Android / Tablet / Desktop, worst first inside each group,
+// with the worst one selected on load — and under it a glance strip, one
+// coloured cell per device, so all fourteen are read at once and any one is
+// a click away. The device sits large on the dark stage; the bar under it
+// holds compare, live and open.
 
-const TONE_DOT: Record<string, string> = {
-  error: "bg-error", warning: "bg-warning", neutral: "bg-text-muted/50", success: "",
-};
-
-const DOT: Record<Severity, string> = {
-  error: "bg-error", warning: "bg-warning", clean: "", inconclusive: "border border-text-muted bg-transparent",
-};
+const TONE: Record<Severity, ListTone> = { error: "error", warning: "warning", clean: "success", inconclusive: "neutral" };
+const CELL: Record<Severity, GlanceTone> = { error: "error", warning: "warning", clean: "success", inconclusive: "neutral" };
+const RUN_CELL: Record<DeviceRunState, GlanceTone> = { waiting: "waiting", captured: "captured", failed: "error" };
 
 export function DevicesPanel({
   verdict,
@@ -59,10 +56,10 @@ export function DevicesPanel({
   run?: { baselineServiceRunId: string | null; hasRuns: boolean };
   url: string;
 }) {
-  // A run in flight, drawn over the picker: every device grey, each one
-  // fading to what the service actually reported for it. The severity dots
-  // belong to the last saved run, so they step aside until this one is saved
-  // rather than sitting there stale next to a device being re-captured.
+  const reduce = useReducedMotion();
+  // A run in flight, drawn over the glance strip: every device grey, each one
+  // turning to what the service actually reported for it. The severities
+  // belong to the last saved run, so they step aside until this one is saved.
   const [progress, setProgress] = useState<RunProgress>(IDLE_PROGRESS);
   const running = isBusy(progress);
   const note = progressNote(progress);
@@ -71,12 +68,6 @@ export function DevicesPanel({
   const groups = useMemo(() => groupDevices(views), [views]);
   const [selected, setSelected] = useState<string | null>(() => defaultSelection(views));
   const current: DeviceView | undefined = views.find((v) => v.profileId === selected) ?? views[0];
-  // One group open at a time. Fourteen pills in four blocks is most of the
-  // screen spent on a control you use once; open on the group holding the
-  // device that opened, which is the worst one.
-  const [open, setOpen] = useState<Group | null>(
-    () => groupOfProfile(views, defaultSelection(views)) ?? groupDevices(views)[0]?.group ?? null,
-  );
   const stored = new Set(storedFolds);
 
   // Rail state is per device: a new device means no selected finding, the
@@ -84,8 +75,6 @@ export function DevicesPanel({
   const [finding, setFinding] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [imageMeta, setImageMeta] = useState<{ cssHeight: number } | null>(null);
-  // The selection belongs to the device; expanded/collapsed is a density
-  // preference and survives the switch.
   const pick = (profileId: string) => {
     setSelected(profileId); setFinding(null); setImageMeta(null); setColMeta({});
     setStreaming(false);            // the session is pinned to one profile
@@ -96,8 +85,7 @@ export function DevicesPanel({
 
   // Engine comparison: desktop only, where the three engines rendered the
   // same width. The toggle is offered nowhere else — there is no Firefox
-  // iPhone to compare against. Entering or leaving it crossfades like a
-  // selection change; the frames mount fresh and fade in.
+  // iPhone to compare against.
   const cols = useMemo(() => (current ? comparableEngines(devices, current.profileId) : []), [devices, current]);
   const canCompare = cols.length >= 2;
   const [compare, setCompare] = useState(false);
@@ -137,284 +125,199 @@ export function DevicesPanel({
   };
   const showLive = live && !showCompare;
   const showStream = streaming && !showCompare && Boolean(current);
-  // "Desktop 1440 (Firefox)" names one pill; a compared frame is the viewport
-  // plus its own engine, so the pill's engine must not leak into every caption.
+  // "Desktop 1440 (Firefox)" names one device; a compared frame is the viewport
+  // plus its own engine, so the device's engine must not leak into every caption.
   const viewportName = current ? current.label.replace(/\s*\([^)]*\)\s*$/, "") : "";
 
   // Try the live full page only where it can exist; a request the page knows
   // will fail is a blank frame for as long as it takes to fail.
-  const liveShot = current && runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(current.profileId)}&kind=full` : null;
-  const fold = current && runId && stored.has(current.profileId) ? `/api/devicepreview/shot?runId=${runId}&profile=${encodeURIComponent(current.profileId)}` : null;
+  const srcFor = (profileId: string) => ({
+    live: runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(profileId)}&kind=full` : null,
+    fold: runId && stored.has(profileId) ? `/api/devicepreview/shot?runId=${runId}&profile=${encodeURIComponent(profileId)}` : null,
+  });
+  const src = current ? srcFor(current.profileId) : { live: null, fold: null };
+
+  // ── Picker: the dropdown, the glance strip, and the run line while a run is on ──
+  const runState = (d: DeviceView): DeviceRunState | null => running ? progress.devices[d.label] ?? "waiting" : null;
+
+  const options: ListOption[] = groups.flatMap(({ group, devices: ds }) => ds.map((d): ListOption => {
+    const rs = runState(d);
+    return {
+      id: d.profileId,
+      label: d.label,
+      sub: `${d.engineLabel} · ${d.viewportLabel}${d.severity === "error" ? ` · ${d.errors} error${d.errors === 1 ? "" : "s"}` : d.severity === "warning" ? ` · ${d.warnings} warning${d.warnings === 1 ? "" : "s"}` : d.severity === "inconclusive" ? " · not captured" : ""}`,
+      tone: rs ? (rs === "failed" ? "error" : rs === "captured" ? "info" : "neutral") : TONE[d.severity],
+      group,
+    };
+  }));
+
+  const glanceRows: GlanceRow[] = groups.map(({ group, devices: ds }) => ({
+    name: group,
+    cells: ds.map((d) => {
+      const rs = runState(d);
+      return {
+        id: d.profileId,
+        label: `${d.label} · ${d.engineLabel} · ${rs ? (rs === "captured" ? "captured" : rs === "failed" ? "capture failed" : "waiting")
+          : d.severity === "error" ? `${d.errors} error${d.errors === 1 ? "" : "s"}` : d.severity === "warning" ? `${d.warnings} warning${d.warnings === 1 ? "" : "s"}`
+          : d.severity === "inconclusive" ? "not captured" : "clean"}`,
+        tone: rs ? RUN_CELL[rs] : CELL[d.severity],
+      };
+    }),
+  }));
 
   const runLine = running || progress.phase === "failed" ? (
-    <div className="flex flex-col gap-1.5" role="status" aria-live="polite">
-      <p className={cn("text-[12.5px]", progress.phase === "failed" ? "text-error" : "text-text-muted")}>{note}</p>
+    <div className="flex flex-col gap-1.5 rounded-xl bg-card-soft px-3.5 py-3" role="status" aria-live="polite">
+      <p className={cn("text-[12.5px]", progress.phase === "failed" ? "text-error" : "text-text-secondary")}>{note}</p>
       {running && (
-        <div className="h-1 w-full max-w-sm overflow-hidden rounded-full bg-card-soft">
-          <div className="h-full rounded-full bg-accent motion-safe:transition-[width] motion-safe:duration-500"
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-border-soft">
+          <div className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-brand-purple),var(--color-accent))] motion-safe:transition-[width] motion-safe:duration-500"
                style={{ width: `${Math.max(4, progressPct(progress))}%` }} />
         </div>
       )}
     </div>
   ) : null;
 
-  // One tab stop for the picker, arrows between the devices of the open group.
-  // A collapsed group is inert, so nothing focusable hides behind a closed row.
-  const openDevices = groups.find((g) => g.group === open)?.devices ?? [];
-  const tabTarget = openDevices.find((d) => d.profileId === current?.profileId)?.profileId
-    ?? openDevices[0]?.profileId;
-  const onPickerKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    const j = rovingTarget(e.key, openDevices.findIndex((d) => d.profileId === current?.profileId), openDevices.length);
-    if (j === null) return;
-    e.preventDefault();
-    pick(openDevices[j].profileId);
-    document.getElementById(`d-pick-${openDevices[j].profileId}`)?.focus();
-  };
-
-  const pills = views.length ? (
-    <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
-      {groups.map(({ group, devices: ds }, gi) => {
-        const isOpen = group === open;
-        const sum = groupSummary(ds);
-        return (
-        <div key={group} className={cn(gi > 0 && "border-t border-border-soft")}>
-          <button
-            type="button"
-            aria-expanded={isOpen}
-            aria-controls={`d-grp-${group}`}
-            onClick={() => setOpen(isOpen ? null : group)}
-            className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-card-soft focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
-          >
-            <ChevronRight
-              aria-hidden
-              className={cn("size-3.5 shrink-0 text-text-muted motion-safe:transition-transform motion-safe:duration-200",
-                            isOpen && "rotate-90")}
-            />
-            <span className="text-[12px] font-semibold uppercase tracking-[0.07em] text-text-secondary">{group}</span>
-            <span className="text-[11.5px] tabular-nums text-text-muted">{ds.length}</span>
-            <span className="ml-auto flex items-center gap-1.5">
-              {sum.tone !== "success" && (
-                <span aria-hidden className={cn("inline-block size-1.5 rounded-full", TONE_DOT[sum.tone])} />
-              )}
-              <span className="text-[11.5px] text-text-muted">{sum.label}</span>
-            </span>
-          </button>
-
-          {/* 0fr → 1fr animates to the content's own height, so a group with two
-              rows of pills opens as smoothly as one with a single row. */}
-          <div
-            id={`d-grp-${group}`}
-            inert={!isOpen}
-            style={{ display: "grid", gridTemplateRows: isOpen ? "1fr" : "0fr",
-                     transition: `grid-template-rows ${ms(200)}ms ease` }}
-          >
-            <div className="overflow-hidden">
-              <div className="flex flex-wrap gap-1.5 px-3 pb-3 pt-0.5"
-                   role="radiogroup" aria-label={`${group} devices`} onKeyDown={onPickerKey}>
-            {ds.map((d) => {
-              const on = d.profileId === current?.profileId;
-              const runState: DeviceRunState | null = running ? progress.devices[d.label] ?? "waiting" : null;
-              return (
-                <button
-                  key={d.profileId}
-                  id={`d-pick-${d.profileId}`}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  tabIndex={d.profileId === tabTarget ? 0 : -1}
-                  onClick={() => pick(d.profileId)}
-                  title={`${d.label} · ${d.engineLabel} · ${d.viewportLabel}`}
-                  className={cn(
-                    "group flex flex-col items-start rounded-lg px-2.5 py-1.5 text-left motion-safe:transition-[opacity,color,background-color,border-color] motion-safe:duration-300 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
-                    on ? "bg-accent text-text-on-dark" : "border border-border-soft bg-card text-text-primary hover:border-accent/50",
-                    runState === "waiting" && "opacity-55",
-                  )}
-                >
-                  <span className="flex items-center gap-1.5 text-[13px] font-medium leading-tight">
-                    {runState ? (
-                      runState === "captured" ? (
-                        <Check aria-hidden className={cn("size-3 shrink-0 motion-safe:transition-colors motion-safe:duration-300", on ? "text-text-on-dark" : "text-text-secondary")} />
-                      ) : (
-                        <span aria-hidden className={cn(
-                          "inline-block size-2 shrink-0 rounded-full motion-safe:transition-colors motion-safe:duration-300",
-                          runState === "failed" ? "bg-error" : "bg-border-soft",
-                        )} />
-                      )
-                    ) : d.severity !== "clean" ? (
-                      <span aria-hidden className={cn("inline-block size-2 shrink-0 rounded-full", DOT[d.severity])} />
-                    ) : null}
-                    <span className="sr-only">
-                      {runState === "captured" ? "captured: "
-                        : runState === "failed" ? "capture failed: "
-                        : runState === "waiting" ? "waiting: "
-                        : d.severity === "error" ? "has errors: "
-                        : d.severity === "warning" ? "has warnings: "
-                        : d.severity === "inconclusive" ? "not captured: " : ""}
-                    </span>
-                    {d.label}
-                  </span>
-                  <span className={cn("flex items-center gap-1.5 text-[10.5px] tabular-nums", on ? "text-text-on-dark/75" : "text-text-muted")}>
-                    {d.viewportLabel}
-                    <span className={cn("rounded px-1 py-px text-[9.5px] font-semibold uppercase tracking-wide", on ? "bg-white/15" : "bg-card-soft")}>{d.engineLabel}</span>
-                  </span>
-                </button>
-              );
-            })}
-              </div>
-            </div>
-          </div>
-        </div>
-        );
-      })}
-    </div>
-  ) : (
-    <p className="text-[13px] text-text-muted">
-      {running ? "The first run has no devices to list yet." : "Run the check to see it here."}
-    </p>
-  );
-
   const picker = (
     <div className="flex flex-col gap-3">
       {runLine}
-      {pills}
+      {views.length ? (
+        <>
+          <div className="flex flex-col gap-1.5">
+            <span className="px-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Device</span>
+            <Listbox label="Device" options={options} value={current?.profileId ?? null} onChange={pick} />
+          </div>
+          <Glance rows={glanceRows} selected={current?.profileId ?? null} onPick={pick} label="All devices at a glance" />
+        </>
+      ) : (
+        <p className="px-1 text-[13px] text-text-muted">
+          {running ? "The first run has no devices to list yet." : "Run the check to see it here."}
+        </p>
+      )}
     </div>
   );
 
-  const srcFor = (profileId: string) => ({
-    live: runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(profileId)}&kind=full` : null,
-    fold: runId && stored.has(profileId) ? `/api/devicepreview/shot?runId=${runId}&profile=${encodeURIComponent(profileId)}` : null,
-  });
+  // ── Stage ──────────────────────────────────────────────────────────────────
+  const mode = !current ? "none" : showStream ? "stream" : showCompare ? "compare" : "single";
+  const swap = {
+    initial: reduce ? false as const : { opacity: 0, scale: 0.985 },
+    animate: { opacity: 1, scale: 1 },
+    exit: reduce ? { opacity: 0 } : { opacity: 0, scale: 0.985 },
+    transition: reduce ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const },
+  };
 
-  const toggle = current && canCompare ? (
-    <div className="flex w-full justify-center">
-      <button
-        type="button"
-        aria-pressed={showCompare}
-        onClick={() => { setCompare((c) => !c); setFinding(null); }}
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
-          showCompare ? "border-accent bg-accent/10 text-accent" : "border-border-soft bg-card text-text-secondary hover:border-accent/50 hover:text-text-primary",
-        )}
-      >
-        <Columns3 className="size-3.5" /> Compare engines
-      </button>
-    </div>
+  const frame = current ? (
+    <AnimatePresence mode="wait" initial={false}>
+      {mode === "stream" ? (
+        <motion.div key="stream" {...swap} className="flex w-full flex-col items-center gap-3">
+          <div className="w-full max-w-[420px]">
+            <LiveSession
+              url={url}
+              profileId={current.profileId}
+              viewport={current.viewport}
+              hasTouch={current.shape !== "desktop"}
+              onExit={() => setStreaming(false)}
+            />
+          </div>
+          <StageCaption title={current.label}>{" · "}{current.engineLabel}{" · "}{current.viewportLabel}{" · "}live</StageCaption>
+        </motion.div>
+      ) : mode === "compare" ? (
+        <motion.div key="compare" {...swap} className="flex w-full flex-col items-center gap-3">
+          <div className="grid w-full gap-3 md:grid-cols-3">
+            {columns.map((c) => {
+              const s = srcFor(c.profileId);
+              const hl = selectedColItem && selectedCol === c.engine ? selectedColItem.box : null;
+              return (
+                <div key={c.profileId} className="flex min-w-0 flex-col items-center gap-2">
+                  <DeviceFrame
+                    shape="desktop"
+                    viewport={current.viewport}
+                    src={s.live ?? s.fold}
+                    fallbackSrc={s.fold}
+                    alt={`${viewportName} at ${current.viewportLabel}, rendered by ${c.engineLabel}`}
+                    title={url.replace(/^https?:\/\//, "")}
+                    maxHeight={360}
+                    highlight={hl}
+                    onImageMeta={(m) => setColMeta((prev) => ({ ...prev, [c.engine]: m?.cssHeight ?? null }))}
+                    frameClassName={ON_STAGE}
+                  />
+                  <StageCaption title={c.engineLabel}>
+                    {" · "}{c.status !== "ok" ? c.status : `${c.errors} error${c.errors === 1 ? "" : "s"} · ${c.warnings} warning${c.warnings === 1 ? "" : "s"}`}
+                  </StageCaption>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      ) : (
+        <motion.div key={`single-${current.profileId}`} {...swap} className="flex w-full flex-col items-center gap-3">
+          <DeviceFrame
+            shape={current.shape}
+            viewport={current.viewport}
+            src={src.live ?? src.fold}
+            fallbackSrc={src.fold}
+            liveSrc={showLive ? qaUrl(url) : null}
+            alt={showLive ? `${current.label}, the live page` : `${current.label}, rendered page`}
+            title={url.replace(/^https?:\/\//, "")}
+            maxHeight={720}
+            highlight={selectedItem?.box ?? null}
+            onImageMeta={setImageMeta}
+            frameClassName={ON_STAGE}
+          />
+          <StageCaption title={current.label}>
+            {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
+            {showLive && <span className="mt-0.5 block text-[11.5px]">{LIVE_CAVEAT}</span>}
+          </StageCaption>
+        </motion.div>
+      )}
+    </AnimatePresence>
   ) : null;
 
-  const frame = current && showStream ? (
-    <Fade key="stream" className="flex w-full flex-col items-center gap-2.5">
-      {toggle}
-      <div className="w-full max-w-[420px]">
-        <LiveSession
-          url={url}
-          profileId={current.profileId}
-          viewport={current.viewport}
-          hasTouch={current.shape !== "desktop"}
-          onExit={() => setStreaming(false)}
-        />
-      </div>
-      <p className="text-[12px] text-text-muted">
-        <span className="font-medium text-text-secondary">{current.label}</span>
-        {" · "}{current.engineLabel}{" · "}{current.viewportLabel}
-      </p>
-    </Fade>
-  ) : current && showCompare ? (
-    <Fade key="compare" className="flex w-full flex-col items-center gap-3">
-      {toggle}
-      <div className="grid w-full gap-3 md:grid-cols-3">
-        {columns.map((c) => {
-          const s = srcFor(c.profileId);
-          const hl = selectedColItem && selectedCol === c.engine ? selectedColItem.box : null;
-          return (
-            <div key={c.profileId} className="flex min-w-0 flex-col items-center gap-1.5">
-              <DeviceFrame
-                shape="desktop"
-                viewport={current.viewport}
-                src={s.live ?? s.fold}
-                fallbackSrc={s.fold}
-                alt={`${viewportName} at ${current.viewportLabel}, rendered by ${c.engineLabel}`}
-                title={url.replace(/^https?:\/\//, "")}
-                maxHeight={360}
-                highlight={hl}
-                onImageMeta={(m) => setColMeta((prev) => ({ ...prev, [c.engine]: m?.cssHeight ?? null }))}
-              />
-              <p className="text-[12px] text-text-muted">
-                <span className="font-medium text-text-secondary">{c.engineLabel}</span>
-                {" · "}{c.status !== "ok" ? c.status : `${c.errors} error${c.errors === 1 ? "" : "s"} · ${c.warnings} warning${c.warnings === 1 ? "" : "s"}`}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-    </Fade>
-  ) : current ? (
-    <Fade key="single" className="flex w-full flex-col items-center gap-2.5">
-      {toggle}
-      <DeviceFrame
-        shape={current.shape}
-        viewport={current.viewport}
-        src={liveShot ?? fold}
-        fallbackSrc={fold}
-        liveSrc={showLive ? qaUrl(url) : null}
-        alt={showLive ? `${current.label}, the live page` : `${current.label}, rendered page`}
-        title={url.replace(/^https?:\/\//, "")}
-        maxHeight={720}
-        highlight={selectedItem?.box ?? null}
-        onImageMeta={setImageMeta}
-      />
-      <p className="max-w-sm text-center text-[12px] text-text-muted">
-        <span className="font-medium text-text-secondary">{current.label}</span>
-        {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
-        {showLive && <span className="mt-0.5 block text-[11.5px]">{LIVE_CAVEAT}</span>}
-      </p>
-    </Fade>
-  ) : null;
-
-  // Your browser, not the device's: the live page in a window of the
-  // profile's viewport size. Honest about what it is, in the tooltip.
-  const openAtSize = current ? (
-    <div className="flex flex-col items-center gap-1.5">
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {!showCompare && (
-          <Button
-            type="button"
-            variant={showLive || showStream ? "primary" : "secondary"}
-            size="sm"
-            aria-pressed={showLive || showStream}
-            onClick={goLive}
-            disabled={Boolean(embed?.checking)}
-            title={showLive || showStream ? "Back to the captured screenshot, where findings can be drawn."
-                   : canStream ? "Runs a real browser on this device profile — taps arrive as touch events."
-                   : "Loads the real page inside the frame at this viewport."}
-          >
-            {embed?.checking ? <Loader2 className="size-4 animate-spin" /> : <Globe className="size-4" />}
-            {embed?.checking ? "Checking…"
-              : showStream || showLive ? "Show the capture"
-              : canStream ? "Use it live" : "Open live here"}
-          </Button>
-        )}
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => window.open(url, "_blank", `width=${current.viewport.width},height=${current.viewport.height}`)}
-          title="Opens the live page in your own browser at this size — your browser, not the device's."
+  // The bar under the device. "Open in a window" is your browser, not the
+  // device's: the tooltip says so.
+  const bar = current ? (
+    <StageBar note={embed?.reason}>
+      {canCompare && (
+        <StageButton
+          on={showCompare}
+          onClick={() => { setCompare((c) => !c); setFinding(null); }}
+          title="The three engines side by side at this width."
         >
-          <ExternalLink className="size-4" /> Open in a window
-        </Button>
-      </div>
-      {embed?.reason && <p className="max-w-sm text-center text-[12px] text-text-muted">{embed.reason}</p>}
-    </div>
+          <Columns3 className="size-4" aria-hidden /> Compare engines
+        </StageButton>
+      )}
+      {!showCompare && (
+        <StageButton
+          on={showLive || showStream}
+          onClick={goLive}
+          disabled={Boolean(embed?.checking)}
+          title={showLive || showStream ? "Back to the captured screenshot, where findings can be drawn."
+                 : canStream ? "Runs a real browser on this device profile — taps arrive as touch events."
+                 : "Loads the real page inside the frame at this viewport."}
+        >
+          {embed?.checking ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Globe className="size-4" aria-hidden />}
+          {embed?.checking ? "Checking…"
+            : showStream || showLive ? "Show the capture"
+            : canStream ? "Use it live" : "Open live here"}
+        </StageButton>
+      )}
+      <StageButton
+        onClick={() => window.open(url, "_blank", `width=${current.viewport.width},height=${current.viewport.height}`)}
+        title="Opens the live page in your own browser at this size — your browser, not the device's."
+      >
+        <ExternalLink className="size-4" aria-hidden /> Open in a window
+      </StageButton>
+    </StageBar>
   ) : null;
 
+  // ── Rail ───────────────────────────────────────────────────────────────────
   const rail = current && showCompare ? (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {columns.map((c) => (
         <FindingsRail
           key={c.profileId}
           deviceLabel={c.engineLabel}
           heading={
-            <p className="mb-1 flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">
+            <p className="mb-2 flex items-baseline gap-2 border-b border-border-soft pb-2 text-[11.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">
               {c.engineLabel}
               <span className="font-medium normal-case tracking-normal text-text-muted/80">
                 {c.errors + c.warnings > 0
@@ -434,20 +337,23 @@ export function DevicesPanel({
     </div>
   ) : current ? (
     current.status !== "ok" ? (
-      <p className="text-[13px] text-text-secondary">
-        {current.status === "blocked" ? "Blocked by bot protection — nothing on this device was audited." : `Capture failed${current.error ? `: ${current.error}` : "."}`}
-      </p>
+      <div className="flex flex-col">
+        <div className="mb-3 flex items-baseline justify-between gap-2 border-b border-border-soft pb-3">
+          <p className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Findings</p>
+          <p className="truncate text-[12px] text-text-secondary">{current.label}</p>
+        </div>
+        <div className="flex items-start gap-3 rounded-xl bg-card-soft p-4 ring-1 ring-border-soft">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-text-muted/25 text-text-primary">
+            <ShieldAlert className="size-5" aria-hidden />
+          </span>
+          <p className="text-[13px] leading-snug text-text-secondary">
+            {current.status === "blocked" ? "Blocked by bot protection — nothing on this device was audited." : `Capture failed${current.error ? `: ${current.error}` : "."}`}
+          </p>
+        </div>
+      </div>
     ) : (
       <FindingsRail
         deviceLabel={current.label}
-        heading={
-          <p className="mb-2 flex items-baseline gap-2 border-b border-border-soft pb-2 text-[12px] font-semibold uppercase tracking-[0.07em] text-text-muted">
-            {current.label}
-            <span className="font-medium normal-case tracking-normal text-text-muted/80">
-              {items.length ? `${items.length} finding${items.length === 1 ? "" : "s"}` : "clean"}
-            </span>
-          </p>
-        }
         items={items}
         selectedId={finding}
         onSelect={(id) => {
@@ -474,17 +380,9 @@ export function DevicesPanel({
         : headerAction}
       picker={picker}
       frame={frame}
-      action={openAtSize}
+      action={bar}
       rail={rail}
       railLabel={current ? (showCompare ? `Findings by engine at ${current.viewportLabel}` : `Findings on ${current.label}`) : "Findings"}
     />
   );
-}
-
-// Mounts transparent and fades in over 150ms — the same crossfade a
-// selection change gets, reused for entering and leaving comparison.
-function Fade({ className, children }: { className?: string; children: ReactNode }) {
-  const [on, setOn] = useState(false);
-  useEffect(() => { const id = requestAnimationFrame(() => setOn(true)); return () => cancelAnimationFrame(id); }, []);
-  return <div className={className} style={{ opacity: on ? 1 : 0, transition: `opacity ${ms(150)}ms ease` }}>{children}</div>;
 }

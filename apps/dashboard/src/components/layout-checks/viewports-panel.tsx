@@ -1,27 +1,26 @@
 "use client";
 
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { CheckShell } from "@/components/layout-checks/check-shell";
+import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
+import { CheckShell, ON_STAGE, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
+import { Glance, type GlanceTone } from "@/components/layout-checks/glance";
 import type { TabVerdict } from "@/lib/layout-checks/verdict";
 import { widthLabel } from "@/lib/linkspy/responsive-view";
-import { rovingTarget } from "@/lib/layout-checks/roving";
 import {
   defaultWidth, firstWidthOf, hasPerWidth, severityAt, viewportRail, widthShape,
   widthViewport, type ViewportFinding, type WidthSeverity,
 } from "@/lib/layout-checks/viewports-view";
 
 // The Viewports tab: pick one width, see the page at that width, read the
-// findings for that width. The same shell, picker and rail as the Devices
-// tab, so the interaction is learned once.
+// findings for that width. The same shell, dropdown, glance strip and rail
+// as the Devices tab, so the interaction is learned once.
 
-const DOT: Record<WidthSeverity, string> = {
-  error: "bg-error", warning: "bg-warning", clean: "", unknown: "",
-};
+const TONE: Record<WidthSeverity, ListTone | undefined> = { error: "error", warning: "warning", clean: "success", unknown: undefined };
+const CELL: Record<WidthSeverity, GlanceTone> = { error: "error", warning: "warning", clean: "success", unknown: "neutral" };
+const SHAPE_WORD = { phone: "Phone", tablet: "Tablet", desktop: "Desktop" } as const;
 
 export function ViewportsPanel({
   verdict,
@@ -62,62 +61,48 @@ export function ViewportsPanel({
   };
 
   const pick = (w: number) => { setSelected(w); setFinding(null); };
+  const key = (w: number) => `w${w}`;
+  const fromKey = (id: string) => Number(id.slice(1));
 
-  // One tab stop for the picker; arrows move along the widths, small to large.
-  const onPickerKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    const j = rovingTarget(e.key, asc.indexOf(current ?? -1), asc.length);
-    if (j === null) return;
-    e.preventDefault();
-    pick(asc[j]);
-    document.getElementById(`w-pick-${asc[j]}`)?.focus();
-  };
+  const options: ListOption[] = asc.map((w) => {
+    const sev = severityAt(findings, w);
+    const shape = widthShape(w);
+    return {
+      id: key(w),
+      label: `${w}px`,
+      sub: `${SHAPE_WORD[shape]}${sev === "error" ? " · breaks here" : sev === "warning" ? " · worth a look" : ""}`,
+      tone: TONE[sev],
+      group: `${SHAPE_WORD[shape]}s`,
+    };
+  });
+  const glance = [{
+    name: "Widths",
+    cells: asc.map((w) => {
+      const sev = severityAt(findings, w);
+      return { id: key(w), label: `${widthLabel(w)} · ${sev === "error" ? "breaks here" : sev === "warning" ? "worth a look" : sev === "clean" ? "clean" : "not captured"}`, tone: CELL[sev] };
+    }),
+  }];
 
   const picker = asc.length ? (
     <div className="flex flex-col gap-3">
       {!perWidth && (
-        <p className="text-[12.5px] text-text-muted">
+        <p className="rounded-xl bg-card-soft px-3.5 py-3 text-[12.5px] leading-snug text-text-secondary">
           This run predates per-width findings, so the list on the right is everything found
           across all {asc.length} widths, not just this one. The next run will split them.
         </p>
       )}
-      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Widths" onKeyDown={onPickerKey}>
-        {asc.map((w) => {
-          const on = w === current;
-          const sev = severityAt(findings, w);
-          return (
-            <button
-              key={w}
-              id={`w-pick-${w}`}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              tabIndex={on ? 0 : -1}
-              onClick={() => pick(w)}
-              title={widthLabel(w)}
-              className={cn(
-                "flex flex-col items-start rounded-lg px-2.5 py-1.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
-                on ? "bg-accent text-text-on-dark" : "border border-border-soft bg-card text-text-primary hover:border-accent/50",
-              )}
-            >
-              <span className="flex items-center gap-1.5 text-[13px] font-medium leading-tight tabular-nums">
-                {DOT[sev] && <span aria-hidden className={cn("inline-block size-2 shrink-0 rounded-full", DOT[sev])} />}
-                <span className="sr-only">{sev === "error" ? "breaks here: " : sev === "warning" ? "worth a look: " : ""}</span>
-                {w}px
-              </span>
-              <span className={cn("text-[10.5px]", on ? "text-text-on-dark/75" : "text-text-muted")}>
-                {widthShape(w)}
-              </span>
-            </button>
-          );
-        })}
+      <div className="flex flex-col gap-1.5">
+        <span className="px-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Width</span>
+        <Listbox label="Width" options={options} value={current === null ? null : key(current)} onChange={(id) => pick(fromKey(id))} />
       </div>
+      <Glance rows={glance} selected={current === null ? null : key(current)} onPick={(id) => pick(fromKey(id))} label="All widths at a glance" />
     </div>
   ) : (
-    <p className="text-[13px] text-text-muted">Run the check to see it here.</p>
+    <p className="px-1 text-[13px] text-text-muted">Run the check to see it here.</p>
   );
 
   const frame = current !== null && runId ? (
-    <div className="flex w-full flex-col items-center gap-2.5">
+    <div className="flex w-full flex-col items-center gap-3">
       <DeviceFrame
         shape={widthShape(current)}
         viewport={widthViewport(current)}
@@ -126,22 +111,22 @@ export function ViewportsPanel({
         alt={`The page rendered ${current} pixels wide`}
         title={url.replace(/^https?:\/\//, "")}
         highlight={null}
+        frameClassName={ON_STAGE}
       />
-      <p className="text-[12px] text-text-muted">{widthLabel(current)}</p>
+      <StageCaption title={`${current}px`}>{" · "}{SHAPE_WORD[widthShape(current)]}{" · "}{widthViewport(current).width} × {widthViewport(current).height}</StageCaption>
     </div>
   ) : null;
 
   // Your browser at that width, not a phone. The tooltip says so.
-  const openAtSize = current !== null ? (
-    <Button
-      type="button"
-      variant="secondary"
-      size="sm"
-      onClick={() => window.open(url, "_blank", `width=${current},height=${widthViewport(current).height}`)}
-      title="Opens the live page in your own browser at this width — your browser, not a device."
-    >
-      <ExternalLink className="size-4" /> Open at this size
-    </Button>
+  const bar = current !== null ? (
+    <StageBar>
+      <StageButton
+        onClick={() => window.open(url, "_blank", `width=${current},height=${widthViewport(current).height}`)}
+        title="Opens the live page in your own browser at this width — your browser, not a device."
+      >
+        <ExternalLink className="size-4" aria-hidden /> Open at this size
+      </StageButton>
+    </StageBar>
   ) : null;
 
   const rail = current === null ? (
@@ -165,7 +150,7 @@ export function ViewportsPanel({
       headerAction={headerAction}
       picker={picker}
       frame={frame}
-      action={openAtSize}
+      action={bar}
       rail={rail}
       railLabel={current === null ? "Findings" : perWidth ? `Findings at ${current}px` : "Findings across all widths"}
     />
