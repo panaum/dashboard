@@ -120,24 +120,24 @@ export function Listbox({
         onClick={() => (open ? hide() : show())}
         onKeyDown={onTriggerKey}
         className={cn(
-          "flex w-full items-center gap-3 rounded-xl border border-border-soft bg-card px-3.5 py-2.5 text-left shadow-xs transition-[border-color,box-shadow] hover:border-accent/40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
-          open && "border-accent/50 shadow-brand",
+          "flex w-full items-center gap-3 rounded-xl border border-border-soft bg-card px-4 py-2 text-left shadow-xs transition-[border-color,box-shadow] hover:border-accent/40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+          open && "border-accent/50",
           triggerClassName,
         )}
       >
         {selected?.tone && <span aria-hidden className={cn("size-2.5 shrink-0 rounded-full", DOT[selected.tone])} />}
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[14px] font-semibold text-text-primary">
+          <span className="truncate text-[13px] font-semibold text-text-primary">
             {selected?.label ?? placeholder}
           </span>
-          {selected?.sub && <span className="truncate text-[12px] text-text-muted">{selected.sub}</span>}
+          {selected?.sub && <span className="truncate text-[11px] text-text-secondary">{selected.sub}</span>}
         </span>
         {selected?.badge && (
-          <span className="shrink-0 rounded-md bg-card-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-secondary">
+          <span className="shrink-0 rounded-md bg-card-soft px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
             {selected.badge}
           </span>
         )}
-        <ChevronDown aria-hidden className={cn("size-4 shrink-0 text-text-muted transition-transform", open && "rotate-180")} />
+        <ChevronDown aria-hidden className={cn("size-4 shrink-0 text-text-secondary transition-transform", open && "rotate-180")} />
       </button>
 
       <AnimatePresence>
@@ -154,7 +154,7 @@ export function Listbox({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
             transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 34 }}
-            className="absolute inset-x-0 top-[calc(100%+6px)] z-40 max-h-80 origin-top overflow-y-auto rounded-xl border border-border-soft bg-card p-1.5 shadow-lg outline-none"
+            className="absolute inset-x-0 top-[calc(100%+8px)] z-40 max-h-80 origin-top overflow-y-auto rounded-xl border border-border-soft bg-card p-2 shadow-lg outline-none"
           >
             {options.map((o, i) => {
               const header = o.group && o.group !== options[i - 1]?.group;
@@ -163,7 +163,7 @@ export function Listbox({
               return (
                 <div key={o.id}>
                   {header && (
-                    <div role="presentation" className={cn("px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-text-muted", i > 0 && "mt-1.5 border-t border-border-soft pt-2")}>
+                    <div role="presentation" className={cn("px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary", i > 0 && "mt-2 border-t border-border-soft pt-2")}>
                       {o.group}
                     </div>
                   )}
@@ -175,17 +175,17 @@ export function Listbox({
                     onMouseEnter={() => setActive(o.id)}
                     onClick={() => choose(o.id)}
                     className={cn(
-                      "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors",
+                      "flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 transition-colors",
                       isActive ? "bg-accent/10" : "hover:bg-card-soft",
                     )}
                   >
                     <span aria-hidden className={cn("size-2 shrink-0 rounded-full", o.tone ? DOT[o.tone] : "bg-transparent")} />
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className={cn("truncate text-[13px] font-medium", isSelected ? "text-accent" : "text-text-primary")}>{o.label}</span>
-                      {o.sub && <span className="truncate text-[11.5px] text-text-muted">{o.sub}</span>}
+                      {o.sub && <span className="truncate text-[11px] text-text-secondary">{o.sub}</span>}
                     </span>
                     {o.badge && (
-                      <span className="shrink-0 rounded bg-card-soft px-1 py-px text-[9.5px] font-semibold uppercase tracking-wide text-text-secondary">{o.badge}</span>
+                      <span className="shrink-0 rounded bg-card-soft px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">{o.badge}</span>
                     )}
                     {isSelected && <Check aria-hidden className="size-4 shrink-0 text-accent" />}
                   </div>

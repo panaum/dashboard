@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Columns3, ExternalLink, Globe, Loader2, Maximize2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
-import { BarLabel, CheckShell, ON_STAGE, revealStage, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
+import { BarLabel, CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { Glance, type GlanceRow, type GlanceTone } from "@/components/layout-checks/glance";
@@ -209,11 +209,11 @@ export function DevicesPanel({
   }));
 
   const runLine = running || progress.phase === "failed" ? (
-    <div className="flex basis-full flex-col gap-1.5" role="status" aria-live="polite">
-      <p className={cn("text-[12.5px]", progress.phase === "failed" ? "text-error" : "text-text-secondary")}>{note}</p>
+    <div className="flex basis-full flex-col gap-2" role="status" aria-live="polite">
+      <p className={cn("text-[12px]", progress.phase === "failed" ? "text-error-strong" : "text-text-secondary")}>{note}</p>
       {running && (
-        <div className="h-1.5 w-full max-w-md overflow-hidden rounded-full bg-border-soft">
-          <div className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-brand-purple),var(--color-accent))] motion-safe:transition-[width] motion-safe:duration-500"
+        <div className="h-1 w-full max-w-md overflow-hidden rounded-full bg-border-soft">
+          <div className="h-full rounded-full bg-text-primary/70 motion-safe:transition-[width] motion-safe:duration-500"
                style={{ width: `${Math.max(4, progressPct(progress))}%` }} />
         </div>
       )}
@@ -222,7 +222,7 @@ export function DevicesPanel({
 
   const picker = views.length ? (
     <>
-      <div className="flex w-full items-center gap-2.5 @3xl:w-auto">
+      <div className="flex w-full items-center gap-2 @3xl:w-auto">
         <BarLabel>Device</BarLabel>
         <Listbox label="Device" options={options} value={current?.profileId ?? null} onChange={pick} className="min-w-0 flex-1 @3xl:w-72 @3xl:flex-none" />
       </div>
@@ -230,7 +230,7 @@ export function DevicesPanel({
       {runLine}
     </>
   ) : (
-    <p className="text-[13px] text-text-muted">
+    <p className="text-[13px] text-text-secondary">
       {running ? "The first run has no devices to list yet." : "Run the check to see it here."}
     </p>
   );
@@ -308,7 +308,7 @@ export function DevicesPanel({
           />
           <StageCaption title={current.label}>
             {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
-            {showLive && <span className="mt-0.5 block text-[11.5px]">{LIVE_CAVEAT}</span>}
+            {showLive && <span className="mt-1 block text-[11px]">{LIVE_CAVEAT}</span>}
           </StageCaption>
         </motion.div>
       )}
@@ -369,14 +369,11 @@ export function DevicesPanel({
           key={c.profileId}
           deviceLabel={c.engineLabel}
           heading={
-            <p className="mb-2 flex items-baseline gap-2 border-b border-border-soft pb-2 text-[11.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-              {c.engineLabel}
-              <span className="font-medium normal-case tracking-normal text-text-muted/80">
-                {c.errors + c.warnings > 0
-                  ? `${c.errors + c.warnings} finding${c.errors + c.warnings === 1 ? "" : "s"}`
-                  : c.items.length > 0 ? `${c.items.length} note${c.items.length === 1 ? "" : "s"}` : "clean"}
-              </span>
-            </p>
+            <SectionHeading label={c.engineLabel} subject={
+              c.errors + c.warnings > 0
+                ? `${c.errors + c.warnings} finding${c.errors + c.warnings === 1 ? "" : "s"}`
+                : c.items.length > 0 ? `${c.items.length} note${c.items.length === 1 ? "" : "s"}` : "clean"
+            } />
           }
           items={c.items.map((it) => ({ ...it, id: compareId(c.engine, it.id), tag: it.onlyHere ? `only in ${c.engineLabel}` : undefined }))}
           selectedId={finding}
@@ -393,13 +390,10 @@ export function DevicesPanel({
   ) : current ? (
     current.status !== "ok" ? (
       <div className="flex flex-col">
-        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border-soft pb-3">
-          <p className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Findings</p>
-          <p className="truncate text-[12.5px] font-medium text-text-secondary">{current.label}</p>
-        </div>
+        <SectionHeading label="Findings" subject={current.label} />
         {/* Also one sentence, also no box. */}
         <p className="flex items-start gap-2 text-[13px] leading-snug text-text-secondary">
-          <ShieldAlert className="mt-px size-5 shrink-0 text-text-muted" aria-hidden />
+          <ShieldAlert className="mt-px size-5 shrink-0 text-text-secondary" aria-hidden />
           {current.status === "blocked" ? "Blocked by bot protection — nothing on this device was audited." : `Capture failed${current.error ? `: ${current.error}` : "."}`}
         </p>
       </div>
@@ -418,7 +412,7 @@ export function DevicesPanel({
       />
     )
   ) : (
-    <p className="text-[13px] text-text-muted">No run yet.</p>
+    <p className="text-[13px] text-text-secondary">No run yet.</p>
   );
 
   return (

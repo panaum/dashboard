@@ -64,7 +64,7 @@ export default async function LayoutSitePage({
       findings={(vCur?.findings ?? []) as unknown as ViewportFinding[]}
       widths={widths}
       url={site.url}
-      headerAction={<CheckRunner url={site.url} label={vCur ? "Run again" : "Run the eight-width check"} />}
+      headerAction={<CheckRunner url={site.url} variant="secondary" size="sm" label={vCur ? "Run again" : "Run the eight-width check"} />}
     />
   );
 

@@ -62,14 +62,14 @@ export function RunsMenu({ rows }: { rows: HistoryRow[] }) {
         aria-controls={id}
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          "inline-flex items-center gap-2 rounded-full border border-border-soft bg-card px-3.5 py-1.5 text-[13px] font-medium text-text-secondary shadow-xs transition-colors hover:border-accent/40 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-          open && "border-accent/50 text-text-primary",
+          "inline-flex items-center gap-2 rounded-full border border-border-soft bg-card px-4 py-2 text-[13px] font-medium text-text-secondary shadow-xs transition-colors hover:bg-card-soft hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+          open && "bg-card-soft text-text-primary",
         )}
       >
         <History className="size-4" aria-hidden />
         History
-        <span className="rounded-full bg-card-soft px-1.5 text-[11px] tabular-nums text-text-muted">{rows.length}</span>
-        <ChevronDown aria-hidden className={cn("size-3.5 text-text-muted transition-transform", open && "rotate-180")} />
+        <span className="rounded-full bg-card-soft px-2 text-[11px] tabular-nums text-text-secondary">{rows.length}</span>
+        <ChevronDown aria-hidden className={cn("size-3.5 text-text-secondary transition-transform", open && "rotate-180")} />
       </button>
 
       <AnimatePresence>
@@ -84,23 +84,23 @@ export function RunsMenu({ rows }: { rows: HistoryRow[] }) {
             transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 34 }}
             className="absolute right-0 top-[calc(100%+8px)] z-40 w-[min(92vw,30rem)] origin-top-right overflow-hidden rounded-2xl border border-border-soft bg-card shadow-lg"
           >
-            <div className="flex items-baseline justify-between border-b border-border-soft px-4 py-2.5">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.07em] text-text-muted">Recent runs</p>
-              <p className="text-[11.5px] text-text-muted">newest first</p>
+            <div className="flex items-baseline justify-between border-b border-border-soft px-4 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">Recent runs</p>
+              <p className="text-[11px] text-text-secondary">newest first</p>
             </div>
             <ol className="max-h-[22rem] divide-y divide-border-soft overflow-y-auto">
               {rows.map((r, i) => (
-                <li key={`${r.kind}-${r.id}`} className={cn("flex flex-col gap-1 px-4 py-2.5", i === 0 && "bg-accent/[0.04]")}>
+                <li key={`${r.kind}-${r.id}`} className="flex flex-col gap-1 px-4 py-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[13px] font-medium tabular-nums text-text-primary">{when(r.checkedAt)}</span>
-                    {i === 0 && <span className="rounded-full bg-accent/10 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-accent">latest</span>}
-                    <span className="ml-auto flex items-center gap-1.5">
+                    {i === 0 && <span className="rounded-full bg-card-soft px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">latest</span>}
+                    <span className="ml-auto flex items-center gap-2">
                       <Badge tone="neutral">{r.kind}</Badge>
                       <Badge tone={TONE[r.worst] ?? "neutral"}>{r.worst}</Badge>
                     </span>
                   </div>
                   <p className="text-[12px] text-text-secondary">{r.summary}</p>
-                  {KEPT_NOTE[r.kept] && <p className="text-[11px] text-text-muted">{KEPT_NOTE[r.kept]}</p>}
+                  {KEPT_NOTE[r.kept] && <p className="text-[11px] text-text-secondary">{KEPT_NOTE[r.kept]}</p>}
                 </li>
               ))}
             </ol>

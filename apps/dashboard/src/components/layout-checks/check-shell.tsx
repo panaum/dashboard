@@ -10,12 +10,22 @@ import { useTabSlots } from "@/components/layout-checks/site-tabs";
 
 // The one layout both tabs share, in three bands. A header: the tab control
 // and the run controls on one line, the verdict on its own line under them,
-// the picker under that. Then the device on its own surface. Then the
-// findings for that ONE screenshot.
+// the picker under that. Then the device on its own surface, with the
+// findings for that ONE screenshot beside it.
 //
 // The stage is a light surface, a step off the page — not a dark panel. The
 // device bezel is already near-black, so it reads harder against light than
 // it ever did against navy, and the page stays one product rather than two.
+//
+// TYPE SCALE. Five steps, and nothing between them:
+//   30  the site name (the page's h1, above this component)
+//   21  the verdict — the two-second read
+//   15  a section's subject: which device, which width
+//   13  body: a finding, a caption, a control
+//   11  labels and metadata, uppercase where it names a control
+// Hierarchy is carried by size and weight. The header has no card around it:
+// a box adds a line without adding a grouping that the spacing does not
+// already make.
 
 const ICON = { success: CheckCircle2, warning: AlertTriangle, error: XCircle, neutral: MinusCircle } as const;
 
@@ -48,8 +58,8 @@ export function Rise({ order = 0, className, children }: { order?: number; class
 export function VerdictLine({ verdict }: { verdict: TabVerdict }) {
   const Icon = ICON[verdict.tone];
   return (
-    <div className="flex items-start gap-2.5">
-      <Icon className={cn("mt-0.5 size-6 shrink-0", TONE[verdict.tone])} strokeWidth={2} aria-hidden />
+    <div className="flex items-start gap-2">
+      <Icon className={cn("mt-1 size-6 shrink-0", TONE[verdict.tone])} strokeWidth={2} aria-hidden />
       <div className="min-w-0">
         <p className={cn("text-[21px] font-semibold leading-tight tracking-tight text-balance", TONE[verdict.tone])}>
           {verdict.headline}
@@ -97,7 +107,7 @@ export function StageButton({
 export function StageCaption({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
     <p className="max-w-md text-center text-[13px] leading-snug text-text-secondary">
-      <span className="font-medium text-text-primary">{title}</span>
+      <span className="text-[15px] font-semibold text-text-primary">{title}</span>
       {children}
     </p>
   );
@@ -108,7 +118,18 @@ export const ON_STAGE = "ring-1 ring-border-soft";
 
 /** A small uppercase label beside a control. */
 export function BarLabel({ children }: { children: ReactNode }) {
-  return <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">{children}</span>;
+  return <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">{children}</span>;
+}
+
+/** A section's subject line: what this screenshot or list is about. */
+export function SectionHeading({ label, subject, children }: { label: string; subject?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <BarLabel>{label}</BarLabel>
+      {subject && <p className="truncate text-[15px] font-semibold text-text-primary">{subject}</p>}
+      {children}
+    </div>
+  );
 }
 
 export const STAGE_ID = "check-stage";
@@ -117,7 +138,7 @@ export const STAGE_ID = "check-stage";
 // it gets the height the window actually has rather than a number chosen in
 // advance — measured from where the stage starts to the bottom of the window,
 // less what the stage spends on its own padding, caption and buttons.
-const STAGE_RESERVE = 184;
+const STAGE_RESERVE = 140;
 const STAGE_MIN = 380;
 
 const StageHeightContext = createContext<number | null>(null);
@@ -157,9 +178,9 @@ export function revealStage() {
 function EmptyStage() {
   return (
     <div className="flex flex-col items-center gap-3 text-center">
-      <MonitorSmartphone className="size-8 text-text-muted" aria-hidden />
-      <p className="text-[14px] font-medium text-text-secondary">Nothing to show yet</p>
-      <p className="max-w-xs text-[13px] leading-snug text-text-muted">Run the check and the page appears here, on the device you pick.</p>
+      <MonitorSmartphone className="size-8 text-text-secondary" aria-hidden />
+      <p className="text-[15px] font-semibold text-text-primary">Nothing to show yet</p>
+      <p className="max-w-xs text-[13px] leading-snug text-text-secondary">Run the check and the page appears here, on the device you pick.</p>
     </div>
   );
 }
@@ -190,8 +211,8 @@ export function CheckShell({
   return (
     <div className="@container flex flex-col gap-4">
       <Rise order={0}>
-        <div className="rounded-2xl border border-border-soft bg-card shadow-xs">
-          <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-2">
             {slots?.tabs}
             {(headerAction || slots?.right) && (
               <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -200,15 +221,11 @@ export function CheckShell({
               </div>
             )}
           </div>
-          <div className="px-4 pb-4">
+          <div>
             <VerdictLine verdict={verdict} />
             {slots?.explain && <p className="mt-2 text-[13px] text-text-secondary">{slots.explain}</p>}
           </div>
-          {picker && (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-t border-border-soft px-4 py-3">
-              {picker}
-            </div>
-          )}
+          {picker && <div className="flex flex-wrap items-center gap-x-4 gap-y-2">{picker}</div>}
         </div>
       </Rise>
 

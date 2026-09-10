@@ -104,8 +104,8 @@ export function SiteTabs({
             tabIndex={on ? 0 : -1}
             onClick={() => select(t.key)}
             className={cn(
-              "relative rounded-full px-4 py-1.5 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-              on ? "text-text-primary" : "text-text-secondary hover:text-text-primary",
+              "relative rounded-full px-4 py-2 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+              on ? "text-accent" : "text-text-secondary hover:text-text-primary",
             )}
           >
             {on && (
