@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Columns3, ExternalLink, Globe, Loader2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
-import { CheckShell, ON_STAGE, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
+import { BarLabel, CheckShell, ON_STAGE, revealStage, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { Glance, type GlanceRow, type GlanceTone } from "@/components/layout-checks/glance";
@@ -25,10 +25,10 @@ import {
 
 // The Devices tab: pick one device, see that device. The picker is a dropdown
 // grouped Apple / Android / Tablet / Desktop, worst first inside each group,
-// with the worst one selected on load — and under it a glance strip, one
+// with the worst one selected on load — and beside it a glance strip, one
 // coloured cell per device, so all fourteen are read at once and any one is
 // a click away. The device sits large on the dark stage; the bar under it
-// holds compare, live and open.
+// holds compare, live and open; the findings run under the stage.
 
 const TONE: Record<Severity, ListTone> = { error: "error", warning: "warning", clean: "success", inconclusive: "neutral" };
 const CELL: Record<Severity, GlanceTone> = { error: "error", warning: "warning", clean: "success", inconclusive: "neutral" };
@@ -166,10 +166,10 @@ export function DevicesPanel({
   }));
 
   const runLine = running || progress.phase === "failed" ? (
-    <div className="flex flex-col gap-1.5 rounded-xl bg-card-soft px-3.5 py-3" role="status" aria-live="polite">
+    <div className="flex basis-full flex-col gap-1.5" role="status" aria-live="polite">
       <p className={cn("text-[12.5px]", progress.phase === "failed" ? "text-error" : "text-text-secondary")}>{note}</p>
       {running && (
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-border-soft">
+        <div className="h-1.5 w-full max-w-md overflow-hidden rounded-full bg-border-soft">
           <div className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-brand-purple),var(--color-accent))] motion-safe:transition-[width] motion-safe:duration-500"
                style={{ width: `${Math.max(4, progressPct(progress))}%` }} />
         </div>
@@ -177,23 +177,19 @@ export function DevicesPanel({
     </div>
   ) : null;
 
-  const picker = (
-    <div className="flex flex-col gap-3">
+  const picker = views.length ? (
+    <>
+      <div className="flex w-full items-center gap-2.5 @3xl:w-auto">
+        <BarLabel>Device</BarLabel>
+        <Listbox label="Device" options={options} value={current?.profileId ?? null} onChange={pick} className="min-w-0 flex-1 @3xl:w-72 @3xl:flex-none" />
+      </div>
+      <Glance rows={glanceRows} selected={current?.profileId ?? null} onPick={pick} label="All devices at a glance" />
       {runLine}
-      {views.length ? (
-        <>
-          <div className="flex flex-col gap-1.5">
-            <span className="px-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Device</span>
-            <Listbox label="Device" options={options} value={current?.profileId ?? null} onChange={pick} />
-          </div>
-          <Glance rows={glanceRows} selected={current?.profileId ?? null} onPick={pick} label="All devices at a glance" />
-        </>
-      ) : (
-        <p className="px-1 text-[13px] text-text-muted">
-          {running ? "The first run has no devices to list yet." : "Run the check to see it here."}
-        </p>
-      )}
-    </div>
+    </>
+  ) : (
+    <p className="text-[13px] text-text-muted">
+      {running ? "The first run has no devices to list yet." : "Run the check to see it here."}
+    </p>
   );
 
   // ── Stage ──────────────────────────────────────────────────────────────────
@@ -235,7 +231,7 @@ export function DevicesPanel({
                     fallbackSrc={s.fold}
                     alt={`${viewportName} at ${current.viewportLabel}, rendered by ${c.engineLabel}`}
                     title={url.replace(/^https?:\/\//, "")}
-                    maxHeight={360}
+                    maxHeight={420}
                     highlight={hl}
                     onImageMeta={(m) => setColMeta((prev) => ({ ...prev, [c.engine]: m?.cssHeight ?? null }))}
                     frameClassName={ON_STAGE}
@@ -258,7 +254,7 @@ export function DevicesPanel({
             liveSrc={showLive ? qaUrl(url) : null}
             alt={showLive ? `${current.label}, the live page` : `${current.label}, rendered page`}
             title={url.replace(/^https?:\/\//, "")}
-            maxHeight={720}
+            maxHeight={640}
             highlight={selectedItem?.box ?? null}
             onImageMeta={setImageMeta}
             frameClassName={ON_STAGE}
@@ -311,7 +307,7 @@ export function DevicesPanel({
 
   // ── Rail ───────────────────────────────────────────────────────────────────
   const rail = current && showCompare ? (
-    <div className="flex flex-col gap-5">
+    <div className="grid gap-5 @3xl:grid-cols-3">
       {columns.map((c) => (
         <FindingsRail
           key={c.profileId}
@@ -328,21 +324,22 @@ export function DevicesPanel({
           }
           items={c.items.map((it) => ({ ...it, id: compareId(c.engine, it.id), tag: it.onlyHere ? `only in ${c.engineLabel}` : undefined }))}
           selectedId={finding}
-          onSelect={(id) => setFinding((cur) => (cur === id ? null : id))}
+          onSelect={(id) => { if (id !== finding) revealStage(); setFinding((cur) => (cur === id ? null : id)); }}
           expanded={expanded}
           onToggle={() => setExpanded((e) => !e)}
           drawableHeight={colMeta[c.engine] ?? null}
+          columns={false}
         />
       ))}
     </div>
   ) : current ? (
     current.status !== "ok" ? (
       <div className="flex flex-col">
-        <div className="mb-3 flex items-baseline justify-between gap-2 border-b border-border-soft pb-3">
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border-soft pb-3">
           <p className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Findings</p>
-          <p className="truncate text-[12px] text-text-secondary">{current.label}</p>
+          <p className="truncate text-[12.5px] font-medium text-text-secondary">{current.label}</p>
         </div>
-        <div className="flex items-start gap-3 rounded-xl bg-card-soft p-4 ring-1 ring-border-soft">
+        <div className="flex max-w-xl items-start gap-3 rounded-xl bg-card-soft p-4 ring-1 ring-border-soft">
           <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-text-muted/25 text-text-primary">
             <ShieldAlert className="size-5" aria-hidden />
           </span>
@@ -358,9 +355,11 @@ export function DevicesPanel({
         selectedId={finding}
         onSelect={(id) => {
           // A box is drawn on the capture, so choosing a finding comes back
-          // from the live page rather than selecting into nothing.
+          // from the live page rather than selecting into nothing — and
+          // brings the stage back if the list has scrolled it away.
           setLive(false);
           setStreaming(false);
+          if (id !== finding) revealStage();
           setFinding((cur) => (cur === id ? null : id));
         }}
         expanded={expanded}

@@ -3,7 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
-import { CheckShell, ON_STAGE, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
+import { BarLabel, CheckShell, ON_STAGE, revealStage, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { Glance, type GlanceTone } from "@/components/layout-checks/glance";
@@ -56,6 +56,7 @@ export function ViewportsPanel({
   const select = (id: string) => {
     if (id === finding) { setFinding(null); return; }
     setFinding(id);
+    revealStage();
     const jump = firstWidthOf(findings.find((f) => f.id === id), current);
     if (jump !== null && jump !== current && asc.includes(jump)) setSelected(jump);
   };
@@ -76,7 +77,7 @@ export function ViewportsPanel({
     };
   });
   const glance = [{
-    name: "Widths",
+    name: "",
     cells: asc.map((w) => {
       const sev = severityAt(findings, w);
       return { id: key(w), label: `${widthLabel(w)} · ${sev === "error" ? "breaks here" : sev === "warning" ? "worth a look" : sev === "clean" ? "clean" : "not captured"}`, tone: CELL[sev] };
@@ -84,21 +85,21 @@ export function ViewportsPanel({
   }];
 
   const picker = asc.length ? (
-    <div className="flex flex-col gap-3">
+    <>
+      <div className="flex w-full items-center gap-2.5 @3xl:w-auto">
+        <BarLabel>Width</BarLabel>
+        <Listbox label="Width" options={options} value={current === null ? null : key(current)} onChange={(id) => pick(fromKey(id))} className="min-w-0 flex-1 @3xl:w-56 @3xl:flex-none" />
+      </div>
+      <Glance rows={glance} selected={current === null ? null : key(current)} onPick={(id) => pick(fromKey(id))} label="All widths at a glance" />
       {!perWidth && (
-        <p className="rounded-xl bg-card-soft px-3.5 py-3 text-[12.5px] leading-snug text-text-secondary">
-          This run predates per-width findings, so the list on the right is everything found
+        <p className="basis-full text-[12.5px] leading-snug text-text-secondary">
+          This run predates per-width findings, so the list below is everything found
           across all {asc.length} widths, not just this one. The next run will split them.
         </p>
       )}
-      <div className="flex flex-col gap-1.5">
-        <span className="px-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Width</span>
-        <Listbox label="Width" options={options} value={current === null ? null : key(current)} onChange={(id) => pick(fromKey(id))} />
-      </div>
-      <Glance rows={glance} selected={current === null ? null : key(current)} onPick={(id) => pick(fromKey(id))} label="All widths at a glance" />
-    </div>
+    </>
   ) : (
-    <p className="px-1 text-[13px] text-text-muted">Run the check to see it here.</p>
+    <p className="text-[13px] text-text-muted">Run the check to see it here.</p>
   );
 
   const frame = current !== null && runId ? (
