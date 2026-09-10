@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import type { Shape } from "@/lib/layout-checks/devices-view";
 import { ms } from "@/lib/layout-checks/motion";
 import { placePins, type Pin } from "@/lib/layout-checks/pins";
+import { useStageHeight } from "@/components/layout-checks/check-shell";
 
 // A generic frame per platform — a bezelled rounded rectangle for phones, a
 // wider one for tablets, a browser chrome bar for desktop — sized to the
@@ -60,7 +61,8 @@ export function DeviceFrame({
   liveSrc?: string | null;
   alt: string;
   title?: string;
-  maxHeight?: number;
+  /** A number of CSS px, or "fill" to take the height the stage has. */
+  maxHeight?: number | "fill";
   /** A finding's box in CSS px of the page; drawn over the image and scrolled into view. */
   highlight?: Box | null;
   /** Reports the loaded image's height in CSS px (null while nothing is loaded). */
@@ -88,8 +90,10 @@ export function DeviceFrame({
 
   const bezel = BEZEL[shape];
   const chrome = shape === "desktop" ? CHROME_H : 0;
+  const room = useStageHeight();
+  const ceiling = maxHeight === "fill" ? (room ?? 640) : maxHeight;
   const maxW = Math.max(0, avail - 2 * bezel.x);
-  const maxH = Math.max(0, maxHeight - 2 * bezel.y - chrome);
+  const maxH = Math.max(0, ceiling - 2 * bezel.y - chrome);
   // "Fit" is the frame the column can hold; "actual" is the page's own pixels,
   // which is the only way to judge whether 11px text or a 24px target really
   // is too small. At 1:1 the frame may be wider than the column and the stage

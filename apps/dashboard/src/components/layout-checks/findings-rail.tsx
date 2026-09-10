@@ -92,7 +92,6 @@ export function FindingsRail({
   expanded,
   onToggle,
   drawableHeight,
-  columns = true,
   where,
   url,
   reachOf,
@@ -110,8 +109,6 @@ export function FindingsRail({
   onToggle: () => void;
   /** Height of the loaded screenshot in CSS px; a box below it cannot be drawn. */
   drawableHeight: number | null;
-  /** Run in two or three columns where the shell is wide; off inside a compare column. */
-  columns?: boolean;
   /** "Samsung Galaxy S25 · Chromium · 412 × 892" — the "where" a copied finding carries. */
   where?: string;
   /** The page under test; a copied finding is useless without it. */
@@ -157,12 +154,11 @@ export function FindingsRail({
     return (
       <div className="flex flex-col">
         {head}
-        <div className="flex max-w-md items-center gap-3 rounded-xl bg-[linear-gradient(135deg,rgba(76,175,125,0.14),rgba(76,175,125,0.04))] p-4 ring-1 ring-success/20">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-success text-white shadow-sm">
-            <CheckCircle2 className="size-5" strokeWidth={2.25} aria-hidden />
-          </span>
-          <p className="text-[13.5px] font-medium leading-snug text-text-primary">Nothing to fix on {deviceLabel}</p>
-        </div>
+        {/* One sentence. A sentence does not need a box inside a box. */}
+        <p className="flex items-center gap-2 text-[13.5px] font-medium leading-snug text-success-strong">
+          <CheckCircle2 className="size-5 shrink-0" strokeWidth={2} aria-hidden />
+          Nothing to fix on {deviceLabel}
+        </p>
       </div>
     );
   }
@@ -171,8 +167,7 @@ export function FindingsRail({
   return (
     <div className="flex flex-col">
       {head}
-      <ul className={cn("gap-1", columns ? "grid grid-cols-1 @3xl:grid-cols-2 @6xl:grid-cols-3" : "flex flex-col")}
-          aria-label={`Findings on ${deviceLabel}`}>
+      <ul className="flex flex-col gap-1" aria-label={`Findings on ${deviceLabel}`}>
         {shown.map((it) => {
           const on = it.id === selectedId;
           const s = ROW[it.severity];

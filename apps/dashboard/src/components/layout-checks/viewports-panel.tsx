@@ -106,6 +106,7 @@ export function ViewportsPanel({
         alt={`The page rendered ${current} pixels wide`}
         title={url.replace(/^https?:\/\//, "")}
         highlight={null}
+        maxHeight="fill"
         frameClassName={ON_STAGE}
       />
       <StageCaption title={`${current}px`}>{" · "}{SHAPE_WORD[widthShape(current)]}{" · "}{widthViewport(current).width} × {widthViewport(current).height}</StageCaption>

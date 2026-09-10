@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { CheckCircle2, AlertTriangle, XCircle, MinusCircle, MonitorSmartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -113,6 +113,38 @@ export function BarLabel({ children }: { children: ReactNode }) {
 
 export const STAGE_ID = "check-stage";
 
+// How tall the frame may be. The screenshot is the thing being examined, so
+// it gets the height the window actually has rather than a number chosen in
+// advance — measured from where the stage starts to the bottom of the window,
+// less what the stage spends on its own padding, caption and buttons.
+const STAGE_RESERVE = 184;
+const STAGE_MIN = 380;
+
+const StageHeightContext = createContext<number | null>(null);
+
+/** The height a frame may fill, or null before the stage has been measured. */
+export function useStageHeight(): number | null {
+  return useContext(StageHeightContext);
+}
+
+function useRoomBelow(ref: React.RefObject<HTMLElement | null>): number | null {
+  const [room, setRoom] = useState<number | null>(null);
+  useEffect(() => {
+    const measure = () => {
+      const el = ref.current;
+      if (!el) return;
+      // Document-relative, so the answer is "how tall can this be when the
+      // page is at the top", not "how much is left from where you scrolled".
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      setRoom(Math.max(STAGE_MIN, Math.round(window.innerHeight - top - STAGE_RESERVE)));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [ref]);
+  return room;
+}
+
 /** The findings can sit under the stage on a narrow screen, so choosing one
  *  can happen with the stage scrolled away. Bring it back — only when its top
  *  has actually left the window, so a click near the stage does not jump. */
@@ -153,6 +185,8 @@ export function CheckShell({
   railLabel?: string;
 }) {
   const slots = useTabSlots();
+  const stage = useRef<HTMLElement>(null);
+  const room = useRoomBelow(stage);
   return (
     <div className="@container flex flex-col gap-4">
       <Rise order={0}>
@@ -178,27 +212,34 @@ export function CheckShell({
         </div>
       </Rise>
 
-      <div {...(slots?.panelProps ?? {})} className="flex flex-col gap-4">
-        <Rise order={1}>
-          <section
-            id={STAGE_ID}
-            aria-label="Screenshot"
-            className="flex scroll-mt-4 flex-col items-center gap-4 rounded-2xl border border-border-soft bg-card-soft p-4"
-          >
-            <div className="flex w-full flex-1 flex-col items-center justify-center gap-3">{frame ?? <EmptyStage />}</div>
-            {action}
-          </section>
-        </Rise>
+      {/* Stage and findings side by side, as they are on both tabs, so the
+          interaction is learned once. items-start: neither column stretches to
+          the other's height, which is what left the stage half empty. */}
+      <StageHeightContext.Provider value={room}>
+        <div {...(slots?.panelProps ?? {})}
+             className="grid items-start gap-4 @4xl:grid-cols-[minmax(0,1fr)_340px]">
+          <Rise order={1} className="min-w-0">
+            <section
+              ref={stage}
+              id={STAGE_ID}
+              aria-label="Screenshot"
+              className="flex scroll-mt-4 flex-col items-center gap-4 rounded-2xl border border-border-soft bg-card-soft p-4"
+            >
+              <div className="flex w-full flex-col items-center gap-3">{frame ?? <EmptyStage />}</div>
+              {action}
+            </section>
+          </Rise>
 
-        <Rise order={2}>
-          <section
-            aria-label={railLabel ?? "Findings"}
-            className="rounded-2xl border border-border-soft bg-card p-4 shadow-xs"
-          >
-            {rail}
-          </section>
-        </Rise>
-      </div>
+          <Rise order={2} className="min-w-0">
+            <section
+              aria-label={railLabel ?? "Findings"}
+              className="rounded-2xl border border-border-soft bg-card p-4 shadow-xs"
+            >
+              {rail}
+            </section>
+          </Rise>
+        </div>
+      </StageHeightContext.Provider>
     </div>
   );
 }
