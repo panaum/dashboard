@@ -35,6 +35,7 @@ export function DeviceFrame({
   maxHeight = 640,
   highlight = null,
   onImageMeta,
+  frameClassName,
   children,
 }: {
   shape: Shape;
@@ -52,6 +53,8 @@ export function DeviceFrame({
   highlight?: Box | null;
   /** Reports the loaded image's height in CSS px (null while nothing is loaded). */
   onImageMeta?: (meta: { cssHeight: number } | null) => void;
+  /** Extra classes on the bezel — a light halo when the frame sits on a dark stage. */
+  frameClassName?: string;
   children?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -131,7 +134,7 @@ export function DeviceFrame({
     <div ref={host} className="w-full">
       <div
         ref={frameRef}
-        className={cn("mx-auto bg-[#15181e] shadow-md", shape === "desktop" ? "rounded-xl" : "")}
+        className={cn("mx-auto bg-[#15181e] shadow-md", shape === "desktop" ? "rounded-xl" : "", frameClassName)}
         style={{
           width: screenW + 2 * bezel.x,
           height: screenH + 2 * bezel.y + chrome,

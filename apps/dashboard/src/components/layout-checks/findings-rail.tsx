@@ -14,13 +14,35 @@ export type RailItem = RailFinding & {
   detail?: string;
 };
 
-// The findings for ONE screenshot, never all of them. One line each — a dot,
-// four or five words, the selector beneath in mono — capped at five with a
-// quiet expander, and a green check with nothing else when there is nothing
-// to say. Clicking a line selects it and (if it has a place on the page)
-// draws the highlight box in the frame.
+// The findings for ONE screenshot, never all of them. Severity is a colour
+// on the whole row, not a dot: a red-edged row is an error before it is read.
+// Capped at five with a quiet expander; a mint tile when there is nothing to
+// say. Clicking a row selects it, draws its box in the frame if it has one,
+// and opens what the finding means beneath it.
 
-const DOT: Record<RailFinding["severity"], string> = { error: "bg-error", warn: "bg-warning", info: "bg-text-muted/50" };
+const ROW: Record<RailFinding["severity"], { bar: string; on: string; chip: string; word: string }> = {
+  error: { bar: "bg-error", on: "bg-error/[0.07] ring-error/25", chip: "bg-error/12 text-error", word: "Error" },
+  warn:  { bar: "bg-warning", on: "bg-warning/[0.09] ring-warning/30", chip: "bg-warning/15 text-warning", word: "Warning" },
+  info:  { bar: "bg-text-muted/40", on: "bg-card-soft ring-border-soft", chip: "bg-card-soft text-text-secondary", word: "Note" },
+};
+
+function Summary({ items }: { items: RailItem[] }) {
+  const n = (s: RailFinding["severity"]) => items.filter((i) => i.severity === s).length;
+  const parts: { k: RailFinding["severity"]; n: number; label: string }[] = [
+    { k: "error" as const, n: n("error"), label: "error" },
+    { k: "warn" as const, n: n("warn"), label: "warning" },
+    { k: "info" as const, n: n("info"), label: "note" },
+  ].filter((p) => p.n > 0);
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      {parts.map((p) => (
+        <span key={p.k} className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums", ROW[p.k].chip)}>
+          {p.n} {p.label}{p.n === 1 ? "" : "s"}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export function FindingsRail({
   deviceLabel,
@@ -37,7 +59,7 @@ export function FindingsRail({
   items: RailItem[];
   /** Which vocabulary the rule names belong to, for the explanation. */
   kind?: "device" | "viewport";
-  /** Optional section header, used in engine comparison. */
+  /** A custom header, used in engine comparison; the default names the device and counts. */
   heading?: ReactNode;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -46,61 +68,73 @@ export function FindingsRail({
   /** Height of the loaded screenshot in CSS px; a box below it cannot be drawn. */
   drawableHeight: number | null;
 }) {
+  const head = heading ?? (
+    <div className="mb-3 flex flex-col gap-2 border-b border-border-soft pb-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Findings</p>
+        <p className="truncate text-[12px] text-text-secondary">{deviceLabel}</p>
+      </div>
+      {items.length > 0 && <Summary items={items} />}
+    </div>
+  );
+
   if (!items.length) {
     return (
       <div className="flex flex-col">
-        {heading}
-        <p className="flex items-center gap-2 py-1 text-[13.5px] font-medium text-text-primary">
-          <CheckCircle2 className="size-5 text-success" strokeWidth={2} aria-hidden />
-          No issues on {deviceLabel}
-        </p>
+        {head}
+        <div className="flex items-center gap-3 rounded-xl bg-[linear-gradient(135deg,rgba(76,175,125,0.14),rgba(76,175,125,0.04))] p-4 ring-1 ring-success/20">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-success text-white shadow-sm">
+            <CheckCircle2 className="size-5" strokeWidth={2.25} aria-hidden />
+          </span>
+          <p className="text-[13.5px] font-medium leading-snug text-text-primary">Nothing to fix on {deviceLabel}</p>
+        </div>
       </div>
     );
   }
+
   const { shown, hidden } = railSlice(items, expanded);
   return (
     <div className="flex flex-col">
-      {heading}
-      <ul className="flex flex-col" aria-label={`Findings on ${deviceLabel}`}>
+      {head}
+      <ul className="flex flex-col gap-1" aria-label={`Findings on ${deviceLabel}`}>
         {shown.map((it) => {
           const on = it.id === selectedId;
+          const s = ROW[it.severity];
           // The finding has a measured place on the page; what is missing is
           // the image to draw it on. Say that, and do not offer a click that
           // would draw nothing.
           const notStored = it.box !== null && drawableHeight !== null && it.box.y >= drawableHeight;
           if (notStored) {
             return (
-              <li key={it.id} className="flex flex-col items-start gap-0.5 px-2.5 py-2">
-                <span className="flex items-center gap-2 text-[13px] font-medium leading-snug text-text-secondary">
-                  <span aria-hidden className={cn("inline-block size-2 shrink-0 rounded-full opacity-70", DOT[it.severity])} />
-                  {it.label}
-                </span>
-                <span className="pl-4 font-mono text-[11px] leading-snug text-text-muted">{it.selector ?? "—"}</span>
-                <span className="pl-4 text-[10.5px] text-text-muted/80">full page not stored for this run</span>
+              <li key={it.id} className="relative flex flex-col items-start gap-0.5 rounded-lg py-2 pl-4 pr-2.5 opacity-80">
+                <span aria-hidden className={cn("absolute inset-y-2 left-0 w-[3px] rounded-full", s.bar)} />
+                <span className="text-[13px] font-medium leading-snug text-text-secondary">{it.label}</span>
+                <span className="font-mono text-[11px] leading-snug text-text-muted">{it.selector ?? "—"}</span>
+                <span className="text-[10.5px] text-text-muted/80">full page not stored for this run</span>
               </li>
             );
           }
           const help = on ? explain(kind, it.rule) : null;
           return (
-            <li key={it.id}>
+            <li key={it.id} className={cn("rounded-lg transition-[background-color,box-shadow] duration-200", on && cn("ring-1 ring-inset", s.on))}>
               <button
                 type="button"
                 aria-pressed={on}
                 onClick={() => onSelect(it.id)}
                 className={cn(
-                  "flex w-full flex-col items-start gap-0.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
-                  on ? "bg-accent/10 ring-1 ring-inset ring-accent/20" : "hover:bg-card-soft",
+                  "relative flex w-full flex-col items-start gap-0.5 rounded-lg py-2 pl-4 pr-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
+                  !on && "hover:bg-card-soft",
                 )}
               >
-                <span className="flex items-center gap-2 text-[13px] font-medium leading-snug text-text-primary">
-                  <span aria-hidden className={cn("inline-block size-2 shrink-0 rounded-full", DOT[it.severity])} />
-                  <span className="sr-only">{it.severity === "error" ? "Error: " : it.severity === "warn" ? "Warning: " : "Note: "}</span>
+                <span aria-hidden className={cn("absolute inset-y-2 left-0 w-[3px] rounded-full", s.bar)} />
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-medium leading-snug text-text-primary">
+                  <span className="sr-only">{s.word}: </span>
                   {it.label}
                   {it.tag && (
-                    <span className="ml-1 whitespace-nowrap rounded bg-accent/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-accent">{it.tag}</span>
+                    <span className="whitespace-nowrap rounded bg-accent/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-accent">{it.tag}</span>
                   )}
                 </span>
-                <span className="pl-4 font-mono text-[11px] leading-snug text-text-muted">
+                <span className="font-mono text-[11px] leading-snug text-text-muted">
                   {it.pageLevel ? "whole page" : (it.selector ?? "—")}
                 </span>
               </button>
@@ -113,7 +147,7 @@ export function FindingsRail({
                          transition: `grid-template-rows ${ms(180)}ms ease` }}
               >
                 <div className="overflow-hidden">
-                  <div className="ml-4 mr-2 mb-2 mt-0.5 flex flex-col gap-1.5 border-l-2 border-border-soft pl-3 text-[11.5px] leading-relaxed">
+                  <div className="mx-4 mb-3 mt-0.5 flex flex-col gap-1.5 text-[11.5px] leading-relaxed">
                     {(it.detail || it.message) && (
                       <p className="text-text-primary">{it.detail || it.message}</p>
                     )}
@@ -133,9 +167,9 @@ export function FindingsRail({
         <button
           type="button"
           onClick={onToggle}
-          className="mt-1 self-start rounded-md px-2.5 py-1 text-[12px] text-text-muted transition-colors hover:bg-card-soft hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
+          className="mt-2 self-start rounded-full border border-border-soft px-3 py-1 text-[12px] font-medium text-text-secondary transition-colors hover:border-accent/40 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
         >
-          {hidden > 0 ? `${hidden} more` : "Show fewer"}
+          {hidden > 0 ? `Show ${hidden} more` : "Show fewer"}
         </button>
       )}
     </div>

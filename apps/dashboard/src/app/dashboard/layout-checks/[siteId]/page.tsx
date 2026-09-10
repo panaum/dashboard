@@ -3,12 +3,11 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
-import { PageHeader } from "@/components/shared/page-header";
 import { CheckRunner } from "@/components/layout-checks/check-runner";
 import { SiteTabs } from "@/components/layout-checks/site-tabs";
 import { ViewportsPanel } from "@/components/layout-checks/viewports-panel";
 import { DevicesPanel } from "@/components/layout-checks/devices-panel";
-import { RunHistory, type HistoryRow } from "@/components/layout-checks/run-history";
+import { RunsMenu, type HistoryRow } from "@/components/layout-checks/runs-menu";
 import type { DeviceInput } from "@/lib/layout-checks/devices-view";
 import { devicePreviewConfigured } from "@/lib/devicepreview/client";
 import type { DpReport } from "@/lib/devicepreview/history";
@@ -19,10 +18,11 @@ import type { ViewportFinding } from "@/lib/layout-checks/viewports-view";
 export const metadata = { title: "Layout checks" };
 
 // One screenshot and the findings for that screenshot, nothing else. Two
-// tabs — the eight-width sweep and the device-matrix run — share one layout
-// (CheckShell) so the interaction is learned once: a verdict, a picker of
-// widths or devices with severity dots, the framed screenshot, and the
-// findings for that ONE screenshot beside it. Run history sits below both.
+// tabs — the eight-width sweep and the device-matrix run — share one stage
+// (CheckShell) so the interaction is learned once: a tinted verdict, a
+// dropdown and an at-a-glance strip of every device, the device large on a
+// dark stage, and the findings for that ONE screenshot beside it. Run
+// history is a menu beside the tabs.
 
 export default async function LayoutSitePage({
   params,
@@ -48,7 +48,6 @@ export default async function LayoutSitePage({
     },
   });
   if (!site) notFound();
-
 
   // ── Viewports ────────────────────────────────────────────────────────────
   const [vCur, vPrev] = site.runs;
@@ -95,7 +94,7 @@ export default async function LayoutSitePage({
     />
   );
 
-  // ── History: run-level, so it sits below the tabs, not beside a screenshot ──
+  // ── History: run-level, so it lives with the tabs, not beside a screenshot ──
   // The preview service keeps full pages for the newest DEVICE_FULL_PAGES_KEPT
   // runs of a site (its RETAIN_PER_SITE, default 2); the Dashboard keeps folds
   // for as many. Older rows say so before anyone clicks in.
@@ -113,33 +112,34 @@ export default async function LayoutSitePage({
     })),
   ].sort((a, b) => b.checkedAt.localeCompare(a.checkedAt)).slice(0, 12);
 
-  return (
-    <>
-      <Link href="/dashboard/layout-checks"
-            className="mb-3 inline-flex items-center gap-1.5 text-[13px] text-text-secondary hover:text-text-primary">
-        <ArrowLeft className="size-3.5" /> All layout checks
-      </Link>
+  const title = site.label ?? site.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
-      <PageHeader
-        title={site.label ?? site.url.replace(/^https?:\/\//, "")}
-        subtitle={site.url}
-        action={
-          <a href={site.url} target="_blank" rel="noopener"
-             className="inline-flex items-center gap-2 text-[13px] text-text-secondary hover:text-text-primary">
-            Open the page <ExternalLink className="size-3.5" />
-          </a>
-        }
-      />
+  return (
+    // data-wide: the stage wants the room; the shared layout widens its container for it.
+    <div className="flex flex-col gap-6" data-wide="">
+      <div className="flex flex-col gap-3">
+        <Link href="/dashboard/layout-checks"
+              className="inline-flex w-fit items-center gap-1.5 text-[13px] text-text-secondary transition-colors hover:text-text-primary">
+          <ArrowLeft className="size-3.5" /> All layout checks
+        </Link>
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+          <div className="min-w-0">
+            <h1 className="truncate text-[30px] font-semibold leading-tight tracking-tight text-text-primary">{title}</h1>
+            <a href={site.url} target="_blank" rel="noopener"
+               className="mt-1 inline-flex max-w-full items-center gap-1.5 truncate font-mono text-[12.5px] text-text-secondary transition-colors hover:text-accent">
+              <span className="truncate">{site.url}</span>
+              <ExternalLink className="size-3.5 shrink-0" />
+            </a>
+          </div>
+        </div>
+      </div>
 
       <SiteTabs
         panels={{ viewports: viewportsPanel, devices: devicesPanel }}
         explainFor={{ viewports: !vCur, devices: !dCur }}
         initial={vCur || !dCur ? "viewports" : "devices"}
+        right={<RunsMenu rows={history} />}
       />
-
-      <div className="mt-8">
-        <RunHistory rows={history} />
-      </div>
-    </>
+    </div>
   );
 }
