@@ -41,6 +41,7 @@ export function DeviceFrame({
   scaleRef,
   src,
   fallbackSrc,
+  upgradeSrc = null,
   liveSrc = null,
   alt,
   title,
@@ -60,6 +61,9 @@ export function DeviceFrame({
   scaleRef?: (scale: number) => void;
   src: string | null;
   fallbackSrc?: string | null;
+  /** A taller image to swap in once it has loaded — silently, and never shown
+      as an error, because `src` is already a correct answer. */
+  upgradeSrc?: string | null;
   /** The real page, loaded in the frame instead of a capture of it. */
   liveSrc?: string | null;
   alt: string;
@@ -111,17 +115,35 @@ export function DeviceFrame({
   // Crossfade: the new image mounts on top at opacity 0 and fades in once it
   // has loaded; the previous one is dropped after the fade. A source that
   // fails (the service pruned the run) is replaced by the stored fold.
-  const [layers, setLayers] = useState<Layer[]>(() => src ? [{ key: 0, src, loaded: false, tried: false, dead: false }] : []);
+  // Two images answer the same question at different costs. The fold is in our
+  // own database and paints in a couple of seconds; the full page is on the
+  // preview service, which is slower and, after two runs of a site, no longer
+  // has it at all. So paint the fold and fetch the full page behind it: when
+  // it arrives it crossfades in and the findings below the fold become
+  // drawable, and when it does not, nothing happens — the fold was never
+  // wrong, only shorter.
+  const [up, setUp] = useState<{ base: string; url: string } | null>(null);
+  useEffect(() => {
+    if (!src || !upgradeSrc || upgradeSrc === src) return;
+    const img = new Image();
+    let alive = true;
+    img.onload = () => { if (alive) setUp({ base: src, url: upgradeSrc }); };
+    img.src = upgradeSrc;
+    return () => { alive = false; img.onload = null; };
+  }, [src, upgradeSrc]);
+  const shown = up && up.base === src ? up.url : src;
+
+  const [layers, setLayers] = useState<Layer[]>(() => shown ? [{ key: 0, src: shown, loaded: false, tried: false, dead: false }] : []);
   const keyRef = useRef(0);
   useEffect(() => {
     setLayers((ls) => {
       const top = ls[ls.length - 1];
-      if (top && top.src === src) return ls;
-      if (!src) return [];
+      if (top && top.src === shown) return ls;
+      if (!shown) return [];
       keyRef.current += 1;
-      return [...ls.slice(-1), { key: keyRef.current, src, loaded: false, tried: false, dead: false }];
+      return [...ls.slice(-1), { key: keyRef.current, src: shown, loaded: false, tried: false, dead: false }];
     });
-  }, [src]);
+  }, [shown]);
   const screenRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   // The size transition belongs to a change of selection and to nothing else.
@@ -255,7 +277,7 @@ export function DeviceFrame({
                 <ImageOff className="size-6 text-text-secondary" aria-hidden />
                 <span className="text-[13px] font-medium text-text-primary">This screenshot is no longer stored</span>
                 <span className="text-[12px] leading-snug text-text-secondary">
-                  The preview service keeps full pages for the two most recent runs. Run the check again to capture it.
+                  Neither the stored fold nor the full page could be loaded. Run the check again to capture it.
                 </span>
               </span>
             </div>

@@ -174,6 +174,8 @@ export function DevicesPanel({
 
   // Try the live full page only where it can exist; a request the page knows
   // will fail is a blank frame for as long as it takes to fail.
+  // The fold is ours and fast; the full page is the service's and slow. Ask
+  // for the fold, and let the frame upgrade to the full page behind it.
   const srcFor = (profileId: string) => ({
     live: runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(profileId)}&kind=full` : null,
     fold: runId && stored.has(profileId) ? `/api/devicepreview/shot?runId=${runId}&profile=${encodeURIComponent(profileId)}` : null,
@@ -270,8 +272,9 @@ export function DevicesPanel({
                   <DeviceFrame
                     shape="desktop"
                     viewport={current.viewport}
-                    src={s.live ?? s.fold}
-                    fallbackSrc={s.fold}
+                    src={s.fold ?? s.live}
+                    fallbackSrc={s.fold ? s.live : null}
+                    upgradeSrc={s.fold ? s.live : null}
                     alt={`${viewportName} at ${current.viewportLabel}, rendered by ${c.engineLabel}`}
                     title={url.replace(/^https?:\/\//, "")}
                     maxHeight={320}
@@ -292,8 +295,9 @@ export function DevicesPanel({
           <DeviceFrame
             shape={current.shape}
             viewport={current.viewport}
-            src={src.live ?? src.fold}
-            fallbackSrc={src.fold}
+            src={src.fold ?? src.live}
+            fallbackSrc={src.fold ? src.live : null}
+            upgradeSrc={src.fold ? src.live : null}
             liveSrc={showLive ? qaUrl(url) : null}
             alt={showLive ? `${current.label}, the live page` : `${current.label}, rendered page`}
             title={url.replace(/^https?:\/\//, "")}
