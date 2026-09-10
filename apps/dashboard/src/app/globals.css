@@ -35,6 +35,14 @@
   --color-error: #e05c5c;
   --color-info: #5b8def;
 
+  /* Semantic, for text. The fills above are chosen to carry meaning at a
+     glance; as text on a light surface they land between 2:1 and 3.6:1 and
+     fail WCAG AA. These are the same hues darkened to clear 4.5:1 on white,
+     for any semantic wording — a verdict, a chip, a count. */
+  --color-success-strong: #1f7a4d;
+  --color-warning-strong: #8a5300;
+  --color-error-strong: #b3261e;
+
   /* Borders */
   --color-border-soft: #e8e8f0;
 
