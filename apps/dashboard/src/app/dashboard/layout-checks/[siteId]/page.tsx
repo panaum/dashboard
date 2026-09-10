@@ -64,6 +64,7 @@ export default async function LayoutSitePage({
       findings={(vCur?.findings ?? []) as unknown as ViewportFinding[]}
       widths={widths}
       url={site.url}
+      trend={site.runs.map((r) => ({ checkedAt: r.checkedAt.toISOString(), errors: r.failCount }))}
       headerAction={<CheckRunner url={site.url} variant="secondary" size="sm" label={vCur ? "Run again" : "Run the eight-width check"} />}
     />
   );
@@ -87,6 +88,7 @@ export default async function LayoutSitePage({
       storedFolds={dCur?.shots.map((s) => s.profileId) ?? []}
       liveAvailable={devicePreviewConfigured()}
       url={site.url}
+      trend={site.devicePreviews.map((r) => ({ checkedAt: r.checkedAt.toISOString(), errors: r.errorCount + r.regressedCount }))}
       run={devicePreviewConfigured()
         ? { baselineServiceRunId: dCur?.serviceRunId ?? null, hasRuns: Boolean(dCur) }
         : undefined}

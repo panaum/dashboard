@@ -6,11 +6,12 @@ import { readDeviceView, syncQuery } from "@/lib/layout-checks/deep-link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Columns3, ExternalLink, Globe, Loader2, Maximize2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
-import { BarLabel, CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
+import { CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
-import { Glance, type GlanceRow, type GlanceTone } from "@/components/layout-checks/glance";
+import { HealthMatrix } from "@/components/layout-checks/health-matrix";
+import { coverage } from "@/lib/layout-checks/matrix";
+import type { TrendPoint } from "@/lib/layout-checks/sparkline";
 import { RAIL_CAP, railItems } from "@/lib/layout-checks/findings-view";
 import { pinsFor } from "@/lib/layout-checks/pins";
 import { auditedCount, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
@@ -24,8 +25,8 @@ import {
 } from "@/lib/layout-checks/run-progress";
 import type { TabVerdict } from "@/lib/layout-checks/verdict";
 import {
-  defaultSelection, groupDevices, toView,
-  type DeviceInput, type DeviceView, type Severity,
+  defaultSelection, toView,
+  type DeviceInput, type DeviceView,
 } from "@/lib/layout-checks/devices-view";
 
 // The Devices tab: pick one device, see that device. The picker is a dropdown
@@ -35,9 +36,6 @@ import {
 // a click away. The device sits large on the dark stage; the bar under it
 // holds compare, live and open; the findings run under the stage.
 
-const TONE: Record<Severity, ListTone> = { error: "error", warning: "warning", clean: "success", inconclusive: "neutral" };
-const CELL: Record<Severity, GlanceTone> = { error: "error", warning: "warning", clean: "success", inconclusive: "neutral" };
-const RUN_CELL: Record<DeviceRunState, GlanceTone> = { waiting: "waiting", captured: "captured", failed: "error" };
 
 export function DevicesPanel({
   verdict,
@@ -48,6 +46,7 @@ export function DevicesPanel({
   headerAction,
   run,
   url,
+  trend,
 }: {
   verdict: TabVerdict;
   runId: string | null;
@@ -60,6 +59,8 @@ export function DevicesPanel({
   /** Present when the preview service is configured: the panel hosts the runner. */
   run?: { baselineServiceRunId: string | null; hasRuns: boolean };
   url: string;
+  /** Errors per run, newest first, for the trend beside the verdict. */
+  trend?: TrendPoint[];
 }) {
   const reduce = useReducedMotion();
   // A run in flight, drawn over the glance strip: every device grey, each one
@@ -70,7 +71,6 @@ export function DevicesPanel({
   const note = progressNote(progress);
 
   const views = useMemo(() => devices.map(toView), [devices]);
-  const groups = useMemo(() => groupDevices(views), [views]);
   // A link can name the device and the finding; the run decides whether they
   // exist. Otherwise the worst device opens, as before.
   const params = useSearchParams();
@@ -197,31 +197,6 @@ export function DevicesPanel({
   // ── Picker: the dropdown, the glance strip, and the run line while a run is on ──
   const runState = (d: DeviceView): DeviceRunState | null => running ? progress.devices[d.label] ?? "waiting" : null;
 
-  const options: ListOption[] = groups.flatMap(({ group, devices: ds }) => ds.map((d): ListOption => {
-    const rs = runState(d);
-    return {
-      id: d.profileId,
-      label: d.label,
-      sub: `${d.engineLabel} · ${d.viewportLabel}${d.severity === "error" ? ` · ${d.errors} error${d.errors === 1 ? "" : "s"}` : d.severity === "warning" ? ` · ${d.warnings} warning${d.warnings === 1 ? "" : "s"}` : d.severity === "inconclusive" ? " · not captured" : ""}`,
-      tone: rs ? (rs === "failed" ? "error" : rs === "captured" ? "info" : "neutral") : TONE[d.severity],
-      group,
-    };
-  }));
-
-  const glanceRows: GlanceRow[] = groups.map(({ group, devices: ds }) => ({
-    name: group,
-    cells: ds.map((d) => {
-      const rs = runState(d);
-      return {
-        id: d.profileId,
-        label: `${d.label} · ${d.engineLabel} · ${rs ? (rs === "captured" ? "captured" : rs === "failed" ? "capture failed" : "waiting")
-          : d.severity === "error" ? `${d.errors} error${d.errors === 1 ? "" : "s"}` : d.severity === "warning" ? `${d.warnings} warning${d.warnings === 1 ? "" : "s"}`
-          : d.severity === "inconclusive" ? "not captured" : "clean"}`,
-        tone: rs ? RUN_CELL[rs] : CELL[d.severity],
-      };
-    }),
-  }));
-
   const runLine = running || progress.phase === "failed" ? (
     <div className="flex basis-full flex-col gap-2" role="status" aria-live="polite">
       <p className={cn("text-[12px]", progress.phase === "failed" ? "text-error-strong" : "text-text-secondary")}>{note}</p>
@@ -234,20 +209,33 @@ export function DevicesPanel({
     </div>
   ) : null;
 
-  const picker = views.length ? (
-    <>
-      <div className="flex w-full items-center gap-2 @3xl:w-auto">
-        <BarLabel>Device</BarLabel>
-        <Listbox label="Device" options={options} value={current?.profileId ?? null} onChange={pick} className="min-w-0 flex-1 @3xl:w-72 @3xl:flex-none" />
-      </div>
-      <Glance rows={glanceRows} selected={current?.profileId ?? null} onPick={pick} label="All devices at a glance" />
-      {runLine}
-    </>
-  ) : (
+  // The matrix is the picker. What is left of the old picker row is the run
+  // line, which only exists while a run is on.
+  const picker = views.length ? runLine : (
     <p className="text-[13px] text-text-secondary">
       {running ? "The first run has no devices to list yet." : "Run the check to see it here."}
     </p>
   );
+  const cov = coverage(views);
+  const chip = "inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-semibold";
+  const chips = views.length ? (
+    <>
+      {cov.failing > 0 && <span className={cn(chip, "bg-error/12 text-error-strong")}>{cov.failing} failing</span>}
+      {cov.warnings > 0 && <span className={cn(chip, "bg-warning/15 text-warning-strong")}>{cov.warnings} with warnings</span>}
+      {cov.clean > 0 && <span className={cn(chip, "bg-success/12 text-success-strong")}>{cov.clean} clean</span>}
+      {cov.inconclusive > 0 && <span className={cn(chip, "bg-card-soft text-text-secondary")}>{cov.inconclusive} not captured</span>}
+    </>
+  ) : null;
+  const matrix = views.length ? (
+    <HealthMatrix
+      views={views}
+      findingsOf={(id) => devices.find((d) => d.profile_id === id)?.findings ?? []}
+      statusOf={(id) => devices.find((d) => d.profile_id === id)?.status ?? "ok"}
+      selected={current?.profileId ?? null}
+      onPick={pick}
+      runState={running ? runState : undefined}
+    />
+  ) : null;
 
   // ── Stage ──────────────────────────────────────────────────────────────────
   const mode = !current ? "none" : showStream ? "stream" : showCompare ? "compare" : "single";
@@ -437,6 +425,9 @@ export function DevicesPanel({
   return (
     <CheckShell
       verdict={verdict}
+      chips={chips}
+      trend={trend}
+      matrix={matrix}
       headerAction={run
         ? <DevicePreviewRunner url={url} baselineServiceRunId={run.baselineServiceRunId} hasRuns={run.hasRuns} onProgress={setProgress} />
         : headerAction}

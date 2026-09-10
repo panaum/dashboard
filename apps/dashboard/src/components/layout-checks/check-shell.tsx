@@ -6,6 +6,7 @@ import { CheckCircle2, AlertTriangle, XCircle, MinusCircle, MonitorSmartphone } 
 import { cn } from "@/lib/utils";
 import { ms } from "@/lib/layout-checks/motion";
 import type { TabVerdict } from "@/lib/layout-checks/verdict";
+import { spark, trendValues, type TrendPoint } from "@/lib/layout-checks/sparkline";
 import { useTabSlots } from "@/components/layout-checks/site-tabs";
 
 // The one layout both tabs share, in three bands. A header: the tab control
@@ -54,18 +55,59 @@ export function Rise({ order = 0, className, children }: { order?: number; class
   );
 }
 
-/** The two-second read: what this run says, in one sentence. */
-export function VerdictLine({ verdict }: { verdict: TabVerdict }) {
+/** The two-second read: what this run says, in one sentence — with how the
+ *  run splits by device under it, and how the last few runs went beside it. */
+export function VerdictLine({ verdict, chips, trend }: { verdict: TabVerdict; chips?: ReactNode; trend?: TrendPoint[] }) {
   const Icon = ICON[verdict.tone];
   return (
-    <div className="flex items-start gap-2">
-      <Icon className={cn("mt-1 size-6 shrink-0", TONE[verdict.tone])} strokeWidth={2} aria-hidden />
-      <div className="min-w-0">
-        <p className={cn("text-[21px] font-semibold leading-tight tracking-tight text-balance", TONE[verdict.tone])}>
-          {verdict.headline}
-        </p>
-        {verdict.compare && <p className="mt-1 text-[13px] leading-snug text-text-secondary">{verdict.compare}</p>}
+    <div className="flex flex-col gap-4 @3xl:flex-row @3xl:items-start @3xl:justify-between">
+      <div className="flex items-start gap-2">
+        <Icon className={cn("mt-1 size-6 shrink-0", TONE[verdict.tone])} strokeWidth={2} aria-hidden />
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className={cn("text-[21px] font-semibold leading-tight tracking-tight text-balance", TONE[verdict.tone])}>
+            {verdict.headline}
+          </p>
+          {verdict.compare && <p className="text-[13px] leading-snug text-text-secondary">{verdict.compare}</p>}
+          {chips && <div className="mt-1 flex flex-wrap items-center gap-2">{chips}</div>}
+        </div>
       </div>
+      {trend && trend.length > 1 && <Trend points={trend} />}
+    </div>
+  );
+}
+
+/** Errors per run, the last eight, oldest to newest. Today's point is solid. */
+function Trend({ points }: { points: TrendPoint[] }) {
+  const values = trendValues(points, 8);
+  const W = 240, H = 56;
+  const s = spark(values, W, H, 8);
+  const last = s.dots[s.dots.length - 1];
+  const first = s.dots[0];
+  // A run with nothing wrong is not a red line. The colour follows the latest
+  // run: red while there are errors, green once there are none.
+  const tone = last && last.value === 0 ? "success" : "error";
+  const stroke = tone === "success" ? "stroke-success" : "stroke-error";
+  const fill = tone === "success" ? "fill-success" : "fill-error";
+  // Value labels sit above their dot, never on it, and never off the top.
+  const above = (y: number) => Math.max(10, y - 9);
+  const oldest = points.slice(0, 8).at(-1)?.checkedAt;
+  const when = oldest ? new Date(oldest).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  return (
+    <div className="flex shrink-0 flex-col gap-1 @3xl:w-[240px]" aria-label={`Errors over the last ${values.length} runs: ${values.join(", ")}`}>
+      <div className="flex items-baseline justify-between text-[11px]">
+        <span className="font-semibold uppercase tracking-[0.08em] text-text-secondary">Last {values.length} runs</span>
+        <span className="text-text-secondary">errors per run</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-14 w-full overflow-visible" aria-hidden>
+        <line x1="0" y1={H - 1} x2={W} y2={H - 1} className="stroke-border-soft" strokeWidth="1" />
+        <polyline points={s.points} fill="none" className={stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {s.dots.map((d, i) => (
+          <circle key={i} cx={d.x} cy={d.y} r={i === s.dots.length - 1 ? 4.5 : 3} className={cn(i === s.dots.length - 1 ? `${fill} stroke-card` : `fill-card ${stroke}`)} strokeWidth="2" />
+        ))}
+        {first && first !== last && <text x={first.x} y={above(first.y)} textAnchor="start" className="fill-text-secondary text-[11px]">{first.value}</text>}
+        {last && <text x={last.x} y={above(last.y)} textAnchor="end" className="fill-text-primary text-[11px] font-semibold">{last.value}</text>}
+      </svg>
+      <div className="flex justify-between text-[11px] text-text-secondary"><span>{when}</span><span>latest</span></div>
     </div>
   );
 }
@@ -187,14 +229,23 @@ function EmptyStage() {
 
 export function CheckShell({
   verdict,
+  chips,
+  trend,
   headerAction,
   picker,
+  matrix,
   frame,
   action,
   rail,
   railLabel,
 }: {
   verdict: TabVerdict;
+  /** How the run splits by device, under the verdict. */
+  chips?: ReactNode;
+  /** Errors per run, newest first, for the trend beside the verdict. */
+  trend?: TrendPoint[];
+  /** A full-width band between the header and the stage: the device health matrix. */
+  matrix?: ReactNode;
   /** The run control, at the right of the header's first line. */
   headerAction?: ReactNode;
   /** The picker line: the width squares, or the device dropdown and glance strip. */
@@ -222,12 +273,20 @@ export function CheckShell({
             )}
           </div>
           <div>
-            <VerdictLine verdict={verdict} />
+            <VerdictLine verdict={verdict} chips={chips} trend={trend} />
             {slots?.explain && <p className="mt-2 text-[13px] text-text-secondary">{slots.explain}</p>}
           </div>
           {picker && <div className="flex flex-wrap items-center gap-x-4 gap-y-2">{picker}</div>}
         </div>
       </Rise>
+
+      {matrix && (
+        <Rise order={1}>
+          <section aria-label="Device health" className="rounded-2xl border border-border-soft bg-card px-4 py-4 shadow-xs @3xl:px-6">
+            {matrix}
+          </section>
+        </Rise>
+      )}
 
       {/* Stage and findings side by side, as they are on both tabs, so the
           interaction is learned once. items-start: neither column stretches to
