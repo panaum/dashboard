@@ -274,7 +274,7 @@ export function DevicesPanel({
                     fallbackSrc={s.fold}
                     alt={`${viewportName} at ${current.viewportLabel}, rendered by ${c.engineLabel}`}
                     title={url.replace(/^https?:\/\//, "")}
-                    maxHeight={420}
+                    maxHeight={320}
                     highlight={hl}
                     onImageMeta={(m) => setColMeta((prev) => ({ ...prev, [c.engine]: m?.cssHeight ?? null }))}
                     frameClassName={ON_STAGE}
@@ -297,7 +297,7 @@ export function DevicesPanel({
             liveSrc={showLive ? qaUrl(url) : null}
             alt={showLive ? `${current.label}, the live page` : `${current.label}, rendered page`}
             title={url.replace(/^https?:\/\//, "")}
-            maxHeight={640}
+            maxHeight="fill"
             highlight={selectedItem?.box ?? null}
             onImageMeta={setImageMeta}
             frameClassName={ON_STAGE}
@@ -363,7 +363,7 @@ export function DevicesPanel({
 
   // ── Rail ───────────────────────────────────────────────────────────────────
   const rail = current && showCompare ? (
-    <div className="grid gap-5 @3xl:grid-cols-3">
+    <div className="flex flex-col gap-5">
       {columns.map((c) => (
         <FindingsRail
           key={c.profileId}
@@ -384,7 +384,6 @@ export function DevicesPanel({
           expanded={expanded}
           onToggle={() => setExpanded((e) => !e)}
           drawableHeight={colMeta[c.engine] ?? null}
-          columns={false}
           showPins={false}
           where={`${viewportName} · ${c.engineLabel} · ${current.viewportLabel}`}
           url={url}
@@ -398,14 +397,11 @@ export function DevicesPanel({
           <p className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Findings</p>
           <p className="truncate text-[12.5px] font-medium text-text-secondary">{current.label}</p>
         </div>
-        <div className="flex max-w-xl items-start gap-3 rounded-xl bg-card-soft p-4 ring-1 ring-border-soft">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-text-muted/25 text-text-primary">
-            <ShieldAlert className="size-5" aria-hidden />
-          </span>
-          <p className="text-[13px] leading-snug text-text-secondary">
-            {current.status === "blocked" ? "Blocked by bot protection — nothing on this device was audited." : `Capture failed${current.error ? `: ${current.error}` : "."}`}
-          </p>
-        </div>
+        {/* Also one sentence, also no box. */}
+        <p className="flex items-start gap-2 text-[13px] leading-snug text-text-secondary">
+          <ShieldAlert className="mt-px size-5 shrink-0 text-text-muted" aria-hidden />
+          {current.status === "blocked" ? "Blocked by bot protection — nothing on this device was audited." : `Capture failed${current.error ? `: ${current.error}` : "."}`}
+        </p>
       </div>
     ) : (
       <FindingsRail

@@ -2,7 +2,6 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
-import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
 import { BarLabel, CheckShell, ON_STAGE, revealStage, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
@@ -15,10 +14,13 @@ import {
 } from "@/lib/layout-checks/viewports-view";
 
 // The Viewports tab: pick one width, see the page at that width, read the
-// findings for that width. The same shell, dropdown, glance strip and rail
-// as the Devices tab, so the interaction is learned once.
+// findings for that width. The same shell and rail as the Devices tab, so the
+// interaction is learned once.
+//
+// Eight widths is few enough that the squares can BE the picker rather than
+// echo one: each carries its own number, and the row shows severity at every
+// width at once — which a dropdown, showing one width at a time, cannot.
 
-const TONE: Record<WidthSeverity, ListTone | undefined> = { error: "error", warning: "warning", clean: "success", unknown: undefined };
 const CELL: Record<WidthSeverity, GlanceTone> = { error: "error", warning: "warning", clean: "success", unknown: "neutral" };
 const SHAPE_WORD = { phone: "Phone", tablet: "Tablet", desktop: "Desktop" } as const;
 
@@ -65,32 +67,24 @@ export function ViewportsPanel({
   const key = (w: number) => `w${w}`;
   const fromKey = (id: string) => Number(id.slice(1));
 
-  const options: ListOption[] = asc.map((w) => {
-    const sev = severityAt(findings, w);
-    const shape = widthShape(w);
-    return {
-      id: key(w),
-      label: `${w}px`,
-      sub: `${SHAPE_WORD[shape]}${sev === "error" ? " · breaks here" : sev === "warning" ? " · worth a look" : ""}`,
-      tone: TONE[sev],
-      group: `${SHAPE_WORD[shape]}s`,
-    };
-  });
   const glance = [{
     name: "",
     cells: asc.map((w) => {
       const sev = severityAt(findings, w);
-      return { id: key(w), label: `${widthLabel(w)} · ${sev === "error" ? "breaks here" : sev === "warning" ? "worth a look" : sev === "clean" ? "clean" : "not captured"}`, tone: CELL[sev] };
+      return {
+        id: key(w),
+        text: String(w),
+        label: `${widthLabel(w)} · ${sev === "error" ? "breaks here" : sev === "warning" ? "worth a look" : sev === "clean" ? "clean" : "not captured"}`,
+        tone: CELL[sev],
+      };
     }),
   }];
 
   const picker = asc.length ? (
     <>
-      <div className="flex w-full items-center gap-2.5 @3xl:w-auto">
-        <BarLabel>Width</BarLabel>
-        <Listbox label="Width" options={options} value={current === null ? null : key(current)} onChange={(id) => pick(fromKey(id))} className="min-w-0 flex-1 @3xl:w-56 @3xl:flex-none" />
-      </div>
-      <Glance rows={glance} selected={current === null ? null : key(current)} onPick={(id) => pick(fromKey(id))} label="All widths at a glance" />
+      <BarLabel>Width</BarLabel>
+      <Glance size="tile" rows={glance} selected={current === null ? null : key(current)}
+              onPick={(id) => pick(fromKey(id))} label="Width" />
       {!perWidth && (
         <p className="basis-full text-[12.5px] leading-snug text-text-secondary">
           This run predates per-width findings, so the list below is everything found
@@ -112,6 +106,7 @@ export function ViewportsPanel({
         alt={`The page rendered ${current} pixels wide`}
         title={url.replace(/^https?:\/\//, "")}
         highlight={null}
+        maxHeight="fill"
         frameClassName={ON_STAGE}
       />
       <StageCaption title={`${current}px`}>{" · "}{SHAPE_WORD[widthShape(current)]}{" · "}{widthViewport(current).width} × {widthViewport(current).height}</StageCaption>
