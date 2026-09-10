@@ -10,6 +10,7 @@ import { SectionHeading } from "@/components/layout-checks/check-shell";
 import { pinNumber, pinsFor, type Pin } from "@/lib/layout-checks/pins";
 import { reachLabel, reachTone, type Reach } from "@/lib/layout-checks/reach";
 import { allFindingsText, findingText, type CopyFinding } from "@/lib/layout-checks/copy-finding";
+import { cropFor, cropStyle } from "@/lib/layout-checks/crop";
 import { viewLink } from "@/lib/layout-checks/deep-link";
 
 export type RailItem = RailFinding & {
@@ -100,6 +101,7 @@ export function FindingsRail({
   url,
   reachOf,
   showPins = true,
+  thumbs = null,
 }: {
   deviceLabel: string;
   items: RailItem[];
@@ -121,6 +123,9 @@ export function FindingsRail({
   reachOf?: (item: RailItem) => Reach | null;
   /** Numbers, matching the pins drawn on the capture. Off where nothing is drawn. */
   showPins?: boolean;
+  /** The capture the frame is showing, so a row can carry a crop of its
+      element. `src` is null until the frame has one. */
+  thumbs?: { src: string | null; pageWidth: number; pageHeight: number | null } | null;
 }) {
   // The same numbering the pins use, from the same pure function, so a row
   // and its marker can never disagree.
@@ -194,6 +199,8 @@ export function FindingsRail({
             );
           }
           const help = on ? explain(kind, it.rule) : null;
+          // A picture of the element, from the same capture the frame shows.
+          const crop = thumbs?.src && it.box && !it.pageLevel ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, 88, 64) : null;
           return (
             // Selected is the accent's one job on this page.
             <li key={it.id} id={`finding-${it.id}`}
@@ -203,20 +210,30 @@ export function FindingsRail({
                 aria-pressed={on}
                 onClick={() => onSelect(it.id)}
                 className={cn(
-                  "relative flex w-full flex-col items-start gap-1 rounded-lg py-2 pl-4 pr-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
-                  n !== null && "pl-8",
+                  "relative w-full rounded-lg py-2 pl-4 pr-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
+                  crop ? "grid grid-cols-[88px_minmax(0,1fr)] items-start gap-3" : "flex flex-col items-start gap-1",
+                  n !== null && !crop && "pl-8",
                   !on && "hover:bg-card-soft",
                 )}
               >
                 <span aria-hidden className={cn("absolute inset-y-2 left-0 w-[3px] rounded-full", s.bar)} />
-                {/* The number is the tie to the screenshot: this row is that pin. */}
-                {n !== null && (
+                {crop && thumbs?.src ? (
+                  <span aria-hidden data-thumb className="relative block h-16 w-[88px] overflow-hidden rounded-lg bg-card-soft ring-1 ring-inset ring-border-soft"
+                        style={cropStyle(thumbs.src, crop, thumbs.pageWidth)}>
+                    {n !== null && (
+                      <span className={cn("absolute left-1 top-1 grid size-[18px] place-items-center rounded-full text-[10px] font-bold tabular-nums text-white shadow-[0_0_0_2px_#fff]",
+                                          s.pin, on && "ring-2 ring-accent/40")}>{n}</span>
+                    )}
+                  </span>
+                ) : n !== null ? (
+                  /* The number is the tie to the screenshot: this row is that pin. */
                   <span aria-hidden className={cn(
                     "absolute left-2 top-2 grid size-[18px] place-items-center rounded-full text-[10px] font-bold tabular-nums text-white",
                     s.pin, on && "ring-2 ring-accent/40")}>
                     {n}
                   </span>
-                )}
+                ) : null}
+                <span className="flex min-w-0 flex-col gap-1">
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-medium leading-snug text-text-primary">
                   <span className="sr-only">{s.word}{n !== null ? `, finding ${n}` : ""}: </span>
                   {it.label}
@@ -233,6 +250,7 @@ export function FindingsRail({
                 </span>
                 <span className="font-mono text-[11px] leading-snug text-text-secondary">
                   {it.pageLevel ? "whole page" : (it.selector ?? "—")}
+                </span>
                 </span>
               </button>
 

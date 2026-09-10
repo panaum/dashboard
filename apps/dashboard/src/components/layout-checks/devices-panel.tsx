@@ -87,6 +87,8 @@ export function DevicesPanel({
   useEffect(() => { syncQuery({ device: selected, finding }); }, [selected, finding]);
   const [expanded, setExpanded] = useState(false);
   const [imageMeta, setImageMeta] = useState<{ cssHeight: number } | null>(null);
+  // What the frame is showing right now, for the rail's element crops.
+  const [shownSrc, setShownSrc] = useState<string | null>(null);
   const pick = (profileId: string) => {
     setSelected(profileId); setFinding(null); setImageMeta(null); setColMeta({});
     setStreaming(false);            // the session is pinned to one profile
@@ -311,6 +313,7 @@ export function DevicesPanel({
             pins={showLive ? [] : pins}
             selectedPin={finding}
             onPinSelect={selectFromPin}
+            onShown={setShownSrc}
             minimap
           />
           <StageCaption title={current.label}>
@@ -416,6 +419,7 @@ export function DevicesPanel({
         where={`${current.label} · ${current.engineLabel} · ${current.viewportLabel}`}
         url={url}
         reachOf={reachOf}
+        thumbs={showLive ? null : { src: shownSrc, pageWidth: current.viewport.width, pageHeight: imageMeta?.cssHeight ?? null }}
       />
     )
   ) : (
