@@ -4,21 +4,29 @@
 
 export type Band = { top: number; height: number };
 
+export const MIN_THUMB = 24;
+
 /** The viewport's band on a track of `trackHeight`, for a scroll position
  *  `scrollTop` in an image `imageHeight` tall viewed through a window
- *  `windowHeight` tall. Never thinner than 6px, never off the track. */
+ *  `windowHeight` tall. Never thinner than MIN_THUMB, never off the track. */
 export function bandFor(scrollTop: number, imageHeight: number, windowHeight: number, trackHeight: number): Band {
   if (imageHeight <= 0 || trackHeight <= 0) return { top: 0, height: trackHeight };
-  const height = Math.max(6, Math.round(Math.min(1, windowHeight / imageHeight) * trackHeight));
+  // Never thinner than a fingertip can grab: this thumb is the scrollbar now.
+  const height = Math.max(MIN_THUMB, Math.round(Math.min(1, windowHeight / imageHeight) * trackHeight));
   const maxTop = Math.max(0, trackHeight - height);
   const top = Math.min(maxTop, Math.max(0, Math.round((scrollTop / imageHeight) * trackHeight)));
   return { top, height };
 }
 
-/** Where to scroll so the point at `fraction` of the page sits mid-window. */
-export function scrollFor(fraction: number, imageHeight: number, windowHeight: number): number {
-  const f = Math.min(1, Math.max(0, fraction));
-  return Math.max(0, Math.min(Math.max(0, imageHeight - windowHeight), Math.round(f * imageHeight - windowHeight / 2)));
+/** The scroll position that puts the thumb's top edge at `thumbTop` on a
+ *  track of `trackHeight` — the inverse of bandFor, for dragging. Clamped to
+ *  the page's real scroll range. */
+export function scrollForThumb(thumbTop: number, thumbHeight: number, trackHeight: number,
+                               imageHeight: number, windowHeight: number): number {
+  const range = Math.max(0, imageHeight - windowHeight);
+  const travel = Math.max(1, trackHeight - thumbHeight);
+  const f = Math.min(1, Math.max(0, thumbTop / travel));
+  return Math.round(f * range);
 }
 
 /** A pin's dot on the track, from its box in page CSS px. */

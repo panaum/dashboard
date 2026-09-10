@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bandFor, dotFor, scrollFor, worthMapping } from "@/lib/layout-checks/minimap";
+import { bandFor, dotFor, scrollForThumb, worthMapping } from "@/lib/layout-checks/minimap";
 
 test("the band is the window's share of the page, at the scroll position", () => {
   // 10,000px page, 500px window, 600px track: window is 5% → 30px band
@@ -13,15 +13,22 @@ test("the band never leaves the track, even when scrolled past the end", () => {
   assert.ok(b.top + b.height <= 600);
 });
 
-test("a very long page still gets a band you can see", () => {
-  assert.ok(bandFor(0, 200000, 500, 600).height >= 6);
+test("a very long page still gets a thumb you can grab", () => {
+  assert.ok(bandFor(0, 200000, 500, 600).height >= 24);
 });
 
-test("clicking a point centres it in the window", () => {
-  // midpoint of a 10,000px page in a 500px window → scroll to 5000 − 250
-  assert.equal(scrollFor(0.5, 10000, 500), 4750);
-  assert.equal(scrollFor(0, 10000, 500), 0);
-  assert.equal(scrollFor(1, 10000, 500), 9500);       // clamped to the last screen
+test("dragging the thumb to a point on the track scrolls the page to match", () => {
+  // 10,000px page, 500px window, 600px track, 30px thumb: 570px of travel maps to 9,500px of scroll
+  assert.equal(scrollForThumb(0, 30, 600, 10000, 500), 0);
+  assert.equal(scrollForThumb(570, 30, 600, 10000, 500), 9500);
+  assert.equal(scrollForThumb(285, 30, 600, 10000, 500), 4750);
+  assert.equal(scrollForThumb(9999, 30, 600, 10000, 500), 9500);   // past the end is the end
+  assert.equal(scrollForThumb(-50, 30, 600, 10000, 500), 0);
+});
+
+test("the thumb and the drag agree: a band's own top drags to its own scroll position", () => {
+  const b = bandFor(4200, 10000, 500, 600);
+  assert.ok(Math.abs(scrollForThumb(b.top, b.height, 600, 10000, 500) - 4200) <= 40);
 });
 
 test("a pin's dot is at the centre of its box, in track proportions", () => {
