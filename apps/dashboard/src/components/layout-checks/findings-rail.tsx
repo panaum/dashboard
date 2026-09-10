@@ -18,7 +18,8 @@ export type RailItem = RailFinding & {
 // on the whole row, not a dot: a red-edged row is an error before it is read.
 // Capped at five with a quiet expander; a mint tile when there is nothing to
 // say. Clicking a row selects it, draws its box in the frame if it has one,
-// and opens what the finding means beneath it.
+// and opens what the finding means beneath it. The list sits under the stage
+// at the page's full width, so it runs in columns where there is room.
 
 const ROW: Record<RailFinding["severity"], { bar: string; on: string; chip: string; word: string }> = {
   error: { bar: "bg-error", on: "bg-error/[0.07] ring-error/25", chip: "bg-error/12 text-error", word: "Error" },
@@ -54,6 +55,7 @@ export function FindingsRail({
   expanded,
   onToggle,
   drawableHeight,
+  columns = true,
 }: {
   deviceLabel: string;
   items: RailItem[];
@@ -67,13 +69,13 @@ export function FindingsRail({
   onToggle: () => void;
   /** Height of the loaded screenshot in CSS px; a box below it cannot be drawn. */
   drawableHeight: number | null;
+  /** Run in two or three columns where the shell is wide; off inside a compare column. */
+  columns?: boolean;
 }) {
   const head = heading ?? (
-    <div className="mb-3 flex flex-col gap-2 border-b border-border-soft pb-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Findings</p>
-        <p className="truncate text-[12px] text-text-secondary">{deviceLabel}</p>
-      </div>
+    <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border-soft pb-3">
+      <p className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-text-muted">Findings</p>
+      <p className="truncate text-[12.5px] font-medium text-text-secondary">{deviceLabel}</p>
       {items.length > 0 && <Summary items={items} />}
     </div>
   );
@@ -82,7 +84,7 @@ export function FindingsRail({
     return (
       <div className="flex flex-col">
         {head}
-        <div className="flex items-center gap-3 rounded-xl bg-[linear-gradient(135deg,rgba(76,175,125,0.14),rgba(76,175,125,0.04))] p-4 ring-1 ring-success/20">
+        <div className="flex max-w-md items-center gap-3 rounded-xl bg-[linear-gradient(135deg,rgba(76,175,125,0.14),rgba(76,175,125,0.04))] p-4 ring-1 ring-success/20">
           <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-success text-white shadow-sm">
             <CheckCircle2 className="size-5" strokeWidth={2.25} aria-hidden />
           </span>
@@ -96,7 +98,8 @@ export function FindingsRail({
   return (
     <div className="flex flex-col">
       {head}
-      <ul className="flex flex-col gap-1" aria-label={`Findings on ${deviceLabel}`}>
+      <ul className={cn("gap-1", columns ? "grid grid-cols-1 @3xl:grid-cols-2 @6xl:grid-cols-3" : "flex flex-col")}
+          aria-label={`Findings on ${deviceLabel}`}>
         {shown.map((it) => {
           const on = it.id === selectedId;
           const s = ROW[it.severity];
