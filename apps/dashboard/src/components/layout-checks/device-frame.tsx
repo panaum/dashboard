@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ImageOff, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Shape } from "@/lib/layout-checks/devices-view";
@@ -8,7 +8,7 @@ import { ms } from "@/lib/layout-checks/motion";
 import { placePins, type Pin } from "@/lib/layout-checks/pins";
 import { useStageHeight } from "@/components/layout-checks/check-shell";
 import { cutoutBox, skinFor } from "@/lib/layout-checks/device-skin";
-import { bandFor, clusterDots, scrollFor, worthMapping } from "@/lib/layout-checks/minimap";
+import { bandFor, clusterDots, scrollForThumb, worthMapping } from "@/lib/layout-checks/minimap";
 
 // A generic frame per platform — a bezelled rounded rectangle for phones, a
 // wider one for tablets, a browser chrome bar for desktop — sized to the
@@ -215,19 +215,71 @@ export function DeviceFrame({
 
   // Where the window is on the page, for the map. Read on scroll, one state
   // update per frame at most; the div itself is the truth in between.
-  const [scrollTop, setScrollTop] = useState(0);
+  // Read from the scroll container, never derived: its scrollHeight is the
+  // truth about how much page there is, whatever the image maths say, and
+  // clientHeight is the window. One state update per frame at most.
+  const [scroll, setScroll] = useState({ top: 0, height: 0, view: 0 });
   const raf = useRef(0);
-  const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const t = e.currentTarget.scrollTop;
-    cancelAnimationFrame(raf.current);
-    raf.current = requestAnimationFrame(() => setScrollTop(t));
+  const readScroll = () => {
+    const el = screenRef.current;
+    if (el) setScroll({ top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight });
   };
+  const onScroll = () => { cancelAnimationFrame(raf.current); raf.current = requestAnimationFrame(readScroll); };
+  // …and once the image has settled or the frame has been resized, before any
+  // scroll event has had a chance to fire.
+  useEffect(() => { readScroll(); }, [cssHeight, screenH]);
   const imageH = cssHeight === null ? null : cssHeight * scale;
   const showMap = minimap && !liveSrc && sized && worthMapping(imageH, screenH);
-  const jumpTo = (fraction: number) => {
+  const screenId = useId();
+
+  // The ruler IS the scrollbar: the screen's native one is hidden while the
+  // ruler is up, so there is one thing to scroll with, and it is the one
+  // that also knows where the findings are. Press anywhere on the track and
+  // the thumb comes to the pointer; press on the thumb and it follows the
+  // pointer from where it was grabbed; the arrow keys, PageUp/Down, Home and
+  // End do what they do on any scrollbar.
+  const drag = useRef<{ offset: number } | null>(null);
+  const thumbTo = (y: number, trackH: number, smooth: boolean) => {
     const el = screenRef.current;
-    if (!el || imageH === null) return;
-    el.scrollTo({ top: scrollFor(fraction, imageH, screenH), behavior: ms(200) === 0 ? "auto" : "smooth" });
+    if (!el || !drag.current) return;
+    const band = bandFor(el.scrollTop, el.scrollHeight, el.clientHeight, trackH);
+    const top = scrollForThumb(y - drag.current.offset, band.height, trackH, el.scrollHeight, el.clientHeight);
+    if (smooth) el.scrollTo({ top, behavior: ms(200) === 0 ? "auto" : "smooth" });
+    else el.scrollTop = top;
+  };
+  const onRulerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    const el = screenRef.current;
+    if (!el) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - r.top;
+    const band = bandFor(el.scrollTop, el.scrollHeight, el.clientHeight, r.height);
+    const onThumb = y >= band.top && y <= band.top + band.height;
+    drag.current = { offset: onThumb ? y - band.top : band.height / 2 };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    thumbTo(y, r.height, !onThumb);
+  };
+  const onRulerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    thumbTo(e.clientY - r.top, r.height, false);
+  };
+  const onRulerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    drag.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  const onRulerKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const el = screenRef.current;
+    if (!el) return;
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    const page = el.clientHeight * 0.9;
+    const step: Record<string, number | null> = {
+      ArrowDown: 40, ArrowUp: -40, PageDown: page, PageUp: -page, Home: -max, End: max,
+    };
+    const by = step[e.key];
+    if (by === null || by === undefined) return;
+    e.preventDefault();
+    el.scrollTo({ top: Math.min(max, Math.max(0, el.scrollTop + by)), behavior: ms(200) === 0 ? "auto" : "smooth" });
   };
 
   // Nothing on screen yet and nothing has given up: still fetching. Once any
@@ -303,10 +355,13 @@ export function DeviceFrame({
         <div
           ref={screenRef}
           aria-label={alt}
+          id={screenId}
           className={cn("relative bg-white",
             // A live page scrolls inside itself, the way it would on the
             // device; a capture is one tall image the frame scrolls instead.
-            liveSrc ? "overflow-hidden" : "overflow-y-auto overflow-x-hidden")}
+            liveSrc ? "overflow-hidden" : "overflow-y-auto overflow-x-hidden",
+            // One scrollbar, not two: while the ruler is up it is the scrollbar.
+            showMap && "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden")}
           style={{ width: screenW, height: screenH, borderRadius: skin.screenRadius }}
           onScroll={liveSrc ? undefined : onScroll}
         >
@@ -406,24 +461,31 @@ export function DeviceFrame({
           reads without being told. It says "where am I" and "where are the
           problems" without drawing anything of the page itself. A click on
           the track jumps there; a click on a mark selects that finding. */}
-      {showMap && imageH !== null && cssHeight !== null && (
+      {showMap && cssHeight !== null && (() => {
+        const pageH = scroll.height || imageH || 0, viewH = scroll.view || screenH;
+        const band = bandFor(scroll.top, pageH, viewH, screenH);
+        const range = Math.max(1, pageH - viewH);
+        return (
         <div
-          role="group"
-          aria-label="Page map"
-          className="relative shrink-0 cursor-pointer rounded-full bg-card-soft ring-1 ring-border-soft"
+          role="scrollbar"
+          aria-label="Page position"
+          aria-controls={screenId}
+          aria-orientation="vertical"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(Math.min(1, scroll.top / range) * 100)}
+          tabIndex={0}
+          className="group relative shrink-0 touch-none select-none rounded-full bg-card-soft ring-1 ring-border-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           style={{ width: MAP_W, height: screenH, marginTop: skin.bezelTop + chrome }}
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            jumpTo((e.clientY - r.top) / r.height);
-          }}
+          onPointerDown={onRulerDown}
+          onPointerMove={onRulerMove}
+          onPointerUp={onRulerUp}
+          onPointerCancel={onRulerUp}
+          onKeyDown={onRulerKey}
         >
-          {(() => {
-            const band = bandFor(scrollTop, imageH, screenH, screenH);
-            return (
-              <div aria-hidden className="absolute inset-x-0 rounded-full bg-text-primary/20"
-                   style={{ top: band.top, height: band.height }} />
-            );
-          })()}
+          <div aria-hidden
+               className="pointer-events-none absolute inset-x-0 cursor-grab rounded-full bg-text-primary/25 transition-colors group-hover:bg-text-primary/40 group-active:bg-text-primary/55"
+               style={{ top: band.top, height: band.height }} />
           {clusterDots(pins, viewport.width, cssHeight, MAP_W, screenH).map((d) => {
             const on = selectedPin !== null && d.ids.includes(selectedPin);
             const label = d.ns.length === 1 ? `Finding ${d.ns[0]}` : `Findings ${d.ns.join(", ")}`;
@@ -442,7 +504,8 @@ export function DeviceFrame({
             );
           })}
         </div>
-      )}
+        );
+      })()}
      </div>
     </div>
   );
