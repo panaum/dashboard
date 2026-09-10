@@ -49,3 +49,12 @@ test("all findings: nothing to fix still names the page", () => {
   assert.match(t, /Nothing to fix/);
   assert.match(t, /Page: https:\/\/e\.com/);
 });
+
+test("a link to the view goes last, after the page, when there is one", () => {
+  const one = findingText({ label: "Tap target 77 × 14", message: "x", selector: "a.cta", pageLevel: false, where: "iPhone 16", severity: "warn", pin: 2 } as never,
+                          "https://example.com/", "https://dash.example/layout-checks/abc?device=iphone-16&finding=1");
+  const lines = one.split("\n");
+  assert.equal(lines.at(-2), "Page: https://example.com/");
+  assert.equal(lines.at(-1), "View: https://dash.example/layout-checks/abc?device=iphone-16&finding=1");
+  assert.ok(!findingText({ label: "x", message: "x", selector: null, pageLevel: true, where: "w", severity: "info", pin: null } as never, "https://e.com/").includes("View:"));
+});

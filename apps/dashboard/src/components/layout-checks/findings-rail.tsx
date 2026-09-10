@@ -10,6 +10,7 @@ import { SectionHeading } from "@/components/layout-checks/check-shell";
 import { pinNumber, pinsFor, type Pin } from "@/lib/layout-checks/pins";
 import { reachLabel, reachTone, type Reach } from "@/lib/layout-checks/reach";
 import { allFindingsText, findingText, type CopyFinding } from "@/lib/layout-checks/copy-finding";
+import { viewLink } from "@/lib/layout-checks/deep-link";
 
 export type RailItem = RailFinding & {
   tag?: string;
@@ -131,7 +132,9 @@ export function FindingsRail({
       label: it.label, message: it.detail || it.message, selector: it.selector, pageLevel: it.pageLevel,
       where: where ?? deviceLabel, why: help?.why, fix: help?.fix, pin: pinNumber(pins, it.id), severity: it.severity,
     };
-    return findingText(f, url ?? "");
+    // The address bar already holds device and finding, so the link is this
+    // page as it stands — the reader opens exactly what the sender saw.
+    return findingText(f, url ?? "", viewLink({ finding: it.id }));
   };
   const copyAll = (): string => allFindingsText(
     items.map((it) => {
@@ -139,7 +142,7 @@ export function FindingsRail({
       return { label: it.label, message: it.detail || it.message, selector: it.selector, pageLevel: it.pageLevel,
                where: where ?? deviceLabel, why: help?.why, fix: help?.fix, pin: pinNumber(pins, it.id), severity: it.severity };
     }),
-    url ?? "", where ?? deviceLabel,
+    url ?? "", where ?? deviceLabel, viewLink({ finding: null }),
   );
 
   // A heading and the space under it group the list; a rule across the card

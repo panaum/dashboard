@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { readDeviceView, syncQuery } from "@/lib/layout-checks/deep-link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Columns3, ExternalLink, Globe, Loader2, Maximize2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -9,7 +11,7 @@ import { BarLabel, CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, 
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { Glance, type GlanceRow, type GlanceTone } from "@/components/layout-checks/glance";
-import { railItems } from "@/lib/layout-checks/findings-view";
+import { RAIL_CAP, railItems } from "@/lib/layout-checks/findings-view";
 import { pinsFor } from "@/lib/layout-checks/pins";
 import { auditedCount, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
@@ -69,13 +71,20 @@ export function DevicesPanel({
 
   const views = useMemo(() => devices.map(toView), [devices]);
   const groups = useMemo(() => groupDevices(views), [views]);
-  const [selected, setSelected] = useState<string | null>(() => defaultSelection(views));
+  // A link can name the device and the finding; the run decides whether they
+  // exist. Otherwise the worst device opens, as before.
+  const params = useSearchParams();
+  const asked = readDeviceView(params, views.map((v) => v.profileId));
+  const [selected, setSelected] = useState<string | null>(() => asked.device ?? defaultSelection(views));
   const current: DeviceView | undefined = views.find((v) => v.profileId === selected) ?? views[0];
   const stored = new Set(storedFolds);
 
   // Rail state is per device: a new device means no selected finding, the
   // list folded back to five, and no assumptions about the image until it loads.
-  const [finding, setFinding] = useState<string | null>(null);
+  const [finding, setFinding] = useState<string | null>(asked.finding);
+  // …and once chosen, the view goes back into the address bar, so any row on
+  // this page is a link that opens to exactly this.
+  useEffect(() => { syncQuery({ device: selected, finding }); }, [selected, finding]);
   const [expanded, setExpanded] = useState(false);
   const [imageMeta, setImageMeta] = useState<{ cssHeight: number } | null>(null);
   const pick = (profileId: string) => {
@@ -102,6 +111,8 @@ export function DevicesPanel({
   };
   // From a pin: select, never toggle off, and bring its row into view — the
   // list is under the stage, and the row may be a screen away.
+  // A pin or a map dot can name a finding the rail has folded away below its
+  // cap, so the rail is opened first; the existing scroll then has a row to go to.
   const selectFromPin = (id: string) => {
     setLive(false); setStreaming(false); setFinding(id);
     // After the row has finished opening, not before. It grows as it opens,
@@ -112,6 +123,7 @@ export function DevicesPanel({
         block: "center", behavior: ms(300) === 0 ? "auto" : "smooth",
       });
     }, ms(220));
+    if (items.findIndex((i) => i.id === id) >= RAIL_CAP) setExpanded(true);
   };
 
   // How widely each finding reaches across the matrix: one device's quirk, or
@@ -311,6 +323,7 @@ export function DevicesPanel({
             pins={showLive ? [] : pins}
             selectedPin={finding}
             onPinSelect={selectFromPin}
+            minimap
           />
           <StageCaption title={current.label}>
             {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
