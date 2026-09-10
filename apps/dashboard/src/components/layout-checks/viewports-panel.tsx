@@ -142,6 +142,9 @@ export function ViewportsPanel({
       expanded={expanded}
       onToggle={() => setExpanded((e) => !e)}
       drawableHeight={null}
+      showPins={false}
+      where={perWidth ? `${current}px · ${SHAPE_WORD[widthShape(current)]}` : `all ${asc.length} widths`}
+      url={url}
     />
   );
 
