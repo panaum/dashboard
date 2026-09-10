@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { ImageOff, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Shape } from "@/lib/layout-checks/devices-view";
 import { ms } from "@/lib/layout-checks/motion";
@@ -22,7 +23,9 @@ const BEZEL: Record<Shape, { x: number; y: number; radius: number; screen: numbe
 const CHROME_H = 34;          // the desktop title bar
 const FADE_MS = 150;
 
-type Layer = { key: number; src: string; loaded: boolean; failed: boolean };
+// `tried` — the fallback has already been swapped in, so a second error is
+// the end of the road. `dead` — nothing loaded and nothing left to try.
+type Layer = { key: number; src: string; loaded: boolean; tried: boolean; dead: boolean };
 export type Box = { x: number; y: number; width: number; height: number };
 
 /** A pin drawn on the capture: the number the list shows beside the same finding. */
@@ -108,7 +111,7 @@ export function DeviceFrame({
   // Crossfade: the new image mounts on top at opacity 0 and fades in once it
   // has loaded; the previous one is dropped after the fade. A source that
   // fails (the service pruned the run) is replaced by the stored fold.
-  const [layers, setLayers] = useState<Layer[]>(() => src ? [{ key: 0, src, loaded: false, failed: false }] : []);
+  const [layers, setLayers] = useState<Layer[]>(() => src ? [{ key: 0, src, loaded: false, tried: false, dead: false }] : []);
   const keyRef = useRef(0);
   useEffect(() => {
     setLayers((ls) => {
@@ -116,7 +119,7 @@ export function DeviceFrame({
       if (top && top.src === src) return ls;
       if (!src) return [];
       keyRef.current += 1;
-      return [...ls.slice(-1), { key: keyRef.current, src, loaded: false, failed: false }];
+      return [...ls.slice(-1), { key: keyRef.current, src, loaded: false, tried: false, dead: false }];
     });
   }, [src]);
   const screenRef = useRef<HTMLDivElement>(null);
@@ -148,10 +151,39 @@ export function DeviceFrame({
     setLayers((ls) => ls.map((l) => (l.key === key ? { ...l, loaded: true } : l)));
     window.setTimeout(() => setLayers((ls) => (ls.length > 1 && ls[ls.length - 1].key === key ? ls.slice(-1) : ls)), FADE_MS + 30);
   };
+  // The full page lives on the preview service and is pruned after a couple
+  // of runs; the fold lives in our own database. So a 503 here is ordinary,
+  // and the fold is the answer. When there is no fold either, the frame has
+  // to say so — a white rectangle is not an answer.
   const fail = (key: number) => {
-    setLayers((ls) => ls.map((l) => (l.key === key && !l.failed && fallbackSrc
-      ? { ...l, src: fallbackSrc, failed: true } : l.key === key ? { ...l, loaded: true, failed: true } : l)));
+    setLayers((ls) => ls.map((l) => {
+      if (l.key !== key) return l;
+      if (!l.tried && fallbackSrc && fallbackSrc !== l.src) return { ...l, src: fallbackSrc, tried: true };
+      return { ...l, dead: true };
+    }));
   };
+
+  // An <img> in server-rendered HTML starts loading before React hydrates, so
+  // its load or error can land before the handlers below are attached — and a
+  // missed error meant the fallback never fired and the frame stayed blank for
+  // good. After every render, ask the DOM what actually happened to anything
+  // still marked pending, which is the one source that cannot race us.
+  const imgs = useRef(new Map<number, HTMLImageElement>());
+  useEffect(() => {
+    for (const l of layers) {
+      if (l.loaded || l.dead) continue;
+      const el = imgs.current.get(l.key);
+      if (!el || !el.complete) continue;
+      if (el.naturalWidth > 0) settle(l.key, el);
+      else fail(l.key);
+    }
+  });
+
+  // Nothing on screen yet and nothing has given up: still fetching. Once any
+  // layer has painted, a swap crossfades over it rather than blanking it.
+  const top = layers[layers.length - 1];
+  const waiting = layers.length > 0 && !layers.some((l) => l.loaded && !l.dead) && !top?.dead;
+  const dead = Boolean(top?.dead) && !layers.some((l) => l.loaded && !l.dead);
 
   // A box is drawable only where the image exists: the fold image cannot show
   // a finding 3000px down the page. The rail says "below the fold" for those.
@@ -203,18 +235,43 @@ export function DeviceFrame({
             />
           ) : null}
           {!liveSrc && layers.length === 0 && (
-            <div className="grid h-full place-items-center px-4 text-center text-[12px] text-text-muted">No screenshot for this device</div>
+            <div className="grid h-full place-items-center px-4 text-center text-[12px] text-text-secondary">No screenshot for this device</div>
           )}
-          {!liveSrc && layers.map((l, i) => (
+
+          {/* Fetching the capture takes a few seconds — the full page is
+              refused before the fold is fetched — and a large frame with
+              nothing in it reads as a broken page. Say which it is. */}
+          {!liveSrc && waiting && (
+            <div role="status" className="absolute inset-0 grid place-items-center gap-2 bg-white px-4 text-center">
+              <span className="flex flex-col items-center gap-2">
+                <Loader2 className="size-5 animate-spin text-text-secondary" aria-hidden />
+                <span className="text-[12px] text-text-secondary">Loading the screenshot…</span>
+              </span>
+            </div>
+          )}
+          {!liveSrc && dead && (
+            <div className="absolute inset-0 grid place-items-center bg-white px-6 text-center">
+              <span className="flex flex-col items-center gap-2">
+                <ImageOff className="size-6 text-text-secondary" aria-hidden />
+                <span className="text-[13px] font-medium text-text-primary">This screenshot is no longer stored</span>
+                <span className="text-[12px] leading-snug text-text-secondary">
+                  The preview service keeps full pages for the two most recent runs. Run the check again to capture it.
+                </span>
+              </span>
+            </div>
+          )}
+
+          {!liveSrc && layers.filter((l) => !l.dead).map((l, i, shownLayers) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key={l.key}
+              ref={(el) => { if (el) imgs.current.set(l.key, el); else imgs.current.delete(l.key); }}
               src={l.src}
               alt={alt}
               draggable={false}
               onLoad={(e) => settle(l.key, e.currentTarget)}
               onError={() => fail(l.key)}
-              className={cn("block w-full select-none", i < layers.length - 1 ? "absolute inset-x-0 top-0" : "relative")}
+              className={cn("block w-full select-none", i < shownLayers.length - 1 ? "absolute inset-x-0 top-0" : "relative")}
               style={{ opacity: l.loaded ? 1 : 0, transition: `opacity ${ms(FADE_MS)}ms ease` }}
             />
           ))}
