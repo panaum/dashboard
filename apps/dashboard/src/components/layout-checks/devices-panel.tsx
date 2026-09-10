@@ -271,6 +271,7 @@ export function DevicesPanel({
                 <div key={c.profileId} className="flex min-w-0 flex-col items-center gap-2">
                   <DeviceFrame
                     shape="desktop"
+                    deviceId={c.profileId}
                     viewport={current.viewport}
                     src={s.fold ?? s.live}
                     fallbackSrc={s.fold ? s.live : null}
@@ -294,6 +295,7 @@ export function DevicesPanel({
         <motion.div key={`single-${current.profileId}`} {...swap} className="flex w-full flex-col items-center gap-3">
           <DeviceFrame
             shape={current.shape}
+            deviceId={current.profileId}
             viewport={current.viewport}
             src={src.fold ?? src.live}
             fallbackSrc={src.fold ? src.live : null}

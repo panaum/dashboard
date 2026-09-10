@@ -7,6 +7,7 @@ import type { Shape } from "@/lib/layout-checks/devices-view";
 import { ms } from "@/lib/layout-checks/motion";
 import { placePins, type Pin } from "@/lib/layout-checks/pins";
 import { useStageHeight } from "@/components/layout-checks/check-shell";
+import { cutoutBox, skinFor } from "@/lib/layout-checks/device-skin";
 
 // A generic frame per platform — a bezelled rounded rectangle for phones, a
 // wider one for tablets, a browser chrome bar for desktop — sized to the
@@ -15,11 +16,8 @@ import { useStageHeight } from "@/components/layout-checks/check-shell";
 // (~200ms) when the selection changes shape, and only the image inside
 // crossfades (150ms); the frame stays put.
 
-const BEZEL: Record<Shape, { x: number; y: number; radius: number; screen: number }> = {
-  phone: { x: 12, y: 36, radius: 40, screen: 26 },
-  tablet: { x: 16, y: 22, radius: 26, screen: 12 },
-  desktop: { x: 0, y: 0, radius: 12, screen: 0 },
-};
+const BODY = "#15181e";        // the handset body
+const HARDWARE = "#31363f";    // buttons, and the SE's earpiece
 const CHROME_H = 34;          // the desktop title bar
 const FADE_MS = 150;
 
@@ -37,6 +35,7 @@ const PIN_TONE: Record<PinMarker["severity"], string> = {
 
 export function DeviceFrame({
   shape,
+  deviceId = null,
   viewport,
   scaleRef,
   src,
@@ -56,6 +55,9 @@ export function DeviceFrame({
   children,
 }: {
   shape: Shape;
+  /** The profile this capture came from, so the body drawn is that device's.
+      Widths have no device and get a plain frame for their shape. */
+  deviceId?: string | null;
   viewport: { width: number; height: number };
   /** Receives the CSS-px → screen-px scale so overlays can be placed. */
   scaleRef?: (scale: number) => void;
@@ -95,12 +97,12 @@ export function DeviceFrame({
     return () => ro.disconnect();
   }, []);
 
-  const bezel = BEZEL[shape];
+  const skin = skinFor(deviceId, shape);
   const chrome = shape === "desktop" ? CHROME_H : 0;
   const room = useStageHeight();
   const ceiling = maxHeight === "fill" ? (room ?? 640) : maxHeight;
-  const maxW = Math.max(0, avail - 2 * bezel.x);
-  const maxH = Math.max(0, ceiling - 2 * bezel.y - chrome);
+  const maxW = Math.max(0, avail - 2 * skin.bezelX);
+  const maxH = Math.max(0, ceiling - skin.bezelTop - skin.bezelBottom - chrome);
   // "Fit" is the frame the column can hold; "actual" is the page's own pixels,
   // which is the only way to judge whether 11px text or a 24px target really
   // is too small. At 1:1 the frame may be wider than the column and the stage
@@ -201,6 +203,8 @@ export function DeviceFrame({
     }
   });
 
+  const cut = cutoutBox(skin, screenW);
+
   // Nothing on screen yet and nothing has given up: still fetching. Once any
   // layer has painted, a swap crossfades over it rather than blanking it.
   const top = layers[layers.length - 1];
@@ -215,16 +219,55 @@ export function DeviceFrame({
     <div ref={host} className={cn("w-full", zoom === "actual" && "overflow-x-auto")}>
       <div
         ref={frameRef}
-        className={cn("mx-auto bg-[#15181e] shadow-md", shape === "desktop" ? "rounded-xl" : "", frameClassName)}
+        className={cn("relative mx-auto shadow-md", shape === "desktop" ? "rounded-xl" : "", frameClassName)}
         style={{
-          width: screenW + 2 * bezel.x,
-          height: screenH + 2 * bezel.y + chrome,
-          borderRadius: bezel.radius,
-          padding: `${bezel.y}px ${bezel.x}px`,
+          width: screenW + 2 * skin.bezelX,
+          height: screenH + skin.bezelTop + skin.bezelBottom + chrome,
+          borderRadius: skin.radius,
+          padding: `${skin.bezelTop}px ${skin.bezelX}px ${skin.bezelBottom}px`,
+          background: BODY,
           visibility: sized ? "visible" : "hidden",
         }}
         aria-label={title}
       >
+        {/* The body. Decorative: it says which handset this is, and a screen
+            reader is told that by the caption under the frame. */}
+        {skin.buttons.map((b, i) => (
+          <span
+            key={i}
+            aria-hidden
+            style={{
+              position: "absolute", width: 3,
+              [b.side]: -2, top: `${b.top * 100}%`, height: `${b.height * 100}%`,
+              background: HARDWARE,
+              borderRadius: b.side === "left" ? "2px 0 0 2px" : "0 2px 2px 0",
+            }}
+          />
+        ))}
+        {cut && (
+          <span
+            aria-hidden
+            style={{
+              position: "absolute", left: skin.cutout === "hole-left" ? "28%" : "50%",
+              transform: "translateX(-50%)",
+              top: Math.max(2, Math.round((skin.bezelTop - cut.height) / 2)),
+              width: cut.width, height: cut.height,
+              background: skin.cutout === "earpiece" ? HARDWARE : "#05070a",
+              borderRadius: 999,
+            }}
+          />
+        )}
+        {skin.home && (
+          <span
+            aria-hidden
+            style={{
+              position: "absolute", left: "50%", transform: "translateX(-50%)",
+              bottom: Math.max(6, Math.round((skin.bezelBottom - 30) / 2)),
+              width: 30, height: 30, borderRadius: 999,
+              border: `2px solid ${HARDWARE}`,
+            }}
+          />
+        )}
         {shape === "desktop" && (
           <div className="flex items-center gap-2 px-3 text-[11px] text-white/70" style={{ height: CHROME_H }}>
             <span className="flex gap-1.5" aria-hidden><i className="size-2.5 rounded-full bg-[#ff5f57]" /><i className="size-2.5 rounded-full bg-[#febc2e]" /><i className="size-2.5 rounded-full bg-[#28c840]" /></span>
@@ -238,7 +281,7 @@ export function DeviceFrame({
             // A live page scrolls inside itself, the way it would on the
             // device; a capture is one tall image the frame scrolls instead.
             liveSrc ? "overflow-hidden" : "overflow-y-auto overflow-x-hidden")}
-          style={{ width: screenW, height: screenH, borderRadius: bezel.screen }}
+          style={{ width: screenW, height: screenH, borderRadius: skin.screenRadius }}
         >
           {liveSrc ? (
             // Laid out at the profile's real width and then scaled, so the
