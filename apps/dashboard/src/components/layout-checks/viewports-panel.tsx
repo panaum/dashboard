@@ -86,14 +86,14 @@ export function ViewportsPanel({
       <Glance size="tile" rows={glance} selected={current === null ? null : key(current)}
               onPick={(id) => pick(fromKey(id))} label="Width" />
       {!perWidth && (
-        <p className="basis-full text-[12.5px] leading-snug text-text-secondary">
+        <p className="basis-full text-[12px] leading-snug text-text-secondary">
           This run predates per-width findings, so the list below is everything found
           across all {asc.length} widths, not just this one. The next run will split them.
         </p>
       )}
     </>
   ) : (
-    <p className="text-[13px] text-text-muted">Run the check to see it here.</p>
+    <p className="text-[13px] text-text-secondary">Run the check to see it here.</p>
   );
 
   const frame = current !== null && runId ? (
@@ -126,7 +126,7 @@ export function ViewportsPanel({
   ) : null;
 
   const rail = current === null ? (
-    <p className="text-[13px] text-text-muted">No run yet.</p>
+    <p className="text-[13px] text-text-secondary">No run yet.</p>
   ) : (
     <FindingsRail
       deviceLabel={perWidth ? `${current}px` : "this run"}

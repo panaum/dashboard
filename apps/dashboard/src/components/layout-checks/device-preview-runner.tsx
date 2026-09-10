@@ -104,7 +104,7 @@ export function DevicePreviewRunner({
           <option value="primary">14 primary devices</option>
           <option value="all">All 15, including the 260px canary</option>
         </select>
-        <Button onClick={run} disabled={busy}>
+        <Button onClick={run} disabled={busy} variant="secondary" size="sm">
           {busy ? (
             <><RefreshCw className="size-4 animate-spin" /> Previewing…</>
           ) : (

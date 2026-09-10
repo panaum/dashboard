@@ -78,7 +78,7 @@ export function Glance({
          className={cn("flex flex-wrap items-center", tile ? "gap-x-4 gap-y-3" : "gap-x-4 gap-y-2")}>
       {rows.map((r) => (
         <div key={r.name} className="flex items-center gap-2">
-          {r.name && <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">{r.name}</span>}
+          {r.name && <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">{r.name}</span>}
           <div className={cn("flex", tile ? "flex-wrap gap-2" : "gap-1")}>
             {r.cells.map((c) => {
               const on = c.id === selected;
@@ -125,12 +125,11 @@ export function Glance({
         </div>
       ))}
       {legend && (
-        <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-secondary",
-                           tile ? "" : "border-l border-border-soft pl-3")}>
-          <span className="flex items-center gap-1.5"><i className={cn("inline-block size-2.5 rounded-[3px]", DOT.error)} />errors</span>
-          <span className="flex items-center gap-1.5"><i className={cn("inline-block size-2.5 rounded-[3px]", DOT.warning)} />warnings</span>
-          <span className="flex items-center gap-1.5"><i className={cn("inline-block size-2.5 rounded-[3px]", DOT.success)} />clean</span>
-          <span className="flex items-center gap-1.5"><i className={cn("inline-block size-2.5 rounded-[3px]", DOT.neutral)} />not captured</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-secondary">
+          <span className="flex items-center gap-2"><i className={cn("inline-block size-2 rounded-[3px]", DOT.error)} />errors</span>
+          <span className="flex items-center gap-2"><i className={cn("inline-block size-2 rounded-[3px]", DOT.warning)} />warnings</span>
+          <span className="flex items-center gap-2"><i className={cn("inline-block size-2 rounded-[3px]", DOT.success)} />clean</span>
+          <span className="flex items-center gap-2"><i className={cn("inline-block size-2 rounded-[3px]", DOT.neutral)} />not captured</span>
         </div>
       )}
     </div>
