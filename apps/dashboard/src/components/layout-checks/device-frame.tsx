@@ -4,6 +4,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } f
 import { cn } from "@/lib/utils";
 import type { Shape } from "@/lib/layout-checks/devices-view";
 import { ms } from "@/lib/layout-checks/motion";
+import { placePins, type Pin } from "@/lib/layout-checks/pins";
 
 // A generic frame per platform — a bezelled rounded rectangle for phones, a
 // wider one for tablets, a browser chrome bar for desktop — sized to the
@@ -23,6 +24,13 @@ const FADE_MS = 150;
 type Layer = { key: number; src: string; loaded: boolean; failed: boolean };
 export type Box = { x: number; y: number; width: number; height: number };
 
+/** A pin drawn on the capture: the number the list shows beside the same finding. */
+export type PinMarker = Pin & { label: string };
+
+const PIN_TONE: Record<PinMarker["severity"], string> = {
+  error: "bg-error", warn: "bg-warning", info: "bg-text-muted",
+};
+
 export function DeviceFrame({
   shape,
   viewport,
@@ -36,6 +44,10 @@ export function DeviceFrame({
   highlight = null,
   onImageMeta,
   frameClassName,
+  zoom = "fit",
+  pins = [],
+  onPinSelect,
+  selectedPin = null,
   children,
 }: {
   shape: Shape;
@@ -55,6 +67,12 @@ export function DeviceFrame({
   onImageMeta?: (meta: { cssHeight: number } | null) => void;
   /** Extra classes on the bezel — a light halo when the frame sits on a dark stage. */
   frameClassName?: string;
+  /** "actual" pins the capture at 1:1, so 11px text is 11px on screen. */
+  zoom?: "fit" | "actual";
+  /** Numbered markers over the findings that were measured somewhere. */
+  pins?: PinMarker[];
+  onPinSelect?: (id: string) => void;
+  selectedPin?: string | null;
   children?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -72,7 +90,12 @@ export function DeviceFrame({
   const chrome = shape === "desktop" ? CHROME_H : 0;
   const maxW = Math.max(0, avail - 2 * bezel.x);
   const maxH = Math.max(0, maxHeight - 2 * bezel.y - chrome);
-  const scale = avail > 0 ? Math.min(maxW / viewport.width, maxH / viewport.height) : 0;
+  // "Fit" is the frame the column can hold; "actual" is the page's own pixels,
+  // which is the only way to judge whether 11px text or a 24px target really
+  // is too small. At 1:1 the frame may be wider than the column and the stage
+  // scrolls to it.
+  const fit = avail > 0 ? Math.min(maxW / viewport.width, maxH / viewport.height) : 0;
+  const scale = zoom === "actual" ? (avail > 0 ? 1 : 0) : fit;
   const screenW = Math.round(viewport.width * scale);
   const screenH = Math.round(viewport.height * scale);
   useEffect(() => { scaleRef?.(scale); }, [scale, scaleRef]);
@@ -131,7 +154,7 @@ export function DeviceFrame({
   const drawable = highlight && cssHeight !== null && highlight.y < cssHeight && scale > 0 ? highlight : null;
 
   return (
-    <div ref={host} className="w-full">
+    <div ref={host} className={cn("w-full", zoom === "actual" && "overflow-x-auto")}>
       <div
         ref={frameRef}
         className={cn("mx-auto bg-[#15181e] shadow-md", shape === "desktop" ? "rounded-xl" : "", frameClassName)}
@@ -194,6 +217,31 @@ export function DeviceFrame({
           {!liveSrc && drawable && (
             <Highlight key={`${drawable.x},${drawable.y},${drawable.width},${drawable.height}`} box={drawable} scale={scale} container={screenRef} screenH={screenH} />
           )}
+          {/* The pins. Numbered in the list's order, so #1 is the worst thing
+              on the page, and clickable: the screenshot is the index. */}
+          {!liveSrc && cssHeight !== null && scale > 0 && placePins(pins, scale).map((pin) => {
+            const on = pin.id === selectedPin;
+            return (
+              <button
+                key={pin.id}
+                type="button"
+                aria-label={`Finding ${pin.n}: ${pin.label}`}
+                aria-pressed={on}
+                onClick={() => onPinSelect?.(pin.id)}
+                className={cn(
+                  "absolute z-10 grid size-[22px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full text-[11px] font-bold tabular-nums text-white shadow-[0_2px_6px_rgba(0,0,0,0.45)] ring-2 ring-white transition-transform duration-200 hover:scale-125 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+                  PIN_TONE[pin.severity],
+                  on && "z-20 scale-125 ring-accent",
+                )}
+                style={{
+                  left: Math.max(11, Math.min(screenW - 11, pin.left)),
+                  top: Math.max(11, pin.top),
+                }}
+              >
+                {pin.n}
+              </button>
+            );
+          })}
           {children}
         </div>
       </div>

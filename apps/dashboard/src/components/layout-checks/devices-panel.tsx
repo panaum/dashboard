@@ -2,15 +2,18 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Columns3, ExternalLink, Globe, Loader2, ShieldAlert } from "lucide-react";
+import { Columns3, ExternalLink, Globe, Loader2, Maximize2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
 import { BarLabel, CheckShell, ON_STAGE, revealStage, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
-import { DeviceFrame } from "@/components/layout-checks/device-frame";
+import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { Glance, type GlanceRow, type GlanceTone } from "@/components/layout-checks/glance";
 import { railItems } from "@/lib/layout-checks/findings-view";
+import { pinsFor } from "@/lib/layout-checks/pins";
+import { auditedCount, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
+import { ms } from "@/lib/layout-checks/motion";
 import { LiveSession } from "@/components/layout-checks/live-session";
 import { comparableEngines, engineColumns } from "@/lib/layout-checks/engines-view";
 import { DevicePreviewRunner } from "@/components/layout-checks/device-preview-runner";
@@ -78,10 +81,47 @@ export function DevicesPanel({
   const pick = (profileId: string) => {
     setSelected(profileId); setFinding(null); setImageMeta(null); setColMeta({});
     setStreaming(false);            // the session is pinned to one profile
+    setZoom("fit");                 // a new device is a new frame, fitted
   };
   const currentRaw = devices.find((d) => d.profile_id === current?.profileId);
   const items = useMemo(() => railItems(currentRaw?.findings ?? []), [currentRaw]);
   const selectedItem = items.find((i) => i.id === finding) ?? null;
+
+  // The same numbering the list shows, so a pin and its row cannot disagree.
+  const pins: PinMarker[] = useMemo(
+    () => pinsFor(items, imageMeta?.cssHeight ?? null)
+      .map((pin) => ({ ...pin, label: items.find((i) => i.id === pin.id)?.label ?? "" })),
+    [items, imageMeta],
+  );
+  const selectFinding = (id: string) => {
+    // A box is drawn on the capture, so choosing a finding comes back from
+    // the live page rather than selecting into nothing.
+    setLive(false);
+    setStreaming(false);
+    setFinding((cur) => (cur === id ? null : id));
+  };
+  // From a pin: select, never toggle off, and bring its row into view — the
+  // list is under the stage, and the row may be a screen away.
+  const selectFromPin = (id: string) => {
+    setLive(false); setStreaming(false); setFinding(id);
+    // After the row has finished opening, not before. It grows as it opens,
+    // and a page scrolled to its old end cannot centre a row that is about to
+    // get taller — scroll once the document is its final height.
+    window.setTimeout(() => {
+      document.getElementById(`finding-${id}`)?.scrollIntoView({
+        block: "center", behavior: ms(300) === 0 ? "auto" : "smooth",
+      });
+    }, ms(220));
+  };
+
+  // How widely each finding reaches across the matrix: one device's quirk, or
+  // the whole site. Computed from every audited device in this run.
+  const reach = useMemo(() => reachMap(devices), [devices]);
+  const audited = useMemo(() => auditedCount(devices), [devices]);
+  const reachOf = (it: { rule: string; selector: string | null; pageLevel: boolean }): Reach | null => {
+    const n = reach.get(reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined));
+    return n ? { devices: n, audited } : null;
+  };
 
   // Engine comparison: desktop only, where the three engines rendered the
   // same width. The toggle is offered nowhere else — there is no Firefox
@@ -109,6 +149,9 @@ export function DevicesPanel({
   // to the iframe, which is your own browser at that width and says so.
   const canStream = current?.engine === "chromium";
   const [streaming, setStreaming] = useState(false);
+  // Fit is the frame the stage can hold; 1:1 is the page's own pixels, the
+  // only honest way to judge "11px text" or a 24px tap target by eye.
+  const [zoom, setZoom] = useState<"fit" | "actual">("fit");
 
   const goLive = async () => {
     if (streaming) { setStreaming(false); return; }
@@ -258,6 +301,10 @@ export function DevicesPanel({
             highlight={selectedItem?.box ?? null}
             onImageMeta={setImageMeta}
             frameClassName={ON_STAGE}
+            zoom={showLive ? "fit" : zoom}
+            pins={showLive ? [] : pins}
+            selectedPin={finding}
+            onPinSelect={selectFromPin}
           />
           <StageCaption title={current.label}>
             {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
@@ -279,6 +326,15 @@ export function DevicesPanel({
           title="The three engines side by side at this width."
         >
           <Columns3 className="size-4" aria-hidden /> Compare engines
+        </StageButton>
+      )}
+      {!showCompare && !showStream && !showLive && (
+        <StageButton
+          on={zoom === "actual"}
+          onClick={() => setZoom((z) => (z === "actual" ? "fit" : "actual"))}
+          title={zoom === "actual" ? "Back to a frame that fits the stage." : "Show the capture at the page's own pixel size — how big the text and buttons really are."}
+        >
+          <Maximize2 className="size-4" aria-hidden /> {zoom === "actual" ? "Fit" : "Actual size"}
         </StageButton>
       )}
       {!showCompare && (
@@ -329,6 +385,9 @@ export function DevicesPanel({
           onToggle={() => setExpanded((e) => !e)}
           drawableHeight={colMeta[c.engine] ?? null}
           columns={false}
+          showPins={false}
+          where={`${viewportName} · ${c.engineLabel} · ${current.viewportLabel}`}
+          url={url}
         />
       ))}
     </div>
@@ -353,18 +412,13 @@ export function DevicesPanel({
         deviceLabel={current.label}
         items={items}
         selectedId={finding}
-        onSelect={(id) => {
-          // A box is drawn on the capture, so choosing a finding comes back
-          // from the live page rather than selecting into nothing — and
-          // brings the stage back if the list has scrolled it away.
-          setLive(false);
-          setStreaming(false);
-          if (id !== finding) revealStage();
-          setFinding((cur) => (cur === id ? null : id));
-        }}
+        onSelect={(id) => { if (id !== finding) revealStage(); selectFinding(id); }}
         expanded={expanded}
         onToggle={() => setExpanded((e) => !e)}
         drawableHeight={imageMeta?.cssHeight ?? null}
+        where={`${current.label} · ${current.engineLabel} · ${current.viewportLabel}`}
+        url={url}
+        reachOf={reachOf}
       />
     )
   ) : (
