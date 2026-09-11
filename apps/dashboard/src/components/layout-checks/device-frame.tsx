@@ -432,7 +432,7 @@ export function DeviceFrame({
           )}
           {/* The pins. Numbered in the list's order, so #1 is the worst thing
               on the page, and clickable: the screenshot is the index. */}
-          {!liveSrc && cssHeight !== null && scale > 0 && placePins(pins, scale).map((pin) => {
+          {!liveSrc && cssHeight !== null && scale > 0 && placePins(pins, scale, screenW).map((pin) => {
             const on = pin.id === selectedPin;
             return (
               <button
