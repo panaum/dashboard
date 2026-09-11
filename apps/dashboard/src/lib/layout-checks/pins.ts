@@ -52,10 +52,12 @@ export function pinNumber(pins: Pin[], id: string): number | null {
 export type Placed = { left: number; top: number };
 export type PlacedPin = Pin & Placed;
 
-/** How close two pins may sit before they count as the same spot, and how far
- *  apart to fan them, both in screen pixels. A pin is 22px across. */
+/** How close two pins may sit before they count as the same spot, how far
+ *  apart to fan them, and how far a pin's centre must stay from the screen's
+ *  edge — all in screen pixels. A pin is 22px across. */
 const GAP = 20;
 const STEP = 22;
+const EDGE = 11;
 
 /** Where each pin actually goes on the capture, in screen pixels.
  *
@@ -64,18 +66,36 @@ const STEP = 22;
  *  boxes are then identical. Drawn honestly at the measured point they land on
  *  top of one another: you see the last one, and only the last one can be
  *  clicked. So a pin that lands on an occupied spot steps to the right until
- *  it is clear, which reads as what it is: three things about this element. */
-export function placePins<T extends Pin>(pins: T[], scale: number): (T & Placed)[] {
+ *  it is clear, which reads as what it is: several things about this element.
+ *
+ *  A page's header is the worst case: half a dozen faults inside the top
+ *  40 pixels, every pin clamped to the same line, marching off the right edge
+ *  of a 330px phone. So fanning WRAPS — when the next step would cross the
+ *  edge, the pin drops a row and starts again from where the run began. Seven
+ *  findings in a header read as a small block of numbers instead of a row
+ *  running off the screen, where the frame would have stacked the overflow on
+ *  one spot. `width` is the drawn screen; without it the old single-row
+ *  behaviour stands. */
+export function placePins<T extends Pin>(pins: T[], scale: number, width?: number): (T & Placed)[] {
   const placed: (T & Placed)[] = [];
+  const max = width === undefined ? Infinity : Math.max(EDGE, width - EDGE);
   for (const pin of pins) {
-    const top = pin.box.y * scale;
-    let left = pin.box.x * scale;
-    // Bounded: a spot with a dozen findings stops fanning rather than marching
-    // off the screen, and the last few sit together.
-    for (let guard = 0; guard < 12; guard += 1) {
+    // The measured point, untouched: the frame is what keeps a pin inside its
+    // own screen, and it has done that from the start. This only decides where
+    // a pin goes when the measured point is already taken.
+    const left0 = pin.box.x * scale;
+    let left = left0;
+    let top = pin.box.y * scale;
+    // Bounded either way. With a width there are rows to wrap into, so the
+    // budget covers two of them; without one there is nowhere to go but right,
+    // and the old limit stands so a crowded spot stops rather than marching
+    // off the page.
+    const tries = width === undefined ? 12 : 24;
+    for (let guard = 0; guard < tries; guard += 1) {
       const clash = placed.some((q) => Math.abs(q.left - left) < GAP && Math.abs(q.top - top) < GAP);
       if (!clash) break;
       left += STEP;
+      if (left > max) { left = left0; top += STEP; }
     }
     placed.push({ ...pin, left, top });
   }

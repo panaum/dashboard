@@ -71,3 +71,33 @@ test("a crowded spot stops fanning rather than marching off the page", () => {
   const placed = placePins(pinsFor(many, null), 1);
   assert.ok(placed.every((p) => p.left <= 10 + 12 * 22));
 });
+
+test("a long run of pins on one element wraps instead of stacking at the edge", () => {
+  // Eighteen findings on one element: 22px apart from x=8 they run past the
+  // right edge of a 330px phone at the sixteenth, where the frame used to
+  // clamp every remaining pin onto the same spot.
+  const pins = Array.from({ length: 18 }, (_, i) => ({
+    id: String(i), n: i + 1, severity: "warn" as const, box: { x: 8, y: 40, width: 60, height: 12 },
+  }));
+  const placed = placePins(pins, 1, 330);
+  assert.ok(placed.every((p) => p.left <= 330 - 11), "no pin fans past the right edge");
+  assert.equal(new Set(placed.map((p) => `${p.left},${p.top}`)).size, placed.length, "every pin has its own spot");
+  assert.ok(new Set(placed.map((p) => p.top)).size > 1, "it wrapped to more than one row");
+  assert.equal(placed[0].left, 8, "the first pin still sits where it was measured");
+  assert.equal(placed[0].top, 40);
+
+  // Without a width it is the old behaviour: one row, and once the run hits
+  // its bound the rest share a spot — which is the thing wrapping avoids.
+  const flat = placePins(pins, 1);
+  assert.equal(new Set(flat.map((p) => p.top)).size, 1, "one row");
+  assert.ok(new Set(flat.map((p) => p.left)).size < flat.length, "some pins share a spot");
+});
+
+test("without a width, fanning stays the single row it was", () => {
+  const pins = Array.from({ length: 3 }, (_, i) => ({
+    id: String(i), n: i + 1, severity: "warn" as const, box: { x: 100, y: 400, width: 10, height: 10 },
+  }));
+  const placed = placePins(pins, 1);
+  assert.deepEqual(placed.map((p) => p.top), [400, 400, 400]);
+  assert.deepEqual(placed.map((p) => p.left), [100, 122, 144]);
+});
