@@ -480,7 +480,7 @@ export function DeviceFrame({
           aria-valuemax={100}
           aria-valuenow={Math.round(Math.min(1, scroll.top / range) * 100)}
           tabIndex={0}
-          className="group relative shrink-0 touch-none select-none rounded-full bg-card-soft ring-1 ring-border-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="group relative shrink-0 touch-none select-none rounded-full bg-white/10 ring-1 ring-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-purple"
           style={{ width: MAP_W, height: screenH, marginTop: skin.bezelTop + chrome }}
           onPointerDown={onRulerDown}
           onPointerMove={onRulerMove}
@@ -489,7 +489,7 @@ export function DeviceFrame({
           onKeyDown={onRulerKey}
         >
           <div aria-hidden
-               className="pointer-events-none absolute inset-x-0 cursor-grab rounded-full bg-text-primary/25 transition-colors group-hover:bg-text-primary/40 group-active:bg-text-primary/55"
+               className="pointer-events-none absolute inset-x-0 cursor-grab rounded-full bg-white/45 transition-colors group-hover:bg-white/65 group-active:bg-white/80"
                style={{ top: band.top, height: band.height }} />
           {clusterDots(pins, viewport.width, cssHeight, MAP_W, screenH).map((d) => {
             const on = selectedPin !== null && d.ids.includes(selectedPin);

@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
 import { useSearchParams } from "next/navigation";
 import { readDeviceView, syncQuery } from "@/lib/layout-checks/deep-link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Columns3, ExternalLink, Globe, Loader2, Maximize2, ShieldAlert } from "lucide-react";
+import { ChevronDown, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
+import { BarLabel } from "@/components/layout-checks/check-shell";
 import { HealthMatrix } from "@/components/layout-checks/health-matrix";
 import { coverage } from "@/lib/layout-checks/matrix";
 import type { TrendPoint } from "@/lib/layout-checks/sparkline";
@@ -25,7 +27,7 @@ import {
 } from "@/lib/layout-checks/run-progress";
 import type { TabVerdict } from "@/lib/layout-checks/verdict";
 import {
-  defaultSelection, toView,
+  defaultSelection, groupDevices, toView,
   type DeviceInput, type DeviceView,
 } from "@/lib/layout-checks/devices-view";
 
@@ -89,6 +91,9 @@ export function DevicesPanel({
   const [imageMeta, setImageMeta] = useState<{ cssHeight: number } | null>(null);
   // What the frame is showing right now, for the rail's element crops.
   const [shownSrc, setShownSrc] = useState<string | null>(null);
+  // The matrix answers a second question, so it opens on request and closes
+  // once it has been used to choose a device.
+  const [health, setHealth] = useState(false);
   const pick = (profileId: string) => {
     setSelected(profileId); setFinding(null); setImageMeta(null); setColMeta({});
     setStreaming(false);            // the session is pinned to one profile
@@ -215,7 +220,57 @@ export function DevicesPanel({
 
   // The matrix is the picker. What is left of the old picker row is the run
   // line, which only exists while a run is on.
-  const picker = views.length ? runLine : (
+  // The device is what this page is about, so picking one is a single line:
+  // a dropdown that names it and says what is wrong with it. The matrix is
+  // the second question — how this device compares with the other thirteen —
+  // and it stays folded until it is asked for.
+  const LIST_TONE: Record<string, ListTone | undefined> = {
+    error: "error", warning: "warning", clean: "success", inconclusive: undefined,
+  };
+  const options: ListOption[] = groupDevices(views).flatMap(({ group, devices: ds }) => ds.map((d): ListOption => {
+    const rs = runState(d);
+    return {
+      id: d.profileId,
+      label: d.label,
+      sub: `${d.engineLabel} · ${d.viewportLabel}${
+        rs ? ` · ${rs === "captured" ? "captured" : rs === "failed" ? "capture failed" : "waiting"}`
+        : d.severity === "error" ? ` · ${d.errors} error${d.errors === 1 ? "" : "s"}`
+        : d.severity === "warning" ? ` · ${d.warnings} warning${d.warnings === 1 ? "" : "s"}`
+        : d.severity === "inconclusive" ? " · not captured" : " · clean"}`,
+      tone: rs ? (rs === "failed" ? "error" : rs === "captured" ? "info" : "neutral") : LIST_TONE[d.severity],
+      group,
+    };
+  }));
+
+    const healthToggle = views.length ? (
+    <button
+      type="button"
+      aria-expanded={health}
+      aria-controls="device-health"
+      onClick={() => setHealth((h) => !h)}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-2 rounded-full border border-border-soft bg-card px-4 py-2 text-[13px] font-medium text-text-secondary shadow-xs transition-colors hover:bg-card-soft hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+        health && "bg-card-soft text-text-primary",
+      )}
+    >
+      <LayoutGrid className="size-4" aria-hidden />
+      Device health
+      <span className="hidden text-[12px] text-text-secondary @3xl:inline">all {views.length} devices, every check</span>
+      <ChevronDown aria-hidden className={cn("size-3.5 transition-transform", health && "rotate-180")} />
+    </button>
+  ) : null;
+
+const picker = views.length ? (
+    <>
+      <div className="flex w-full items-center gap-2.5 @3xl:w-auto">
+        <BarLabel>Device</BarLabel>
+        <Listbox label="Device" options={options} value={current?.profileId ?? null} onChange={pick}
+                 className="min-w-0 flex-1 @3xl:w-[19rem] @3xl:flex-none" />
+      </div>
+      {healthToggle}
+      {runLine}
+    </>
+  ) : (
     <p className="text-[13px] text-text-secondary">
       {running ? "The first run has no devices to list yet." : "Run the check to see it here."}
     </p>
@@ -230,15 +285,22 @@ export function DevicesPanel({
       {cov.inconclusive > 0 && <span className={cn(chip, "bg-card-soft text-text-secondary")}>{cov.inconclusive} not captured</span>}
     </>
   ) : null;
-  const matrix = views.length ? (
-    <HealthMatrix
-      views={views}
-      findingsOf={(id) => devices.find((d) => d.profile_id === id)?.findings ?? []}
-      statusOf={(id) => devices.find((d) => d.profile_id === id)?.status ?? "ok"}
-      selected={current?.profileId ?? null}
-      onPick={pick}
-      runState={running ? runState : undefined}
-    />
+  const matrix = views.length && health ? (
+    <div className="flex flex-col gap-3">
+      {(
+        <section id="device-health" aria-label="Device health"
+                 className="rounded-2xl border border-border-soft bg-card px-4 py-4 shadow-xs @3xl:px-6">
+          <HealthMatrix
+            views={views}
+            findingsOf={(id) => devices.find((d) => d.profile_id === id)?.findings ?? []}
+            statusOf={(id) => devices.find((d) => d.profile_id === id)?.status ?? "ok"}
+            selected={current?.profileId ?? null}
+            onPick={(id) => { pick(id); setHealth(false); }}
+            runState={running ? runState : undefined}
+          />
+        </section>
+      )}
+    </div>
   ) : null;
 
   // ── Stage ──────────────────────────────────────────────────────────────────
