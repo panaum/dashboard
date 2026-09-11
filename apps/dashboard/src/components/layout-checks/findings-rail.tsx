@@ -208,10 +208,15 @@ export function FindingsRail({
           }
           const help = on ? explain(kind, it.rule) : null;
           // A picture of the element, from the same capture the frame shows.
-          const crop = thumbs?.src && it.box && !it.pageLevel ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, 88, 64) : null;
+          // One window for the whole column, so the rows are comparable: a
+          // little under half the page's width, whatever the element is.
+          const crop = thumbs?.src && it.box && !it.pageLevel
+            ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, 88, 64, 20, 140, Math.round(thumbs.pageWidth * 0.45)) : null;
           // The open row's picture: wider, with the element outlined on it.
           const big = on && thumbs?.src && it.box && !it.pageLevel
-            ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, BIG_W, BIG_H, 24, Math.min(thumbs.pageWidth, 300)) : null;
+            // The opened row shows the element across the page's full width,
+            // so it is always the same view and always in context.
+            ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, BIG_W, BIG_H, 24, 300, thumbs.pageWidth) : null;
           const outline = big && it.box ? boxWithin(big, it.box) : null;
           const check = checkFor(it.rule);
           const others = on ? (alsoOn?.(it) ?? []) : [];

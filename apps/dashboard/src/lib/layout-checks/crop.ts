@@ -30,15 +30,23 @@ export function boxWithin(crop: Crop, box: Box): Rect {
   return { left: Math.round(left), top: Math.round(top), width: Math.max(0, Math.round(right - left)), height: Math.max(0, Math.round(bottom - top)) };
 }
 
-/** A `w`×`h` thumb window centred on `box`, with `pad` CSS px of context
- *  around it and never narrower than `minWidth`. Clamped to the page, so an
- *  element at the top edge shows the top edge rather than blank. Null when
- *  the box lies below the image we actually have. */
+/** A `w`×`h` thumb window centred on `box`. Clamped to the page, so an element
+ *  at the top edge shows the top edge rather than blank. Null when the box
+ *  lies below the image we actually have.
+ *
+ *  `window` fixes how much page the thumb covers, in CSS px. Give it, and
+ *  every thumb in a list is drawn at the SAME scale — which is what makes a
+ *  column of them comparable. Sizing the window to each element instead (the
+ *  `pad`/`minWidth` fallback) looks tidy one row at a time and ragged in a
+ *  column: a 77px link and a 372px image are blown up 2.2× differently, so the
+ *  same 12px text ends up two sizes on the same screen. */
 export function cropFor(box: Box, pageWidth: number, pageHeight: number | null, w: number, h: number,
-                        pad = 20, minWidth = 140): Crop | null {
+                        pad = 20, minWidth = 140, window?: number): Crop | null {
   if (pageWidth <= 0 || w <= 0 || h <= 0) return null;
   if (pageHeight !== null && box.y >= pageHeight) return null;
-  const winW = Math.min(pageWidth, Math.max(minWidth, box.width + 2 * pad));
+  const winW = window !== undefined
+    ? Math.min(pageWidth, Math.max(40, window))
+    : Math.min(pageWidth, Math.max(minWidth, box.width + 2 * pad));
   const winH = winW * (h / w);
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
   let x = cx - winW / 2, y = cy - winH / 2;

@@ -24,6 +24,25 @@ test("a wide element gets a window wide enough to hold it", () => {
   assert.equal(+c.scale.toFixed(3), +(88 / 412).toFixed(3));
 });
 
+test("a fixed window draws every element at the same scale, whatever its size", () => {
+  const small = cropFor({ x: 20, y: 500, width: 77, height: 14 }, 412, 20000, 88, 64, 20, 140, 185);
+  const wide = cropFor({ x: 20, y: 900, width: 372, height: 200 }, 412, 20000, 88, 64, 20, 140, 185);
+  assert.ok(small && wide);
+  assert.equal(small.scale, wide.scale, "same scale for a 77px link and a 372px image");
+  assert.equal(small.w, 185); assert.equal(wide.w, 185);
+  // …where sizing the window to the element does not
+  const a = cropFor({ x: 20, y: 500, width: 77, height: 14 }, 412, 20000, 88, 64);
+  const bWide = cropFor({ x: 20, y: 900, width: 372, height: 200 }, 412, 20000, 88, 64);
+  assert.ok(a && bWide);
+  assert.notEqual(a.scale, bWide.scale);
+});
+
+test("a window wider than the page is the page, and a silly one is still usable", () => {
+  const full = cropFor({ x: 0, y: 10, width: 40, height: 10 }, 412, 20000, 272, 136, 24, 300, 9999);
+  assert.equal(full?.w, 412);
+  assert.equal(cropFor({ x: 0, y: 10, width: 40, height: 10 }, 412, 20000, 88, 64, 20, 140, 1)?.w, 40);
+});
+
 test("nothing to crop below the image we have", () => {
   assert.equal(cropFor({ x: 0, y: 3000, width: 50, height: 50 }, 412, 892, 88, 64), null);
   assert.ok(cropFor({ x: 0, y: 300, width: 50, height: 50 }, 412, 892, 88, 64));
