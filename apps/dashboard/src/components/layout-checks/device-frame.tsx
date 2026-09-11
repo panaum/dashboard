@@ -57,6 +57,7 @@ export function DeviceFrame({
   selectedPin = null,
   minimap = false,
   onShown,
+  onPartial,
   children,
 }: {
   shape: Shape;
@@ -94,6 +95,9 @@ export function DeviceFrame({
   /** The image the frame is actually showing (fold, then the full page once
       it arrives) — so the rail can crop its thumbnails from the same one. */
   onShown?: (src: string | null) => void;
+  /** True while the frame is showing only the fold because the full page was
+      asked for and could not be had — so the caption can say so. */
+  onPartial?: (partial: boolean) => void;
   children?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -137,16 +141,22 @@ export function DeviceFrame({
   // drawable, and when it does not, nothing happens — the fold was never
   // wrong, only shorter.
   const [up, setUp] = useState<{ base: string; url: string } | null>(null);
+  // The full page was asked for and refused: the fold is all there is, and
+  // the frame must not pretend a one-screen capture is the whole page.
+  const [upFailed, setUpFailed] = useState<string | null>(null);
   useEffect(() => {
     if (!src || !upgradeSrc || upgradeSrc === src) return;
     const img = new Image();
     let alive = true;
     img.onload = () => { if (alive) setUp({ base: src, url: upgradeSrc }); };
+    img.onerror = () => { if (alive) setUpFailed(src); };
     img.src = upgradeSrc;
-    return () => { alive = false; img.onload = null; };
+    return () => { alive = false; img.onload = null; img.onerror = null; };
   }, [src, upgradeSrc]);
   const shown = up && up.base === src ? up.url : src;
   useEffect(() => { onShown?.(shown); }, [shown, onShown]);
+  const partial = Boolean(src && upgradeSrc && upgradeSrc !== src && shown === src && upFailed === src);
+  useEffect(() => { onPartial?.(partial); }, [partial, onPartial]);
 
   const [layers, setLayers] = useState<Layer[]>(() => shown ? [{ key: 0, src: shown, loaded: false, tried: false, dead: false }] : []);
   const keyRef = useRef(0);

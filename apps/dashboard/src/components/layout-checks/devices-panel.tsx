@@ -94,6 +94,9 @@ export function DevicesPanel({
   // The matrix answers a second question, so it opens on request and closes
   // once it has been used to choose a device.
   const [health, setHealth] = useState(false);
+  // Only the fold could be had for this device: said under the frame, once,
+  // rather than left to be inferred from a page that stops after one screen.
+  const [partial, setPartial] = useState(false);
   const pick = (profileId: string) => {
     setSelected(profileId); setFinding(null); setImageMeta(null); setColMeta({});
     setStreaming(false);            // the session is pinned to one profile
@@ -378,11 +381,17 @@ const picker = views.length ? (
             selectedPin={finding}
             onPinSelect={selectFromPin}
             onShown={setShownSrc}
+            onPartial={setPartial}
             minimap
           />
           <StageCaption title={current.label}>
             {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
             {showLive && <span className="mt-1 block text-[11px]">{LIVE_CAVEAT}</span>}
+            {!showLive && partial && (
+              <span className="mt-1 block text-[11px] text-warning-strong">
+                First screen only — the full page for this run is no longer on the preview service. Run the check again to capture it.
+              </span>
+            )}
           </StageCaption>
         </motion.div>
       )}
