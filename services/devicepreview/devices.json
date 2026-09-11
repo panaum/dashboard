@@ -203,7 +203,8 @@
       "hasTouch": true,
       "userAgent": "Mozilla/5.0 (Linux; Android 15; SM-F741B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
       "verified": false,
-      "browserstack": null
+      "browserstack": null,
+      "browserstackAbsent": "BrowserStack lists no Galaxy Z Flip on any of its products (checked 2026-09-11); only the Z Fold, which is a different hinge and a different aspect ratio. Emulation only until they stock one."
     },
     {
       "id": "galaxy-z-flip-cover",
@@ -222,7 +223,8 @@
       "userAgent": "Mozilla/5.0 (Linux; Android 15; SM-F741B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
       "verified": false,
       "_note": "Deliberately absurd. The canary for pages that break below ~320px. Runs only with --include-edge.",
-      "browserstack": null
+      "browserstack": null,
+      "browserstackAbsent": "BrowserStack lists no Galaxy Z Flip on any of its products (checked 2026-09-11), so the cover screen has no real-hardware equivalent either. Emulation only."
     },
     {
       "id": "xiaomi-15",
@@ -240,7 +242,8 @@
       "hasTouch": true,
       "userAgent": "Mozilla/5.0 (Linux; Android 15; 24129PN74G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
       "verified": false,
-      "browserstack": null
+      "browserstack": null,
+      "browserstackAbsent": "BrowserStack's Screenshots list carries no Xiaomi, Redmi or Poco handset (checked 2026-09-11). Emulation only: pointing this profile at another maker's phone would label a Samsung capture 'Xiaomi 15'."
     },
     {
       "id": "galaxy-tab-s10-plus",
