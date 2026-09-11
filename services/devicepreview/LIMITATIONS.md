@@ -40,7 +40,10 @@ tool measured, tried, or learned the hard way; none is hypothetical.
   checked against their live list at run time: an exact match is used, the
   same device on its latest non-beta OS is used with a note, and an unknown
   device is skipped naming the closest ones. Galaxy Z Flip and Xiaomi are not
-  offered there.
+  offered there at all, so those three profiles are emulation-only and can
+  never be confirmed against real hardware; each carries a dated
+  `browserstackAbsent` reason in `devices.json`, which is what the skip line
+  prints. Re-checking the fleet is a one-line edit to that field.
 - The backend has been tested against a faithful fake of the documented API.
   It has not yet been run against a live account.
 
