@@ -56,6 +56,7 @@ export function DeviceFrame({
   onPinSelect,
   selectedPin = null,
   minimap = false,
+  onShown,
   children,
 }: {
   shape: Shape;
@@ -90,6 +91,9 @@ export function DeviceFrame({
   selectedPin?: string | null;
   /** Draw the page map beside the body when the page is taller than the window. */
   minimap?: boolean;
+  /** The image the frame is actually showing (fold, then the full page once
+      it arrives) — so the rail can crop its thumbnails from the same one. */
+  onShown?: (src: string | null) => void;
   children?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -142,6 +146,7 @@ export function DeviceFrame({
     return () => { alive = false; img.onload = null; };
   }, [src, upgradeSrc]);
   const shown = up && up.base === src ? up.url : src;
+  useEffect(() => { onShown?.(shown); }, [shown, onShown]);
 
   const [layers, setLayers] = useState<Layer[]>(() => shown ? [{ key: 0, src: shown, loaded: false, tried: false, dead: false }] : []);
   const keyRef = useRef(0);

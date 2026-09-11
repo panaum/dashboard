@@ -9,6 +9,7 @@ import { DeviceFrame } from "@/components/layout-checks/device-frame";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { Glance, type GlanceTone } from "@/components/layout-checks/glance";
 import type { TabVerdict } from "@/lib/layout-checks/verdict";
+import type { TrendPoint } from "@/lib/layout-checks/sparkline";
 import { widthLabel } from "@/lib/linkspy/responsive-view";
 import {
   defaultWidth, firstWidthOf, hasPerWidth, severityAt, viewportRail, widthShape,
@@ -33,6 +34,7 @@ export function ViewportsPanel({
   widths,
   headerAction,
   url,
+  trend,
 }: {
   verdict: TabVerdict;
   runId: string | null;
@@ -41,6 +43,8 @@ export function ViewportsPanel({
   widths: number[];
   headerAction?: ReactNode;
   url: string;
+  /** Failures per run, newest first, for the trend beside the verdict. */
+  trend?: TrendPoint[];
 }) {
   const asc = useMemo(() => [...widths].sort((a, b) => a - b), [widths]);
   const perWidth = hasPerWidth(findings);
@@ -152,6 +156,7 @@ export function ViewportsPanel({
   return (
     <CheckShell
       verdict={verdict}
+      trend={trend}
       headerAction={headerAction}
       picker={picker}
       frame={frame}
