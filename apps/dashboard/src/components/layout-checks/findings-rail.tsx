@@ -180,7 +180,7 @@ export function FindingsRail({
     );
   }
 
-  const { shown, hidden } = railSlice(items, expanded);
+  const { shown, hidden } = railSlice(items, expanded, RAIL_CAP, items.findIndex((i) => i.id === selectedId));
   return (
     <div className="flex flex-col">
       {head}

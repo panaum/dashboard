@@ -12,7 +12,7 @@ import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { HealthMatrix } from "@/components/layout-checks/health-matrix";
 import { coverage } from "@/lib/layout-checks/matrix";
 import type { TrendPoint } from "@/lib/layout-checks/sparkline";
-import { RAIL_CAP, railItems } from "@/lib/layout-checks/findings-view";
+import { railItems } from "@/lib/layout-checks/findings-view";
 import { pinsFor } from "@/lib/layout-checks/pins";
 import { auditedCount, devicesWith, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
@@ -125,7 +125,6 @@ export function DevicesPanel({
         block: "center", behavior: ms(300) === 0 ? "auto" : "smooth",
       });
     }, ms(220));
-    if (items.findIndex((i) => i.id === id) >= RAIL_CAP) setExpanded(true);
   };
 
   // How widely each finding reaches across the matrix: one device's quirk, or

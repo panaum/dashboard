@@ -127,8 +127,15 @@ export function railItems(findings: RawFinding[]): RailFinding[] {
       ({ id, severity, rule, label, message, selector, box, pageLevel }));
 }
 
-/** The five worst, or all of them once expanded, plus how many are folded away. */
-export function railSlice<T>(items: T[], expanded: boolean, cap = RAIL_CAP): { shown: T[]; hidden: number } {
+/** The five worst, or all of them once expanded, plus how many are folded
+ *  away. A selected row is always shown: a link, a pin or a map mark can name
+ *  a finding past the cap, and selecting a row nobody can see is worse than
+ *  showing one extra. It keeps its place in the order rather than jumping to
+ *  the top, so the numbering still reads down the list. */
+export function railSlice<T>(
+  items: T[], expanded: boolean, cap = RAIL_CAP, selected = -1,
+): { shown: T[]; hidden: number } {
   if (expanded || items.length <= cap) return { shown: items, hidden: 0 };
-  return { shown: items.slice(0, cap), hidden: items.length - cap };
+  if (selected < cap || selected >= items.length) return { shown: items.slice(0, cap), hidden: items.length - cap };
+  return { shown: [...items.slice(0, cap), items[selected]], hidden: items.length - cap - 1 };
 }
