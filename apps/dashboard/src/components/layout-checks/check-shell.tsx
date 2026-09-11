@@ -117,13 +117,13 @@ export function StageBar({ children, note }: { children: ReactNode; note?: React
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="flex flex-wrap items-center justify-center gap-2">{children}</div>
-      {note && <p className="max-w-sm text-center text-[12px] text-text-secondary">{note}</p>}
+      {note && <p className="max-w-sm text-center text-[12px] text-white/60">{note}</p>}
     </div>
   );
 }
 
-/** A button on the stage bar: neutral, filling in only on hover. The accent
- *  is reserved for what is selected, which for a toggle is its pressed state. */
+/** A button on the stage bar. The stage is dark, so these are light-on-dark;
+ *  the accent still means "pressed", as it does everywhere else. */
 export function StageButton({
   on = false, children, className, ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { on?: boolean }) {
@@ -133,10 +133,10 @@ export function StageButton({
       aria-pressed={rest["aria-pressed"] ?? (on || undefined)}
       {...rest}
       className={cn(
-        "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50",
+        "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-purple disabled:opacity-50",
         on
-          ? "border-accent bg-accent/10 text-accent"
-          : "border-border-soft bg-card text-text-primary hover:bg-card-soft",
+          ? "border-accent bg-accent text-white"
+          : "border-white/15 bg-white/[0.07] text-white/90 hover:bg-white/15",
         className,
       )}
     >
@@ -148,15 +148,16 @@ export function StageButton({
 /** Text under the device: the name in full strength, the rest quieter. */
 export function StageCaption({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
-    <p className="max-w-md text-center text-[13px] leading-snug text-text-secondary">
-      <span className="text-[15px] font-semibold text-text-primary">{title}</span>
+    <p className="max-w-md text-center text-[13px] leading-snug text-white/60">
+      <span className="text-[15px] font-semibold text-white">{title}</span>
       {children}
     </p>
   );
 }
 
-/** Classes for a DeviceFrame on the stage: a hairline, so the dark bezel has an edge. */
-export const ON_STAGE = "ring-1 ring-border-soft";
+/** Classes for a DeviceFrame on the stage: a light rim, so a near-black bezel
+ *  still has an edge against the navy behind it. */
+export const ON_STAGE = "ring-1 ring-white/[0.14] shadow-[0_30px_80px_-24px_rgba(0,0,0,0.7)]";
 
 /** A small uppercase label beside a control. */
 export function BarLabel({ children }: { children: ReactNode }) {
@@ -220,9 +221,9 @@ export function revealStage() {
 function EmptyStage() {
   return (
     <div className="flex flex-col items-center gap-3 text-center">
-      <MonitorSmartphone className="size-8 text-text-secondary" aria-hidden />
-      <p className="text-[15px] font-semibold text-text-primary">Nothing to show yet</p>
-      <p className="max-w-xs text-[13px] leading-snug text-text-secondary">Run the check and the page appears here, on the device you pick.</p>
+      <MonitorSmartphone className="size-8 text-brand-purple" aria-hidden />
+      <p className="text-[15px] font-semibold text-white/90">Nothing to show yet</p>
+      <p className="max-w-xs text-[13px] leading-snug text-white/60">Run the check and the page appears here, on the device you pick.</p>
     </div>
   );
 }
@@ -244,7 +245,8 @@ export function CheckShell({
   chips?: ReactNode;
   /** Errors per run, newest first, for the trend beside the verdict. */
   trend?: TrendPoint[];
-  /** A full-width band between the header and the stage: the device health matrix. */
+  /** Between the controls and the stage: the device health matrix, which the
+      panel keeps folded until it is asked for. */
   matrix?: ReactNode;
   /** The run control, at the right of the header's first line. */
   headerAction?: ReactNode;
@@ -280,13 +282,10 @@ export function CheckShell({
         </div>
       </Rise>
 
-      {matrix && (
-        <Rise order={1}>
-          <section aria-label="Device health" className="rounded-2xl border border-border-soft bg-card px-4 py-4 shadow-xs @3xl:px-6">
-            {matrix}
-          </section>
-        </Rise>
-      )}
+      {/* Whatever the panel wants between the controls and the stage — the
+          device health matrix, folded away until asked for. It brings its own
+          surface, because most of the time it is a single button. */}
+      {matrix && <Rise order={1}>{matrix}</Rise>}
 
       {/* Stage and findings side by side, as they are on both tabs, so the
           interaction is learned once. items-start: neither column stretches to
@@ -299,10 +298,13 @@ export function CheckShell({
               ref={stage}
               id={STAGE_ID}
               aria-label="Screenshot"
-              className="flex scroll-mt-4 flex-col items-center gap-4 rounded-2xl border border-border-soft bg-card-soft p-4"
+              className="relative flex scroll-mt-4 flex-col items-center gap-4 overflow-hidden rounded-2xl bg-brand-primary p-5 shadow-md"
             >
-              <div className="flex w-full flex-col items-center gap-3">{frame ?? <EmptyStage />}</div>
-              {action}
+              {/* The device is the point of this page, so it gets the room and
+                  the contrast: a near-black handset reads hardest against navy. */}
+              <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(184,176,240,0.26),transparent_58%),radial-gradient(ellipse_at_bottom_right,rgba(155,181,245,0.14),transparent_55%)]" />
+              <div className="relative flex w-full flex-col items-center gap-3">{frame ?? <EmptyStage />}</div>
+              {action && <div className="relative">{action}</div>}
             </section>
           </Rise>
 
