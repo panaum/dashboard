@@ -11,10 +11,24 @@ export type Box = { x: number; y: number; width: number; height: number };
 export type Crop = {
   /** Thumb px per page CSS px. */
   scale: number;
-  /** The window's top-left corner, in page CSS px. */
+  /** The window's top-left corner and size, in page CSS px. */
   x: number;
   y: number;
+  w: number;
+  h: number;
 };
+
+export type Rect = { left: number; top: number; width: number; height: number };
+
+/** Where `box` sits inside the crop's window, in thumb px, clipped to it —
+ *  so the element can be outlined on its own picture. */
+export function boxWithin(crop: Crop, box: Box): Rect {
+  const left = Math.max(0, (box.x - crop.x) * crop.scale);
+  const top = Math.max(0, (box.y - crop.y) * crop.scale);
+  const right = Math.min(crop.w * crop.scale, (box.x + box.width - crop.x) * crop.scale);
+  const bottom = Math.min(crop.h * crop.scale, (box.y + box.height - crop.y) * crop.scale);
+  return { left: Math.round(left), top: Math.round(top), width: Math.max(0, Math.round(right - left)), height: Math.max(0, Math.round(bottom - top)) };
+}
 
 /** A `w`×`h` thumb window centred on `box`, with `pad` CSS px of context
  *  around it and never narrower than `minWidth`. Clamped to the page, so an
@@ -30,7 +44,7 @@ export function cropFor(box: Box, pageWidth: number, pageHeight: number | null, 
   let x = cx - winW / 2, y = cy - winH / 2;
   x = Math.max(0, Math.min(pageWidth - winW, x));
   y = Math.max(0, pageHeight === null ? y : Math.min(Math.max(0, pageHeight - winH), y));
-  return { scale: w / winW, x: Math.round(x), y: Math.round(y) };
+  return { scale: w / winW, x: Math.round(x), y: Math.round(y), w: winW, h: winH };
 }
 
 /** The inline style that paints that window from the page image. */

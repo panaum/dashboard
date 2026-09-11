@@ -31,6 +31,11 @@ export const CHECKS: Check[] = [
   { id: "fonts", label: "Fonts", rules: ["webfont"] },
 ];
 
+/** The check a rule rolls up into, or null for a rule the matrix does not know. */
+export function checkFor(rule: string): Check | null {
+  return CHECKS.find((c) => c.rules.includes(rule)) ?? null;
+}
+
 export type CellTone = "error" | "warning" | "clean" | "na";
 
 export type Cell = {

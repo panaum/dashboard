@@ -10,8 +10,13 @@ import { SectionHeading } from "@/components/layout-checks/check-shell";
 import { pinNumber, pinsFor, type Pin } from "@/lib/layout-checks/pins";
 import { reachLabel, reachTone, type Reach } from "@/lib/layout-checks/reach";
 import { allFindingsText, findingText, type CopyFinding } from "@/lib/layout-checks/copy-finding";
-import { cropFor, cropStyle } from "@/lib/layout-checks/crop";
+import { boxWithin, cropFor, cropStyle } from "@/lib/layout-checks/crop";
+import { checkFor } from "@/lib/layout-checks/matrix";
 import { viewLink } from "@/lib/layout-checks/deep-link";
+
+// The open row's picture, sized for the rail's inner width.
+const BIG_W = 272;
+const BIG_H = 136;
 
 export type RailItem = RailFinding & {
   tag?: string;
@@ -102,6 +107,7 @@ export function FindingsRail({
   reachOf,
   showPins = true,
   thumbs = null,
+  alsoOn,
 }: {
   deviceLabel: string;
   items: RailItem[];
@@ -126,6 +132,8 @@ export function FindingsRail({
   /** The capture the frame is showing, so a row can carry a crop of its
       element. `src` is null until the frame has one. */
   thumbs?: { src: string | null; pageWidth: number; pageHeight: number | null } | null;
+  /** The other devices carrying this same finding, by name. */
+  alsoOn?: (item: RailItem) => string[];
 }) {
   // The same numbering the pins use, from the same pure function, so a row
   // and its marker can never disagree.
@@ -201,6 +209,12 @@ export function FindingsRail({
           const help = on ? explain(kind, it.rule) : null;
           // A picture of the element, from the same capture the frame shows.
           const crop = thumbs?.src && it.box && !it.pageLevel ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, 88, 64) : null;
+          // The open row's picture: wider, with the element outlined on it.
+          const big = on && thumbs?.src && it.box && !it.pageLevel
+            ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, BIG_W, BIG_H, 24, Math.min(thumbs.pageWidth, 300)) : null;
+          const outline = big && it.box ? boxWithin(big, it.box) : null;
+          const check = checkFor(it.rule);
+          const others = on ? (alsoOn?.(it) ?? []) : [];
           return (
             // Selected is the accent's one job on this page.
             <li key={it.id} id={`finding-${it.id}`}
@@ -262,7 +276,18 @@ export function FindingsRail({
                          transition: `grid-template-rows ${ms(180)}ms ease` }}
               >
                 <div className="overflow-hidden">
-                  <div className={cn("mb-4 mt-1 flex flex-col items-start gap-2 text-[12px] leading-relaxed", n !== null ? "ml-8 mr-4" : "mx-4")}>
+                  <div className={cn("mb-4 mt-1 flex flex-col items-start gap-2 text-[12px] leading-relaxed", n !== null && !crop ? "ml-8 mr-4" : "mx-4")}>
+                    {big && thumbs?.src && outline && (
+                      <span aria-hidden className="relative block overflow-hidden rounded-lg bg-card-soft ring-1 ring-inset ring-border-soft"
+                            style={{ width: BIG_W, height: BIG_H, ...cropStyle(thumbs.src, big, thumbs.pageWidth) }}>
+                        <span className="absolute rounded-[3px] border-2 border-accent bg-accent/15 shadow-[0_0_0_2px_rgba(255,255,255,0.9)]"
+                              style={{ left: outline.left - 2, top: outline.top - 2, width: Math.max(8, outline.width + 4), height: Math.max(8, outline.height + 4) }} />
+                      </span>
+                    )}
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", ROW[it.severity].chip)}>{s.word}</span>
+                      {check && <span className="rounded-full bg-card-soft px-2 py-0.5 text-[11px] font-semibold text-text-secondary">{check.label}</span>}
+                    </span>
                     {(it.detail || it.message) && (
                       <p className="text-text-primary">{it.detail || it.message}</p>
                     )}
@@ -275,7 +300,21 @@ export function FindingsRail({
                         clipped to nothing, and a control clipped to nothing is
                         still a control — reachable by tooling, confusing to
                         everyone. Nothing there is better than inert. */}
-                    {on && url && <CopyButton text={copyOne(it)} label="Copy for the developer" className="mt-1" />}
+                    {others.length > 0 && (
+                      <span className="flex flex-col gap-1.5 pt-1">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">Also on</span>
+                        <span className="flex flex-wrap gap-1.5">
+                          {others.slice(0, 8).map((d) => <span key={d} className="rounded-md bg-card-soft px-2 py-1 text-[11px] text-text-primary">{d}</span>)}
+                          {others.length > 8 && <span className="rounded-md bg-card-soft px-2 py-1 text-[11px] text-text-secondary">+{others.length - 8}</span>}
+                        </span>
+                      </span>
+                    )}
+                    {on && url && (
+                      <span className="mt-1 flex flex-wrap gap-2">
+                        <CopyButton text={copyOne(it)} label="Copy for the developer" />
+                        <CopyButton text={viewLink({ finding: it.id }) ?? ""} label="Copy link" />
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

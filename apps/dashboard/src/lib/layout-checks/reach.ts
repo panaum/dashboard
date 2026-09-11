@@ -39,6 +39,13 @@ export function reachMap(devices: ReachDevice[]): Map<string, number> {
   return out;
 }
 
+/** The labels of the audited devices carrying a finding, in the order given. */
+export function devicesWith(devices: (ReachDevice & { label: string })[], key: string): string[] {
+  return devices
+    .filter((d) => d.status === "ok" && d.findings.some((f) => reachKey(f.rule, f.selector, f.scope) === key))
+    .map((d) => d.label);
+}
+
 export function auditedCount(devices: ReachDevice[]): number {
   return devices.filter((d) => d.status === "ok").length;
 }
