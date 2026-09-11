@@ -12,9 +12,9 @@ import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { HealthMatrix } from "@/components/layout-checks/health-matrix";
 import { coverage } from "@/lib/layout-checks/matrix";
 import type { TrendPoint } from "@/lib/layout-checks/sparkline";
-import { RAIL_CAP, railItems } from "@/lib/layout-checks/findings-view";
+import { railItems } from "@/lib/layout-checks/findings-view";
 import { pinsFor } from "@/lib/layout-checks/pins";
-import { auditedCount, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
+import { auditedCount, devicesWith, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
 import { ms } from "@/lib/layout-checks/motion";
 import { LiveSession } from "@/components/layout-checks/live-session";
@@ -125,7 +125,6 @@ export function DevicesPanel({
         block: "center", behavior: ms(300) === 0 ? "auto" : "smooth",
       });
     }, ms(220));
-    if (items.findIndex((i) => i.id === id) >= RAIL_CAP) setExpanded(true);
   };
 
   // How widely each finding reaches across the matrix: one device's quirk, or
@@ -136,6 +135,9 @@ export function DevicesPanel({
     const n = reach.get(reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined));
     return n ? { devices: n, audited } : null;
   };
+  // The other devices carrying the same finding, by name, for the open row.
+  const alsoOn = (it: { rule: string; selector: string | null; pageLevel: boolean }): string[] =>
+    devicesWith(devices, reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined)).filter((l) => l !== current?.label);
 
   // Engine comparison: desktop only, where the three engines rendered the
   // same width. The toggle is offered nowhere else — there is no Firefox
@@ -419,6 +421,7 @@ export function DevicesPanel({
         where={`${current.label} · ${current.engineLabel} · ${current.viewportLabel}`}
         url={url}
         reachOf={reachOf}
+        alsoOn={alsoOn}
         thumbs={showLive ? null : { src: shownSrc, pageWidth: current.viewport.width, pageHeight: imageMeta?.cssHeight ?? null }}
       />
     )

@@ -46,3 +46,18 @@ test("the rail shows five, then says how many more", () => {
   assert.deepEqual(railSlice(ten, true), { shown: ten, hidden: 0 });
   assert.deepEqual(railSlice([1, 2], false), { shown: [1, 2], hidden: 0 });
 });
+
+test("a selected row past the cap is shown anyway, in its own place", () => {
+  const items = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+  const { shown, hidden } = railSlice(items, false, 5, 7);
+  assert.deepEqual(shown, [0, 1, 2, 3, 4, 7]);
+  assert.equal(hidden, 3);
+  // a selection inside the cap changes nothing
+  assert.deepEqual(railSlice(items, false, 5, 2).shown, [0, 1, 2, 3, 4]);
+  assert.equal(railSlice(items, false, 5, 2).hidden, 4);
+  // nor does no selection, or an index that is not there
+  assert.equal(railSlice(items, false, 5, -1).shown.length, 5);
+  assert.equal(railSlice(items, false, 5, 99).shown.length, 5);
+  // expanded still means all of them
+  assert.equal(railSlice(items, true, 5, 7).shown.length, 9);
+});

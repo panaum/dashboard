@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { auditedCount, reachKey, reachLabel, reachMap, reachTone, type ReachDevice } from "./reach";
+import { auditedCount, devicesWith, reachKey, reachLabel, reachMap, reachTone, type ReachDevice } from "./reach";
 
 const dev = (status: string, findings: ReachDevice["findings"]): ReachDevice => ({ status, findings });
 const f = (rule: string, selector?: string, scope?: string) => ({ rule, selector, scope });
@@ -43,4 +43,16 @@ test("one audited device says nothing — there is nothing to compare with", () 
 test("tone separates a site-wide fix from a one-device quirk", () => {
   assert.equal(reachTone({ devices: 1, audited: 14 }), "narrow");
   assert.equal(reachTone({ devices: 9, audited: 14 }), "wide");
+});
+
+test("devicesWith names the devices carrying a finding, skipping ones that were not audited", () => {
+  const f = (rule: string, selector: string) => ({ rule, selector });
+  const ds = [
+    { label: "iPhone 16", status: "ok", findings: [f("tap-small", "a.cta")] },
+    { label: "Galaxy S25", status: "ok", findings: [f("tap-small", "a.cta"), f("text-small", "span.x")] },
+    { label: "Desktop", status: "ok", findings: [] },
+    { label: "Blocked one", status: "blocked", findings: [f("tap-small", "a.cta")] },
+  ];
+  assert.deepEqual(devicesWith(ds, reachKey("tap-small", "a.cta")), ["iPhone 16", "Galaxy S25"]);
+  assert.deepEqual(devicesWith(ds, reachKey("text-small", "span.x")), ["Galaxy S25"]);
 });

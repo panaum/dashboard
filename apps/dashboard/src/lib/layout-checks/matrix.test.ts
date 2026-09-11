@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CHECKS, cellsFor, cellWords, coverage } from "@/lib/layout-checks/matrix";
+import { CHECKS, cellsFor, cellWords, checkFor, coverage } from "@/lib/layout-checks/matrix";
 import type { DeviceView } from "@/lib/layout-checks/devices-view";
 
 const ok = (engine: string, findings: { severity: string; rule: string }[]) => ({ engine, status: "ok", findings });
@@ -34,6 +34,12 @@ test("every rule the engine emits lands in exactly one column", () => {
   for (const r of rules) {
     assert.equal(CHECKS.filter((c) => c.rules.includes(r)).length, 1, r);
   }
+});
+
+test("a rule knows its check", () => {
+  assert.equal(checkFor("tap-close")?.label, "Tap targets");
+  assert.equal(checkFor("cls")?.id, "shift");
+  assert.equal(checkFor("no-such-rule"), null);
 });
 
 test("coverage counts devices, not findings", () => {
