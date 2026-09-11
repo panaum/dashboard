@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileText } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { CheckRunner } from "@/components/layout-checks/check-runner";
@@ -124,7 +124,7 @@ export default async function LayoutSitePage({
               className="inline-flex w-fit items-center gap-1.5 text-[13px] text-text-secondary transition-colors hover:text-text-primary">
           <ArrowLeft className="size-3.5" /> All layout checks
         </Link>
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <div className="min-w-0">
             <h1 className="truncate text-[30px] font-semibold leading-tight tracking-tight text-text-primary">{title}</h1>
             <a href={site.url} target="_blank" rel="noopener"
@@ -133,6 +133,10 @@ export default async function LayoutSitePage({
               <ExternalLink className="size-3.5 shrink-0" />
             </a>
           </div>
+          <Link href={`/dashboard/layout-checks/${siteId}/report`}
+                className="inline-flex items-center gap-2 rounded-full border border-border-soft bg-card px-4 py-2 text-[13px] font-medium text-text-primary shadow-xs transition-colors hover:bg-card-soft">
+            <FileText className="size-4" /> Client report
+          </Link>
         </div>
       </div>
 
