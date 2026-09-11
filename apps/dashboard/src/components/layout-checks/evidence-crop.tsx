@@ -36,7 +36,9 @@ export function EvidenceCrop({
     return () => { alive = false; img.onload = null; img.onerror = null; };
   }, [src, pageWidth]);
 
-  const crop = pageHeight === null ? null : cropFor(box, pageWidth, pageHeight, width, height, 24, Math.min(pageWidth, 300));
+  // The page's full width, so every entry in the report is the same view at
+  // the same scale rather than each element zoomed to its own size.
+  const crop = pageHeight === null ? null : cropFor(box, pageWidth, pageHeight, width, height, 24, 300, pageWidth);
   const shell = cn("block shrink-0 overflow-hidden rounded-xl bg-card-soft ring-1 ring-inset ring-border-soft", className);
 
   if (failed || (pageHeight !== null && !crop)) {
