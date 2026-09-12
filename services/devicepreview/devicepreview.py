@@ -90,11 +90,45 @@ class Profile:
         return opts
 
 
+# Last resort for `{chrome}` when no Playwright descriptor is readable — the
+# `load_devices(None)` path, which is data-only. A warning says when it is used,
+# because a pinned version is the thing this placeholder exists to avoid.
+CHROME_FALLBACK = "151.0.7922.34"
+
+
+def _chrome_version(ua: str | None) -> str | None:
+    m = re.search(r"Chrome/([0-9.]+)", ua or "")
+    return m.group(1) if m else None
+
+
+def _fill_chrome(ua: str | None, version: str | None, profile_id: str) -> str | None:
+    """Resolve `Chrome/{chrome}` against the running engine's version."""
+    if not ua or "{chrome}" not in ua:
+        return ua
+    if version is None:
+        print(f"  warning: {profile_id} wants the live Chrome version and no Playwright "
+              f"descriptor was readable — using {CHROME_FALLBACK}", file=sys.stderr)
+        version = CHROME_FALLBACK
+    return ua.replace("{chrome}", version)
+
+
 def load_devices(pw: Playwright | None, path: Path = HERE / "devices.json") -> list[Profile]:
     """Read the matrix. Where a profile names a Playwright descriptor, spread it
     first and let the explicit fields override — so user-agent strings track
-    Playwright's updates instead of rotting in our data file."""
+    Playwright's updates instead of rotting in our data file.
+
+    A profile that must state its own model code (every Android one: Playwright
+    has no Xiaomi, and its Galaxy descriptors carry Samsung's codes, not ours)
+    still writes `Chrome/{chrome}` rather than a number. The version is filled
+    in from the descriptors this Playwright ships, so the UA cannot drift from
+    the engine actually rendering the page — which is the whole point of
+    claiming a version at all. We told sites we were Chrome 131 while driving
+    Chromium 151 for long enough to know it matters: a site that branches on
+    the version serves the capture a page no real visitor sees."""
     data = json.loads(path.read_text(encoding="utf-8"))
+    # Every descriptor in a build carries that build's Chromium version, so any
+    # of them answers the question; the profile's own is just the tidiest.
+    live = next((v for v in (_chrome_version(d.get("user_agent")) for d in (pw.devices.values() if pw else ())) if v), None)
     out: list[Profile] = []
     for p in data["profiles"]:
         base: dict[str, Any] = {}
@@ -114,7 +148,8 @@ def load_devices(pw: Playwright | None, path: Path = HERE / "devices.json") -> l
             has_touch=p.get("hasTouch", base.get("has_touch", False)),
             # null in the data file means "engine default" for desktops, or
             # "whatever the spread descriptor says" for mobiles.
-            user_agent=p["userAgent"] if p.get("userAgent") else base.get("user_agent"),
+            user_agent=_fill_chrome(p["userAgent"] if p.get("userAgent") else base.get("user_agent"),
+                                    _chrome_version(base.get("user_agent")) or live, p["id"]),
             verified=bool(p.get("verified", False)),
             playwright_device=name,
             browserstack=p.get("browserstack"),

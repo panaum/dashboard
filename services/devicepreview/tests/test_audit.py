@@ -656,6 +656,47 @@ def _module():
     return mod
 
 
+class UserAgentTracksTheEngine(unittest.TestCase):
+    """The version a profile announces must be the version doing the rendering."""
+
+    def setUp(self):
+        self.mod = _module()
+
+    def test_no_profile_pins_a_chrome_version_in_the_data_file(self):
+        """The version must come from the engine, not from this file. A literal
+        here is how we ended up telling sites Chrome 131 while driving 151."""
+        import re
+        raw = json.loads((Path(self.mod.__file__).parent / "devices.json").read_text(encoding="utf-8"))
+        for prof in raw["profiles"]:
+            ua = prof.get("userAgent") or ""
+            if "Chrome/" in ua:
+                self.assertIn("Chrome/{chrome}", ua,
+                              f"{prof['id']}: pins a Chrome version; use Chrome/{{chrome}}")
+                self.assertIsNone(re.search(r"Chrome/[0-9]", ua), f"{prof['id']}: still has a literal version")
+
+    def test_the_chrome_placeholder_is_filled_from_the_engine(self):
+        fill = self.mod._fill_chrome
+        ua = "Mozilla/5.0 (Linux; Android 15; SM-S931B) ... Chrome/{chrome} Mobile Safari/537.36"
+        self.assertIn("Chrome/151.0.1 Mobile", fill(ua, "151.0.1", "galaxy-s25"))
+        # No descriptor readable: the fallback is used rather than shipping a
+        # literal "{chrome}" to the site.
+        self.assertIn(f"Chrome/{self.mod.CHROME_FALLBACK} ", fill(ua, None, "galaxy-s25"))
+        # A UA without the placeholder is returned untouched, None included.
+        self.assertEqual(fill("Mozilla/5.0 (iPhone...) Safari", "151", "x"), "Mozilla/5.0 (iPhone...) Safari")
+        self.assertIsNone(fill(None, "151", "x"))
+
+    def test_every_android_profile_keeps_its_own_model_code(self):
+        """Tracking the engine's version must not cost us the device identity:
+        a Xiaomi capture that announces a Samsung model code is a worse lie
+        than a stale version number."""
+        models = {"galaxy-s25": "SM-S931B", "galaxy-s25-ultra": "SM-S938B",
+                  "xiaomi-15": "24129PN74G", "galaxy-tab-s10-plus": "SM-X826B"}
+        for prof in self.mod.load_devices(None):
+            if prof.id in models:
+                self.assertIn(models[prof.id], prof.user_agent or "", prof.id)
+                self.assertNotIn("{chrome}", prof.user_agent or "", prof.id)
+
+
 class FakeBrowserStack:
     """The Screenshots API as documented, without the network."""
 
