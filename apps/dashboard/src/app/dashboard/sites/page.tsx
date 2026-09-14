@@ -42,6 +42,11 @@ export default async function SitesPage() {
       {/* Step 1 (the portfolio) lives inside the workspace, which hides it
           while a scan is running or its results are up — see SitesWorkspace. */}
       <SitesWorkspace>
+        {/* A server component, and this page is force-dynamic: this renders
+            once per request on the server and never re-renders on the client,
+            so the clock cannot come out differently between two renders of the
+            same output. The purity rule is about client re-renders. */}
+        {/* eslint-disable-next-line react-hooks/purity */}
         {sites.length > 0 && <SitesStatRail summary={monitorSummary(sites, Date.now())} />}
 
         <MonitorGrid initialSites={sites} bands={bands} unavailable={dashboard === null} />

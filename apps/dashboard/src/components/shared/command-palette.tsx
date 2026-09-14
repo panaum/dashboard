@@ -97,7 +97,15 @@ export function CommandPalette({ items }: { items: CommandItem[] }) {
     return [...actionHits, ...itemHits];
   }, [query, entries]);
 
-  useEffect(() => setActive(0), [query]);
+  // Resetting the highlight when the query changes is derived state, not a
+  // side effect: React's documented adjust-during-render pattern re-runs this
+  // component before committing, where an effect would commit the stale
+  // highlight first and then correct it in a second pass.
+  const [queried, setQueried] = useState(query);
+  if (queried !== query) {
+    setQueried(query);
+    setActive(0);
+  }
 
   const close = useCallback(() => {
     setOpen(false);

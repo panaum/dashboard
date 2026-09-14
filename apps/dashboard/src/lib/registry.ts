@@ -22,7 +22,7 @@ function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${process.env.LINKSPY_API_KEY || ""}` };
 }
 
-async function getJson(path: string): Promise<any | Unavailable> {
+async function getJson<T>(path: string): Promise<T | Unavailable> {
   if (!registryConfigured()) return { unavailable: true };
   try {
     const res = await fetch(`${base()}${path}`, {
@@ -36,13 +36,13 @@ async function getJson(path: string): Promise<any | Unavailable> {
 }
 
 export async function searchClients(q: string): Promise<{ clients: RegistryClient[] } | Unavailable> {
-  const r = await getJson(`/api/registry/clients?search=${encodeURIComponent(q || "")}`);
+  const r = await getJson<{ clients?: RegistryClient[] }>(`/api/registry/clients?search=${encodeURIComponent(q || "")}`);
   if ("unavailable" in r) return r;
   return { clients: r.clients ?? [] };
 }
 
 export async function clientSites(clientId: string): Promise<{ sites: RegistrySite[] } | Unavailable> {
-  const r = await getJson(`/api/registry/clients/${encodeURIComponent(clientId)}/sites`);
+  const r = await getJson<{ sites?: RegistrySite[] }>(`/api/registry/clients/${encodeURIComponent(clientId)}/sites`);
   if ("unavailable" in r) return r;
   return { sites: r.sites ?? [] };
 }
