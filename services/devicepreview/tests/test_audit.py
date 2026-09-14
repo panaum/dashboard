@@ -728,6 +728,19 @@ class BrowserStackBackendTests(unittest.TestCase):
         self.assertIsNone(entry); self.assertIn("closest", note); self.assertIn("iPhone 16", note)
         entry, note = r(None, AVAILABLE)
         self.assertIsNone(entry); self.assertIn("null", note)
+        # A profile that records WHY it has no mapping says that instead: the
+        # reader needs to know it is BrowserStack's fleet, not our data file.
+        entry, note = r(None, AVAILABLE, "BrowserStack lists no Galaxy Z Flip")
+        self.assertIsNone(entry); self.assertEqual(note, "BrowserStack lists no Galaxy Z Flip")
+
+    def test_every_profile_without_a_browserstack_mapping_says_why(self):
+        """A null mapping is a claim that we checked. Make it carry evidence."""
+        for prof in self.mod.load_devices(None):
+            if prof.browserstack is None:
+                self.assertTrue(prof.browserstack_absent,
+                                f"{prof.id}: browserstack is null with no browserstackAbsent reason")
+                self.assertIn("2026", prof.browserstack_absent,
+                              f"{prof.id}: the reason should date the check, since the fleet drifts")
 
     def test_one_job_per_run_polled_to_done_and_images_laid_out_like_local(self):
         fake = FakeBrowserStack(AVAILABLE, polls_until_done=2, image_png=self.png)
@@ -752,7 +765,10 @@ class BrowserStackBackendTests(unittest.TestCase):
         self.assertEqual(ok.findings, []); self.assertTrue(any("no DOM access" in n for n in ok.notes))
         self.assertEqual(ok.page["browserstack"]["device"], "iPhone 16")
         skipped = res["galaxy-z-flip-open"]
-        self.assertEqual(skipped.status, "failed"); self.assertIn("null", skipped.error)
+        # The skip carries the recorded reason, so the report says BrowserStack
+        # has no such handset rather than pointing at an empty field.
+        self.assertEqual(skipped.status, "failed")
+        self.assertIn("Galaxy Z Flip", skipped.error); self.assertIn("BrowserStack", skipped.error)
         # identical shape to a local result
         from dataclasses import asdict
         local_keys = set(asdict(self.mod.CaptureResult(profile_id="x", label="x", engine="webkit", platform="ios", tier="primary", verified=False, backend="local", url="u")))

@@ -74,6 +74,10 @@ class Profile:
     verified: bool
     playwright_device: str | None = None
     browserstack: dict[str, Any] | None = None   # os / os_version / device / browser, or None if not offered
+    # Why `browserstack` is None, when we have checked and it is not an
+    # oversight: BrowserStack simply does not stock the handset. Recorded so
+    # the skip line says which it is, and so re-checking is a one-line edit.
+    browserstack_absent: str | None = None
 
     def context_options(self, landscape: bool) -> dict[str, Any]:
         w, h = self.viewport["width"], self.viewport["height"]
@@ -118,6 +122,7 @@ def load_devices(pw: Playwright | None, path: Path = HERE / "devices.json") -> l
             verified=bool(p.get("verified", False)),
             playwright_device=name,
             browserstack=p.get("browserstack"),
+            browserstack_absent=p.get("browserstackAbsent"),
         ))
     return out
 
@@ -1444,7 +1449,8 @@ def _version_key(v: str) -> tuple:
     return tuple(int(n) for n in nums) if nums else (-1,)
 
 
-def resolve_browserstack(mapping: dict[str, Any] | None, available: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str | None]:
+def resolve_browserstack(mapping: dict[str, Any] | None, available: list[dict[str, Any]],
+                         absent: str | None = None) -> tuple[dict[str, Any] | None, str | None]:
     """Turn a profile's mapping into an entry BrowserStack accepts today.
 
     Device names and OS versions on BrowserStack drift; the mapping in
@@ -1453,7 +1459,10 @@ def resolve_browserstack(mapping: dict[str, Any] | None, available: list[dict[st
     not there at all is skipped with the closest names, so the fix is a
     one-line edit rather than a guess."""
     if not mapping:
-        return None, "not offered on BrowserStack (mapping is null in devices.json)"
+        # A recorded reason means somebody looked: say what they found, rather
+        # than pointing at the empty field and leaving the reader to wonder
+        # whether it is a gap in the data or a gap in BrowserStack's fleet.
+        return None, absent or "not offered on BrowserStack (mapping is null in devices.json)"
     if mapping.get("device"):
         want = mapping["device"].lower()
         cands = [b for b in available if (b.get("device") or "").lower() == want]
@@ -1520,7 +1529,7 @@ class BrowserStackBackend(Backend):
         available = self._browsers()
         entries: list[tuple[Profile, dict[str, Any]]] = []
         for p in profiles:
-            entry, note = resolve_browserstack(p.browserstack, available)
+            entry, note = resolve_browserstack(p.browserstack, available, p.browserstack_absent)
             if entry is None:
                 self._skips[p.id] = note or "not available"
                 say(f"  {p.label:28} browserstack skipped — {note}")
@@ -2612,7 +2621,7 @@ def main() -> int:
     if args.backend == "browserstack":
         unavailable = [p for p in chosen if not p.browserstack]
         for p in unavailable:
-            say(f"  {p.label:28} not offered on BrowserStack — skipped")
+            say(f"  {p.label:28} skipped — {p.browserstack_absent or 'not offered on BrowserStack'}")
         chosen = [p for p in chosen if p.browserstack]
         if not chosen:
             raise SystemExit("none of the selected profiles is offered on BrowserStack; see the "
