@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, Check, Copy } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { explain } from "@/lib/layout-checks/explain";
 import { ms } from "@/lib/layout-checks/motion";
@@ -15,8 +15,9 @@ import { checkFor } from "@/lib/layout-checks/matrix";
 import { viewLink } from "@/lib/layout-checks/deep-link";
 
 // The open row's picture, sized for the rail's inner width.
-const BIG_W = 272;
-const BIG_H = 136;
+// Every thumbnail in the column, at every state.
+const THUMB_W = 88;
+const THUMB_H = 64;
 
 export type RailItem = RailFinding & {
   tag?: string;
@@ -208,16 +209,18 @@ export function FindingsRail({
           }
           const help = on ? explain(kind, it.rule) : null;
           // A picture of the element, from the same capture the frame shows.
-          // One window for the whole column, so the rows are comparable: a
-          // little under half the page's width, whatever the element is.
+          // ONE picture per row, the same size and the same window on every
+          // row, open or closed: a column of pictures only reads as a column
+          // if they match. Opening a row adds words, not a second, larger
+          // picture of the element you are already looking at — the device on
+          // the stage beside this list is showing it, highlighted, full size.
+          // The window is a little under half the page's width whatever the
+          // element is, so a 77px link and a 372px image are not blown up by
+          // different amounts.
           const crop = thumbs?.src && it.box && !it.pageLevel
-            ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, 88, 64, 20, 140, Math.round(thumbs.pageWidth * 0.45)) : null;
-          // The open row's picture: wider, with the element outlined on it.
-          const big = on && thumbs?.src && it.box && !it.pageLevel
-            // The opened row shows the element across the page's full width,
-            // so it is always the same view and always in context.
-            ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, BIG_W, BIG_H, 24, 300, thumbs.pageWidth) : null;
-          const outline = big && it.box ? boxWithin(big, it.box) : null;
+            ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, THUMB_W, THUMB_H, 20, 140, Math.round(thumbs.pageWidth * 0.45)) : null;
+          // Which of the things in that window is the finding.
+          const outline = crop && it.box ? boxWithin(crop, it.box) : null;
           const check = checkFor(it.rule);
           const others = on ? (alsoOn?.(it) ?? []) : [];
           return (
@@ -228,17 +231,26 @@ export function FindingsRail({
                 type="button"
                 aria-pressed={on}
                 onClick={() => onSelect(it.id)}
+                style={{ "--thumb": `${THUMB_W}px` } as CSSProperties}
                 className={cn(
                   "relative w-full rounded-lg py-2 pl-4 pr-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
-                  crop ? "grid grid-cols-[88px_minmax(0,1fr)] items-start gap-3" : "flex flex-col items-start gap-1",
+                  crop ? "grid grid-cols-[var(--thumb)_minmax(0,1fr)] items-start gap-3" : "flex flex-col items-start gap-1",
                   n !== null && !crop && "pl-8",
                   !on && "hover:bg-card-soft",
                 )}
               >
                 <span aria-hidden className={cn("absolute inset-y-2 left-0 w-[3px] rounded-full", s.bar)} />
                 {crop && thumbs?.src ? (
-                  <span aria-hidden data-thumb className="relative block h-16 w-[88px] overflow-hidden rounded-lg bg-card-soft ring-1 ring-inset ring-border-soft"
-                        style={cropStyle(thumbs.src, crop, thumbs.pageWidth)}>
+                  <span aria-hidden data-thumb className="relative block overflow-hidden rounded-lg bg-card-soft ring-1 ring-inset ring-border-soft"
+                        style={{ width: THUMB_W, height: THUMB_H, ...cropStyle(thumbs.src, crop, thumbs.pageWidth) }}>
+                    {outline && (
+                      /* White on a dark halo, so it is legible over any
+                         screenshot without spending the accent, which on this
+                         page means "selected" and nothing else. */
+                      <span className="absolute rounded-[2px] border border-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
+                            style={{ left: outline.left - 1, top: outline.top - 1,
+                                     width: Math.max(6, outline.width + 2), height: Math.max(6, outline.height + 2) }} />
+                    )}
                     {n !== null && (
                       <span className={cn("absolute left-1 top-1 grid size-[18px] place-items-center rounded-full text-[10px] font-bold tabular-nums text-white shadow-[0_0_0_2px_#fff]",
                                           s.pin, on && "ring-2 ring-accent/40")}>{n}</span>
@@ -282,13 +294,6 @@ export function FindingsRail({
               >
                 <div className="overflow-hidden">
                   <div className={cn("mb-4 mt-1 flex flex-col items-start gap-2 text-[12px] leading-relaxed", n !== null && !crop ? "ml-8 mr-4" : "mx-4")}>
-                    {big && thumbs?.src && outline && (
-                      <span aria-hidden className="relative block overflow-hidden rounded-lg bg-card-soft ring-1 ring-inset ring-border-soft"
-                            style={{ width: BIG_W, height: BIG_H, ...cropStyle(thumbs.src, big, thumbs.pageWidth) }}>
-                        <span className="absolute rounded-[3px] border-2 border-accent bg-accent/15 shadow-[0_0_0_2px_rgba(255,255,255,0.9)]"
-                              style={{ left: outline.left - 2, top: outline.top - 2, width: Math.max(8, outline.width + 4), height: Math.max(8, outline.height + 4) }} />
-                      </span>
-                    )}
                     <span className="flex flex-wrap items-center gap-1.5">
                       <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", ROW[it.severity].chip)}>{s.word}</span>
                       {check && <span className="rounded-full bg-card-soft px-2 py-0.5 text-[11px] font-semibold text-text-secondary">{check.label}</span>}
