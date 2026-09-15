@@ -624,10 +624,20 @@ class MacOSBackendTests(unittest.TestCase):
     """The same engines on a Mac: one name, one fact (Apple fonts are real)."""
 
     @unittest.skipUnless(sys.platform == "darwin", "the macos backend only runs on a Mac")
-    def test_macos_backend_captures_and_does_not_call_apple_fonts_substituted(self):
+    def test_on_a_mac_neither_backend_claims_substitution_because_neither_substitutes(self):
+        """This assertion used to run the other way: the local backend was
+        EXPECTED to report "Apple's system font substituted" even here, because
+        the claim was a class attribute rather than a measurement. On a Mac that
+        was a false finding — WebKit draws Apple's real face whichever backend
+        asked for it. What separates the backends is the note they publish."""
         _, local = run("apple-font.html", TOUCH)
-        self.assertTrue(any("Apple's system font" in f["message"] for f in local["devices"][0]["findings"]),
-                        "the local backend notes the substitution")
+        d0 = local["devices"][0]
+        self.assertFalse(any("Apple's system font" in f["message"] for f in d0["findings"]),
+                         "on a Mac the local backend draws Apple's real face; saying otherwise is a false finding")
+        # The probe ran and said so — not merely absent because it returned None.
+        self.assertTrue(d0["fonts"].get("appleSystemFontRequested"), "the fixture asks for -apple-system")
+        self.assertIs(d0["fonts"].get("appleSystemFontAuthentic"), True,
+                      "measured in the page, on a real Mac, through a real engine")
         code, mac = run("apple-font.html", TOUCH, "--backend", "macos")
         d = mac["devices"][0]
         self.assertEqual(mac["backend"], "macos"); self.assertEqual(d["backend"], "macos"); self.assertEqual(d["status"], "ok")
@@ -695,6 +705,44 @@ class UserAgentTracksTheEngine(unittest.TestCase):
             if prof.id in models:
                 self.assertIn(models[prof.id], prof.user_agent or "", prof.id)
                 self.assertNotIn("{chrome}", prof.user_agent or "", prof.id)
+
+
+class AppleFontAuthenticityIsMeasured(unittest.TestCase):
+    """Whether Apple's face actually drew is a property of the machine that
+    rendered the page, not of the backend's opinion of itself."""
+
+    def setUp(self):
+        self.mod = _module()
+
+    def _findings(self, *, measured, backend_claims):
+        fonts = {"appleSystemFontRequested": True, "appleSystemFontAuthentic": measured,
+                 "faces": [], "stacks": [], "requests": [], "failed_requests": []}
+        return [f for f in self.mod._font_findings(fonts, 390, 800, apple_authentic=backend_claims)
+                if "Apple's system font" in f["message"]]
+
+    def test_a_measured_yes_beats_a_backend_that_claims_no(self):
+        """The bug this replaces: the local backend on a Mac drew real Apple
+        fonts and reported them substituted, which is a false finding."""
+        self.assertEqual(self._findings(measured=True, backend_claims=False), [])
+
+    def test_a_measured_no_reports_what_was_measured(self):
+        f = self._findings(measured=False, backend_claims=True)
+        self.assertEqual(len(f), 1)
+        self.assertIn("resolved to the fallback face here", f[0]["message"])
+
+    def test_an_unmeasurable_probe_falls_back_to_the_backend(self):
+        none_and_no = self._findings(measured=None, backend_claims=False)
+        self.assertEqual(len(none_and_no), 1)
+        self.assertIn("this backend substitutes it", none_and_no[0]["message"])
+        self.assertEqual(self._findings(measured=None, backend_claims=True), [])
+
+    def test_a_page_that_never_asked_is_never_told(self):
+        for measured in (True, False, None):
+            fonts = {"appleSystemFontRequested": False, "appleSystemFontAuthentic": measured,
+                     "faces": [], "stacks": [], "requests": [], "failed_requests": []}
+            out = [f for f in self.mod._font_findings(fonts, 390, 800, apple_authentic=False)
+                   if "Apple's system font" in f["message"]]
+            self.assertEqual(out, [], f"measured={measured}")
 
 
 class FakeBrowserStack:

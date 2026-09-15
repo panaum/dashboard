@@ -386,7 +386,25 @@ FONTS_JS = """async () => {
       if (/-apple-system|sf pro|san francisco|blinkmacsystemfont/.test(ff)) { apple = true; break; }
     }
   } catch (e) {}
-  return { faces, stacks: stackOut, requestsAppleSystemFont: apple, timedOut };
+  // ...and whether it WAS. Asked is not answered: the same page gets Apple's
+  // real face on a Mac and the fallback on Linux, so the only honest way to
+  // report substitution is to measure it here rather than infer it from which
+  // backend happens to be running. Same idiom as the stack probe above —
+  // equal widths mean fallback. The control names a family that cannot exist,
+  // so it is guaranteed to render in the engine's default face; if
+  // -apple-system measures the same, it resolved to that default too, which
+  // is exactly what "substituted" means. null when the probe could not run.
+  let appleAuthentic = null;
+  if (apple) {
+    try {
+      const a = measure(document.body, '-apple-system', PROBE);
+      const ctrl = measure(document.body, '"__dp_no_such_family__"', PROBE);
+      const tol = Math.max(1, ctrl * 0.01);
+      appleAuthentic = (a > 0 && ctrl > 0) ? Math.abs(a - ctrl) >= tol : null;
+    } catch (e) {}
+  }
+  return { faces, stacks: stackOut, requestsAppleSystemFont: apple,
+           appleSystemFontAuthentic: appleAuthentic, timedOut };
 }"""
 
 LAZY_SCROLL_JS = """async (maxViewports) => {
@@ -1174,6 +1192,9 @@ class LocalBackend(Backend):
                 }
                 if fonts.get("requestsAppleSystemFont"):
                     res.fonts["appleSystemFontRequested"] = True
+                    # None when the probe could not run; the backend's own
+                    # claim is then the fallback, never the first answer.
+                    res.fonts["appleSystemFontAuthentic"] = fonts.get("appleSystemFontAuthentic")
 
                 page.add_style_tag(content=FREEZE_CSS)
 
@@ -1363,11 +1384,20 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int, apple_authentic: boo
                                    f"though every request succeeded); {where} measure as their fallback face",
                         "selector": g["sample"] or "body", "box": whole, "family": fam})
 
-    if fonts.get("appleSystemFontRequested") and not apple_authentic:
-        out.append({"severity": "info", "rule": "webfont",
-                    "message": "Page requests Apple's system font (-apple-system / SF Pro); it is "
-                               "substituted on this backend, so the typography is not authentic",
-                    "selector": "body", "box": whole})
+    if fonts.get("appleSystemFontRequested"):
+        # The page measured it. `apple_authentic` is the backend asserting a
+        # thing about itself, which was the only input here and was wrong every
+        # time the local backend ran on a Mac: real Apple fonts, reported as
+        # substituted. It now speaks only when the probe could not.
+        measured = fonts.get("appleSystemFontAuthentic")
+        authentic = apple_authentic if measured is None else measured
+        if not authentic:
+            how = ("it resolved to the fallback face here" if measured is False
+                   else "this backend substitutes it")
+            out.append({"severity": "info", "rule": "webfont",
+                        "message": "Page requests Apple's system font (-apple-system / SF Pro); "
+                                   f"{how}, so the typography is not authentic",
+                        "selector": "body", "box": whole})
     return out
 
 def _not_a_font(content_type: str | None) -> bool:
