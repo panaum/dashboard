@@ -1,0 +1,140 @@
+# Q3 from the devicepreview alignment note: what IS the visual difference
+# between a Linux WebKit capture and a macOS one of the same page?
+#
+# Throwaway and manual. It exists to produce evidence for one decision — whether
+# routing Apple profiles to a Mac is worth building — and should be deleted once
+# that decision is made.
+#
+# Why a workflow rather than a laptop: the Linux half has to look like the
+# container we actually ship, and the only honest way to get that is a Linux
+# machine with the same fonts the Dockerfile installs. Fonts are the whole
+# question here, so a bare ubuntu-latest would answer a different one.
+#
+# Free: GitHub-hosted runners, including macOS, are free for public repos.
+#
+# NOTE: workflow_dispatch only appears in the Actions UI once this file is on
+# the default branch. Merge first, then run it.
+
+name: "Q3 — WebKit: Linux vs macOS"
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Page to capture (a real client page makes the better evidence)"
+        required: true
+        default: "https://www.apexure.com/"
+      devices:
+        description: "Profile ids — WebKit ones are the point"
+        required: true
+        default: "iphone-16,ipad-pro-13"
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    name: capture on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The same set as services/devicepreview/Dockerfile. Without this the
+      # Linux half is a different machine from the one we deploy, and the
+      # comparison answers nothing.
+      - name: Fonts, matching the Dockerfile
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fonts-liberation fonts-noto fonts-noto-cjk fonts-noto-color-emoji \
+            fonts-dejavu-core fonts-freefont-ttf
+
+      - name: Install
+        working-directory: services/devicepreview
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} webkit
+
+      # Fails the build if proportional text comes out monospace — the same
+      # guard the Dockerfile runs, so a broken Linux font stack cannot quietly
+      # become "the difference between the platforms".
+      - name: Font-fallback self-check
+        working-directory: services/devicepreview
+        run: python devicepreview.py --self-check
+
+      # Inputs go through env, never interpolated into the shell: this repo is
+      # public and workflow_dispatch inputs are attacker-controlled text.
+      - name: Capture
+        working-directory: services/devicepreview
+        env:
+          URL: ${{ inputs.url }}
+          DEVICES: ${{ inputs.devices }}
+        run: python devicepreview.py "$URL" --devices "$DEVICES" --out out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capture-${{ matrix.os }}
+          path: services/devicepreview/out
+
+  compare:
+    name: diff the two
+    needs: capture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: capture-ubuntu-latest
+          path: linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: capture-macos-latest
+          path: macos
+      - run: pip install pillow
+      - name: Measure, and lay them side by side
+        run: |
+          python - <<'PY'
+          import json, os, pathlib
+          from PIL import Image, ImageChops
+          out = pathlib.Path("side-by-side"); out.mkdir(exist_ok=True)
+          rows = []
+          lin = json.load(open("linux/report.json")); mac = json.load(open("macos/report.json"))
+          lin_f = {d["profile_id"]: d for d in lin["devices"]}
+          mac_f = {d["profile_id"]: d for d in mac["devices"]}
+          def apple(d):
+              f = d.get("fonts") or {}
+              if not f.get("appleSystemFontRequested"): return "not asked"
+              a = f.get("appleSystemFontAuthentic")
+              return {True: "authentic", False: "SUBSTITUTED"}.get(a, "not measured")
+          for pid in sorted(set(lin_f) & set(mac_f)):
+              a, b = pathlib.Path("macos")/pid/"fold.png", pathlib.Path("linux")/pid/"fold.png"
+              if not (a.exists() and b.exists()):
+                  rows.append((pid, "one side missing", "", "", "")); continue
+              ia, ib = Image.open(a).convert("RGB"), Image.open(b).convert("RGB")
+              if ia.size != ib.size:
+                  rows.append((pid, f"size differs {ia.size} vs {ib.size}", "", apple(mac_f[pid]), apple(lin_f[pid]))); continue
+              diff = ImageChops.difference(ia, ib)
+              px = list(diff.getdata()); n = len(px)
+              changed = sum(1 for r,g,bl in px if r>25 or g>25 or bl>25)
+              canvas = Image.new("RGB", (ia.width*2 + 24, ia.height), (255,255,255))
+              canvas.paste(ia, (0,0)); canvas.paste(ib, (ia.width+24, 0))
+              canvas.save(out/f"{pid}.png")
+              rows.append((pid, f"{100*changed/n:.2f}%", str(diff.getbbox()), apple(mac_f[pid]), apple(lin_f[pid])))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write(f"## WebKit: macOS vs Linux\n\n`{lin['url']}`\n\n")
+              fh.write("| profile | differing pixels | changed region | Apple fonts (macOS) | Apple fonts (Linux) |\n")
+              fh.write("|---|---|---|---|---|\n")
+              for r in rows: fh.write("| " + " | ".join(str(x) for x in r) + " |\n")
+              fh.write("\nSide-by-side images are in the `side-by-side` artifact (macOS left, Linux right).\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: side-by-side
+          path: side-by-side
