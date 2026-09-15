@@ -20,6 +20,7 @@ export type DeviceProvenance = {
   fonts?: {
     appleSystemFontRequested?: boolean;
     appleSystemFontAuthentic?: boolean | null;
+    systemUiRequested?: boolean;
   } | null;
   findings?: { message?: string }[] | null;
 };
@@ -85,6 +86,19 @@ export function frameNote(device: DeviceProvenance, run: RunProvenance): FrameNo
       detail: "This page asks for Apple's system font. This run did not record whether it drew, "
             + "so the typography cannot be vouched for either way.",
       tone: "warn",
+    };
+  }
+  if (device.fonts?.systemUiRequested) {
+    // Not a defect and not a verdict: system-ui resolves to SF Pro on a Mac
+    // and to whatever the container picks on Linux, and on most pages it sits
+    // behind a webfont that loads, so it never draws. Worth saying on the
+    // frame — where provenance lives — and worth saying no louder than that.
+    return {
+      label: `${where} · system-ui fallback`,
+      detail: "This page names system-ui, the platform's own UI face — SF Pro on a Mac, whatever "
+            + "the container resolves on Linux. It only draws if the webfont in front of it does "
+            + "not, and then the typography follows the machine that rendered this capture.",
+      tone: host ? "ok" : "warn",
     };
   }
   return {
