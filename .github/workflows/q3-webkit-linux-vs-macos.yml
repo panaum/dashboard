@@ -61,7 +61,10 @@ jobs:
         working-directory: services/devicepreview
         run: |
           pip install -r requirements.txt
-          python -m playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} webkit
+          # All three, because --self-check below exercises all three — the
+          # same set the Dockerfile installs. Installing only webkit made the
+          # self-check fail on chromium and firefox and took the run with it.
+          python -m playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium firefox webkit
 
       # Fails the build if proportional text comes out monospace — the same
       # guard the Dockerfile runs, so a broken Linux font stack cannot quietly
