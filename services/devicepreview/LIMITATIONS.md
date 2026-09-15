@@ -53,8 +53,7 @@ Measured, not estimated. The full argument and the decision are in
   lead with `-apple-system` (headings and paragraphs are Poppins). apexure.com
   and fautons.com name `system-ui` on every page but only behind a webfont;
   the rest name no platform face. elitepractice.clickfunnels.com blocks headless
-  browsers and cannot be measured, and one of the Sites page's eight entries is
-  unidentified. Figures and method in ADR-003; re-run with
+  browsers, so it is unmeasurable — which is not the same as clean. Figures and method in ADR-003; re-run with
   `scripts/font-stack-census.py`, where a page is only exposed when some
   element's stack puts the platform face *first*.
 - **For that property, the frame says so, and there is no macOS routing — by

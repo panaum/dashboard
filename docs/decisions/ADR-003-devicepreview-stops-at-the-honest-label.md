@@ -76,10 +76,14 @@ typography follows the machine that captured it.
   as exposed. The monitored page was already a ClickFunnels 404 stub on
   2026-09-09, the last time it could be read. Captures from 5 and 7 September, while it was live, show it
   requested Apple's system font alongside the Inter webfont; whether that face
-  led the stack is not recoverable from what was stored.
-- **Coverage.** The Sites page lists eight entries, with apexure.com twice.
-  Six distinct properties are named above, which accounts for seven entries;
-  **the eighth is unidentified and not in this count.**
+  led the stack is not recoverable from what was stored. **So it is
+  unmeasurable, not clean**: it is counted neither as exposed nor as clean, and
+  it is outside the totals below the table.
+- **Coverage.** The Sites page lists eight entries: apexure.com twice, and
+  dev.apexure.org/LisaMarie twice — its home page and, as "lisa marie contact",
+  `/LisaMarie/contact/`. All eight are covered. The contact page is one of
+  LisaMarie's four exposed pages, confirmed by measuring it directly as well as
+  in the crawl.
 
 The census is reproducible: `services/devicepreview/scripts/font-stack-census.py`.
 
@@ -144,8 +148,8 @@ reporting a verdict would be a guess.
   and paragraphs moving onto the platform face.
 - **The escalation path becoming routine** — run for most sign-offs rather than
   the occasional one. At that point routing pays for itself.
-- **The census proving incomplete**: the unidentified eighth entry on the Sites
-  page, or elitepractice becoming measurable and turning out exposed.
+- **The census proving incomplete**: elitepractice becoming measurable and
+  turning out exposed, or a property added to the Sites page.
 - **Someone wanting real-device pixels** rather than authentic fonts: a
   different question with a different answer (BrowserStack, declined on cost —
   see LIMITATIONS.md).
