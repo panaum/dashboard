@@ -14,8 +14,8 @@ you're working in:
 - `apps/shell` — the door page (signed handoff tokens to the other two apps).
 - `services/devicepreview` — cross-device rendering preview and layout audit
   (one Python file, Playwright's three engines, optional BrowserStack).
-  `README.md` there says how to run and extend it, `LIMITATIONS.md` what it
-  cannot tell you. Tests: `cd services/devicepreview &&
+  `README.md` there says how to run and extend it, `ARCHITECTURE.md` how it is
+  built and why it captures on Linux, `LIMITATIONS.md` what it cannot tell you. Tests: `cd services/devicepreview &&
   ../pagecheck/.venv/bin/python -m unittest tests.test_audit`. Rule of the
   house: never a false FAIL; when evidence is ambiguous, warn.
 - `services/pagecheck` — the single-page pre-launch checker (Python,

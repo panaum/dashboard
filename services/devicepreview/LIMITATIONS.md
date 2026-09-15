@@ -1,5 +1,7 @@
 # devicepreview — what it cannot tell you
 
+For how it is built and why, see `ARCHITECTURE.md`.
+
 Read this before citing a result to a client. Every item here is a thing the
 tool measured, tried, or learned the hard way; none is hypothetical.
 
