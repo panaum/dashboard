@@ -53,14 +53,17 @@ Measured, not estimated. The full argument and the decision are in
   lead with `-apple-system` (headings and paragraphs are Poppins). apexure.com
   and fautons.com name `system-ui` on every page but only behind a webfont;
   the rest name no platform face. elitepractice.clickfunnels.com blocks headless
-  browsers and cannot be measured. Figures and method in ADR-003's update;
-  re-run with `scripts/font-stack-census.py`, where a page is only exposed when
-  some element's stack puts the platform face *first*.
-- **For that property, the frame already says so.** Linux captures of
-  LisaMarie are measured as substituted and labelled *"Linux capture — Apple
-  fonts substituted"*. Whether it also warrants a macOS capture path is under
-  review; until decided there is no macOS routing, by decision, not by
-  omission.
+  browsers and cannot be measured, and one of the Sites page's eight entries is
+  unidentified. Figures and method in ADR-003; re-run with
+  `scripts/font-stack-census.py`, where a page is only exposed when some
+  element's stack puts the platform face *first*.
+- **For that property, the frame says so, and there is no macOS routing — by
+  decision.** Linux captures of LisaMarie are measured as substituted and
+  labelled *"Linux capture — Apple fonts substituted"*. When its typography
+  has to be checked for real, run the escalation workflow,
+  `.github/workflows/q3-webkit-linux-vs-macos.yml`, with the page's URL: it
+  captures the page in WebKit on macOS and on Linux and diffs them, free.
+  ADR-003 records why that, not routing.
 - **`system-ui` is detected but never judged.** It is the same
   platform-dependent face under a standards name, so the probe records it and
   the frame says so — but no finding is raised and no verdict is given.
@@ -69,6 +72,9 @@ Measured, not estimated. The full argument and the decision are in
   resolves to *something* everywhere, and the obvious reference — `"SF Pro
   Text"` by name — is not addressable on macOS: measured there it is identical
   to the impossible-family control, so there is nothing to compare against.
+  Detection accepts the keyword quoted, because Chromium hands
+  `BlinkMacSystemFont` back as `"system-ui"` and Firefox keeps an author's
+  quotes (#115).
 
 ## The BrowserStack backend
 
@@ -185,6 +191,21 @@ Measured, not estimated. The full argument and the decision are in
 - One run at a time (`MAX_RUNNING`), because three browser engines on a
   small instance are enough; a second request gets `429 run_capacity` and the
   caller retries later rather than queueing.
+
+## Calibration
+
+Detection and capture changes run three calibration gates first: the test
+suite; apexure.com on `iphone-16` + `desktop-1440-firefox` for webfont
+findings; and a live page witnessing `element-wider` on `ipad-pro-13`.
+
+- **Gate 3 has no live page, and is recorded as uncovered.** Its page,
+  elitepractice.clickfunnels.com/dr-dania-alkhani, was a ClickFunnels 404 stub
+  by 2026-09-09 and now serves Cloudflare's block page to headless browsers.
+  `fixtures/element-wider.html` and `ElementWiderRule` still exercise the rule
+  in the suite, but a fixture is not a substitute for a real page: nothing
+  confirms the rule against one. Every detection change since has reported
+  gate 3 as not run rather than passed. Uncovered until a replacement client
+  page — one with a wide image clipped at the viewport edge — is chosen.
 
 ## Not built
 
