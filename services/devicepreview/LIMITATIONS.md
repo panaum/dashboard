@@ -47,15 +47,20 @@ Measured, not estimated. The full argument and the decision are in
   coincidence of two effects cancelling — Linux produced one *more* text band
   than macOS. Do not quote the height figure as reassurance; it is the single
   most misleading number in this comparison.
-- **It does not currently matter for our client work.** A census of 29 pages —
-  every page the Dashboard monitors plus every client page reachable from those
-  domains — found **0 that ask for `-apple-system`**, 8 that name `system-ui`
-  behind a webfont expected to load, and 21 that name neither. Re-run it with
-  `scripts/font-stack-census.py`; a page is only exposed when the platform face
-  is *first* in the stack.
-- **So there is no macOS routing, by decision, not by omission.** The capture
-  says which machine drew it instead, on the frame. That label is the
-  mitigation.
+- **It matters for one monitored property, partly.** Across the portfolio —
+  59 pages on the six properties the Sites page names — **4 pages are exposed,
+  all on dev.apexure.org/LisaMarie**, where body text, links and button labels
+  lead with `-apple-system` (headings and paragraphs are Poppins). apexure.com
+  and fautons.com name `system-ui` on every page but only behind a webfont;
+  the rest name no platform face. elitepractice.clickfunnels.com blocks headless
+  browsers and cannot be measured. Figures and method in ADR-003's update;
+  re-run with `scripts/font-stack-census.py`, where a page is only exposed when
+  some element's stack puts the platform face *first*.
+- **For that property, the frame already says so.** Linux captures of
+  LisaMarie are measured as substituted and labelled *"Linux capture — Apple
+  fonts substituted"*. Whether it also warrants a macOS capture path is under
+  review; until decided there is no macOS routing, by decision, not by
+  omission.
 - **`system-ui` is detected but never judged.** It is the same
   platform-dependent face under a standards name, so the probe records it and
   the frame says so — but no finding is raised and no verdict is given.

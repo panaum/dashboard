@@ -775,6 +775,51 @@ class AppleFontAuthenticityIsMeasured(unittest.TestCase):
             self.assertEqual(out, [], f"measured={measured}")
 
 
+class FontStackCensus(unittest.TestCase):
+    """The census decides ADR-003, so its counting is tested, not trusted."""
+
+    def setUp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("census", ROOT / "scripts" / "font-stack-census.py")
+        self.c = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.c)
+
+    def test_every_element_is_judged_not_just_body(self):
+        """dev.apexure.org/LisaMarie: links and buttons in the system face,
+        headings and paragraphs in Poppins. Body alone overstated it; a webfont
+        body would have hidden a system-face paragraph entirely."""
+        lisa = {"body": '-apple-system, "system-ui", Roboto', "h1": "Poppins, sans-serif",
+                "p": "Poppins, sans-serif", "a": '-apple-system, "system-ui"', "button": "-apple-system"}
+        v, els = self.c.classify(lisa)
+        self.assertEqual(v, "apple LEADING"); self.assertEqual(els, ["body", "a", "button"])
+        hidden = {"body": "Inter, sans-serif", "p": "system-ui, sans-serif"}
+        v, els = self.c.classify(hidden)
+        self.assertEqual(v, "system-ui LEADING", "a system-face paragraph under a webfont body is exposed")
+        self.assertEqual(els, ["p"])
+
+    def test_a_platform_face_behind_a_webfont_is_not_exposed(self):
+        v, els = self.c.classify({"body": "Goga, Verdana, system-ui, sans-serif", "p": "Goga, Verdana, system-ui"})
+        self.assertEqual((v, els), ("system-ui (fallback)", []))
+        self.assertEqual(self.c.classify({"body": "Manrope, sans-serif"}), ("none", []))
+
+    def test_one_page_is_counted_once_however_it_was_spelled(self):
+        k = self.c.page_key
+        self.assertEqual(k("https://dev.apexure.org/LisaMarie"), k("https://dev.apexure.org/LisaMarie/"))
+        self.assertEqual(k("https://www.apexure.com/"), k("https://apexure.com"))
+        self.assertNotEqual(k("https://dev.apexure.org/LisaMarie/"), k("https://dev.apexure.org/LisaMarie/about/"))
+
+    def test_a_wall_is_not_measured_as_the_page(self):
+        """Cloudflare's block page sets -apple-system on every heading."""
+        for title in ("Attention Required! | Cloudflare", "Just a moment...", "Clickfunnels - Page Not Found"):
+            self.assertTrue(self.c.BLOCKED.search(title), title)
+        self.assertFalse(self.c.BLOCKED.search("Home - Lisamarie"))
+
+    def test_the_crawl_stays_inside_the_seed_path(self):
+        seed = "https://dev.apexure.org/LisaMarie/"
+        self.assertTrue(self.c.within("https://dev.apexure.org/LisaMarie/about/", seed))
+        self.assertFalse(self.c.within("https://dev.apexure.org/SomeOtherClient/", seed),
+                         "dev.apexure.org hosts more than one client")
+
+
 class FakeBrowserStack:
     """The Screenshots API as documented, without the network."""
 

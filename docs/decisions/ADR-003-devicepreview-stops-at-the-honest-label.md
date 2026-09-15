@@ -1,6 +1,6 @@
 # ADR-003 — devicepreview stops at the honest label; no macOS capture routing
 
-**Status:** accepted
+**Status:** accepted — **first reopening condition met 2026-09-15; decision under review** (see Update)
 **Date:** 2026-09-15
 **Related:** `services/devicepreview/LIMITATIONS.md`, PRs #106 #107 #110,
 `.github/workflows/q3-webkit-linux-vs-macos.yml`
@@ -58,6 +58,12 @@ place it second or third, behind a webfont expected to load (`Inter` on
 apexure.com, `GeistSans` on the Dashboard itself); it draws only if that
 webfont does not.
 
+> **Superseded by the portfolio census in the Update below.** This sample was
+> not the portfolio: it included breezioac.com and the Dashboard, which the
+> Sites page does not monitor, and it missed four properties that it does. It
+> was also counted by a script that judged `body` alone, counted a redirected
+> page twice, and would have measured a bot wall as the page.
+
 ## Decision
 
 1. **Do not build macOS capture routing.** The difference is real and the
@@ -84,7 +90,7 @@ reporting a verdict would be a guess.
 ## What would reopen this
 
 - A client site whose body text sets `-apple-system` or `system-ui` **first**,
-  ahead of any webfont. Re-run the census: `services/devicepreview/scripts/font-stack-census.py`.
+  ahead of any webfont. **Met on 2026-09-15 by dev.apexure.org/LisaMarie.** Re-run the census: `services/devicepreview/scripts/font-stack-census.py`.
 - The census sample being materially incomplete. It covered the Layout checks
   list plus crawled client domains; the LinkSpy portfolio could not be read
   (`LINKSPY_API_URL` / `LINKSPY_API_KEY` are absent from the local env). If that
@@ -99,3 +105,51 @@ reporting a verdict would be a guess.
 - The Q3 workflow is throwaway and may be deleted; this ADR carries its numbers.
 - Nobody needs to re-derive this. The measurement is reproducible: the fixture
   is `services/devicepreview/fixtures/apple-font-page.html`.
+
+## Update — 2026-09-15: the portfolio census
+
+The Sites page was read directly for the monitored properties: apexure.com,
+dev.apexure.org/LisaMarie, shopping-protection.com, fautons.com, wbiwarm.com
+and elitepractice.clickfunnels.com. **Six were named; the page reports eight.
+Two are unidentified and not in this count.**
+
+Each was crawled 14 links deep inside its own path, and every sampled element
+(`body h1 h2 h3 p a button`) judged on its own `font-family` stack:
+
+| property | pages | name a platform face | **exposed** |
+|---|---|---|---|
+| apexure.com | 15 | 15 | 0 |
+| fautons.com | 15 | 15 | 0 |
+| wbiwarm.com | 15 | 0 | 0 |
+| shopping-protection.com | 10 | 0 | 0 |
+| **dev.apexure.org/LisaMarie** | 4 | 4 | **4** |
+| elitepractice.clickfunnels.com | — | — | *unmeasurable* |
+| **total** | **59** | **34** | **4** |
+
+**One property in six is exposed, and only partly.** On LisaMarie the body
+text, links and button labels lead with `-apple-system`; the headings and
+paragraphs are set in Poppins, a webfont. So the substituted face shows in the
+navigation, the buttons and any text sitting directly in the body — not in the
+display type. It still matters: a button sized to its label changes width when
+the face does, which is the fixture's measured failure in miniature.
+
+apexure.com and fautons.com name a platform face on every page, but only behind
+a webfont (`Inter, system-ui, sans-serif`; `Goga, Verdana, system-ui,
+sans-serif`) — zero exposed even judged element by element.
+
+elitepractice.clickfunnels.com serves Cloudflare's "Sorry, you have been
+blocked" page to a headless browser, so no automated census can see it. Its own
+stylesheet sets `-apple-system` on every heading; measured naively it would have
+counted as exposed.
+
+**What the honest label already does for the exposed property.** devicepreview
+detects the request there (`appleSystemFontRequested=True`), so every Linux
+capture of LisaMarie carries *"Linux capture — Apple fonts substituted"* on its
+frame. The mitigation this ADR chose is working on exactly the case that
+reopened it.
+
+**What is open.** Whether one partly exposed property justifies a macOS capture
+path, or whether the label plus an on-demand authentic capture for that site
+(the Q3 workflow takes a URL and runs WebKit on a free macOS runner) is enough.
+That is a decision for the team, not a conclusion of this update. Until it is taken, the decision stands as recorded.
+
