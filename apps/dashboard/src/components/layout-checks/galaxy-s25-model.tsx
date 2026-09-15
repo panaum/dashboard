@@ -41,7 +41,6 @@ import {
 // Re-importing the download untouched brings all of that back. Re-run the
 // script instead.
 
-export const MODEL_DEVICE = "galaxy-s25";
 const MODEL_URL = "/models/galaxy-s25.glb";
 
 const FOV = 22;        // narrow, so the body is not distorted by perspective

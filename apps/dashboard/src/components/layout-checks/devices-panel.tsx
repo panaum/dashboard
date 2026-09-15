@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
 import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
 import { useSearchParams } from "next/navigation";
 import { readDeviceView, syncQuery } from "@/lib/layout-checks/deep-link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ChevronDown, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, RotateCcw, ShieldAlert } from "lucide-react";
+import { ChevronDown, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, Rotate3d, RotateCcw, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
-import { GalaxyS25Model, MODEL_DEVICE, type ModelControls } from "@/components/layout-checks/galaxy-s25-model";
+import type { ModelControls } from "@/components/layout-checks/galaxy-s25-model";
+import { MODEL_DEVICE, useFrame3d } from "@/lib/layout-checks/frame3d";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { BarLabel } from "@/components/layout-checks/check-shell";
 import { HealthMatrix } from "@/components/layout-checks/health-matrix";
@@ -32,6 +33,17 @@ import {
   defaultSelection, groupDevices, toView,
   type DeviceInput, type DeviceView,
 } from "@/lib/layout-checks/devices-view";
+
+// The 3D handset is fetched only when it is switched on and the Galaxy S25 is
+// on the stage: its component, three.js and the model are all behind this.
+// A fetch that fails resolves to nothing, so the flat frame simply stays —
+// it must never take the page down with it.
+type ModelProps = ComponentProps<typeof import("@/components/layout-checks/galaxy-s25-model").GalaxyS25Model>;
+const NoModel: ComponentType<ModelProps> = () => null;
+const GalaxyS25Model = lazy<ComponentType<ModelProps>>(() =>
+  import("@/components/layout-checks/galaxy-s25-model")
+    .then((m) => ({ default: m.GalaxyS25Model }))
+    .catch(() => ({ default: NoModel })));
 
 // The Devices tab: pick one device, see that device. The picker is a dropdown
 // grouped Apple / Android / Tablet / Desktop, worst first inside each group,
@@ -85,9 +97,11 @@ export function DevicesPanel({
   const asked = readDeviceView(params, views.map((v) => v.profileId));
   const [selected, setSelected] = useState<string | null>(() => asked.device ?? defaultSelection(views));
   const current: DeviceView | undefined = views.find((v) => v.profileId === selected) ?? views[0];
-  // TEMPORARY, until the 3D toggle exists: the model is reachable only by
-  // adding ?frame3d=1 to the address. Nothing links to it.
-  const frame3d = params.get("frame3d") === "1";
+  // The 3D handset: off unless switched on, and remembered in this browser.
+  const [frame3d, setFrame3d] = useFrame3d();
+  // No WebGL, or the model or three.js could not be fetched: the flat frame
+  // stays, without a word. Switching 3D off and on tries again.
+  const [model3dFailed, setModel3dFailed] = useState(false);
   // Once the model has drawn it covers the flat frame, and from then the
   // frame's pins, scroll area and ruler must not take focus: nothing under an
   // overlay may be reachable by keyboard. Reported by the model itself, so
@@ -421,19 +435,22 @@ const picker = views.length ? (
               the pins (z-10, z-20), which would otherwise show through. Not
               at actual size: that is for reading the capture's own pixels.
               Not without a capture: the frame's "No screenshot" is the answer. */}
-          {frame3d && current.profileId === MODEL_DEVICE && !showLive && zoom === "fit"
+          {frame3d && !model3dFailed && current.profileId === MODEL_DEVICE && !showLive && zoom === "fit"
             && shownSrc && shownSrc !== screenFailed && (
+            <Suspense fallback={null}>
             <GalaxyS25Model
               ref={model3d}
               src={shownSrc}
               alt={`${current.label}, rendered page`}
               onScreenFail={setScreenFailed}
+              onFail={() => setModel3dFailed(true)}
               className="absolute inset-0 z-30 bg-card"
               // A model mounts facing front, so leaving one turned and coming
               // back must not leave the button thinking it is still turned.
               onCoverChange={(on) => { setCovered3d(on); if (!on) setAtFront(true); }}
               onFrontChange={setAtFront}
             />
+            </Suspense>
           )}
           </div>
           <StageCaption title={current.label}>
@@ -461,8 +478,26 @@ const picker = views.length ? (
 
   // The bar under the device. "Open in a window" is your browser, not the
   // device's: the tooltip says so.
+  const show3dToggle = current?.profileId === MODEL_DEVICE && !showCompare && !showStream && !showLive;
+  const showing3d = frame3d && zoom === "fit";
   const bar = current ? (
     <StageBar note={embed?.reason}>
+      {show3dToggle && (
+        <StageButton
+          on={showing3d}
+          onClick={() => {
+            if (showing3d) { setFrame3d(false); return; }
+            setModel3dFailed(false);
+            setZoom("fit");
+            setFrame3d(true);
+          }}
+          title={showing3d
+            ? "Back to the flat frame, with its pins and scroll ruler."
+            : "Show this handset as a 3D model you can turn. For feel only: the findings are read from the flat frame."}
+        >
+          <Rotate3d className="size-4" aria-hidden /> 3D
+        </StageButton>
+      )}
       {covered3d && (
         // aria-disabled rather than disabled: a button that disables itself
         // when pressed would drop keyboard focus onto the page.
