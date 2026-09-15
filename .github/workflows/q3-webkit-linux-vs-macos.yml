@@ -13,7 +13,8 @@
 # rather than a bare runner, and the table says how far it is from the real
 # rendering on that page.
 #
-# Free: GitHub-hosted runners, macOS included, cost nothing on a public repo.
+# Cost: the repo is private, so runs draw on GitHub's 2,000-minute monthly
+# allowance, and macOS minutes count at a higher rate than Linux. See ADR-003.
 # Artifacts are kept for the repo's retention period (90 days).
 #
 # Run it from Actions → "Apple fonts: macOS vs Linux capture" → Run workflow,

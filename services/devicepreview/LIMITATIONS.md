@@ -61,7 +61,7 @@ Measured, not estimated. The full argument and the decision are in
   labelled *"Linux capture — Apple fonts substituted"*. When its typography
   has to be checked for real, run the escalation workflow,
   `.github/workflows/q3-webkit-linux-vs-macos.yml`, with the page's URL: it
-  captures the page in WebKit on macOS and on Linux and diffs them, free.
+  captures the page in WebKit on macOS and on Linux and diffs them.
   ADR-003 records why that, not routing.
 - **`system-ui` is detected but never judged.** It is the same
   platform-dependent face under a standards name, so the probe records it and

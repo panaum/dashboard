@@ -22,7 +22,7 @@ more than a narrow Chrome window.
 
 A macOS host would render Apple's own fonts, and it is not worth it: EC2 mac
 instances enforce a 24-hour minimum allocation, MacStadium is a subscription,
-and GitHub's free macOS runners are asynchronous CI rather than a service you
+and GitHub's macOS runners are asynchronous CI rather than a service you
 can call and wait on. ADR-003 has the measurements behind that decision.
 
 ## What one capture actually does
@@ -111,7 +111,8 @@ backend and not to any screenshot-only service.
   the capturing machine. A page is only *exposed* when the platform face leads
   its stack.
 - **GitHub Actions** — `q3-webkit-linux-vs-macos.yml`, the throwaway
-  comparison that produced ADR-003's numbers. Free, because the repo is public.
+  comparison that produced ADR-003's numbers, now the escalation path. Runs
+  draw on the private repo's Actions allowance.
 
 ## The shapes worth keeping
 
