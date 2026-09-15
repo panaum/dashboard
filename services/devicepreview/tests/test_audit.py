@@ -737,6 +737,26 @@ class SystemUiIsRecordedNotJudged(unittest.TestCase):
         self.assertIn('res.fonts["systemUiRequested"]', src, "and the capture records it")
 
 
+class SystemUiDetectedHoweverItIsSpelled(unittest.TestCase):
+    """A detector that misses what it detects reports a clean result we would
+    believe. Engines hand the computed stack back in different spellings, and
+    two of them quote it — so every spelling is exercised in the engine that
+    produces it."""
+
+    def test_chromium_rewrites_blink_keyword_to_a_quoted_system_ui(self):
+        """Chromium computes `BlinkMacSystemFont` as `"system-ui"`, quoted, so
+        neither the Apple keywords nor an unquoted system-ui matched: the page
+        was reported as naming no platform face at all."""
+        _, r = run("blink-system-font.html", ANDROID)
+        f = r["devices"][0]["fonts"]
+        self.assertTrue(f.get("systemUiRequested"), f"missed on chromium: {f}")
+
+    def test_firefox_keeps_an_author_quoted_system_ui(self):
+        _, r = run("system-ui-quoted.html", "desktop-1440-firefox")
+        f = r["devices"][0]["fonts"]
+        self.assertTrue(f.get("systemUiRequested"), f"missed on firefox: {f}")
+
+
 class AppleFontAuthenticityIsMeasured(unittest.TestCase):
     """Whether Apple's face actually drew is a property of the machine that
     rendered the page, not of the backend's opinion of itself."""
