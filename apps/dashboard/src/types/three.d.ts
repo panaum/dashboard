@@ -43,9 +43,15 @@ declare module "three" {
     environmentIntensity: number;
   }
 
+  export class Color {
+    setHex(hex: number): this;
+  }
+
   export class Texture {
     readonly isTexture: true;
     colorSpace: string;
+    flipY: boolean;
+    anisotropy: number;
     needsUpdate: boolean;
     dispose(): void;
   }
@@ -64,11 +70,16 @@ declare module "three" {
 
   export class Material {
     name: string;
+    /** Write-only in three: set it after changing what the shader depends on. */
+    set needsUpdate(value: boolean);
     dispose(): void;
   }
 
   export class MeshBasicMaterial extends Material {
+    map: Texture | null;
+    color: Color;
     constructor(parameters?: {
+      color?: number;
       map?: Texture | null;
       transparent?: boolean;
       depthWrite?: boolean;
@@ -113,6 +124,7 @@ declare module "three" {
     });
     outputColorSpace: string;
     toneMapping: number;
+    readonly capabilities: { readonly maxTextureSize: number; getMaxAnisotropy(): number };
     setPixelRatio(value: number): void;
     setClearColor(color: number, alpha?: number): void;
     setSize(width: number, height: number, updateStyle?: boolean): void;

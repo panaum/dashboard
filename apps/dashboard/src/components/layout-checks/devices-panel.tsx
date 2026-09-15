@@ -95,6 +95,10 @@ export function DevicesPanel({
   const [covered3d, setCovered3d] = useState(false);
   const [atFront, setAtFront] = useState(true);
   const model3d = useRef<ModelControls>(null);
+  // A capture the model could not load. The flat frame is the one that can
+  // explain that (its fallback, or "no longer stored"), so the model stands
+  // aside for that capture and comes back for the next one.
+  const [screenFailed, setScreenFailed] = useState<string | null>(null);
   const stored = new Set(storedFolds);
 
   // Rail state is per device: a new device means no selected finding, the
@@ -412,12 +416,18 @@ const picker = views.length ? (
           />
           </div>
           {/* The flat frame is laid out and shown first; the 3D view covers it
-              once its first frame is drawn, and never if it cannot be. Above
+              once the handset is drawn with the capture on its screen, and
+              never if it cannot be. Above
               the pins (z-10, z-20), which would otherwise show through. Not
-              at actual size: that is for reading the capture's own pixels. */}
-          {frame3d && current.profileId === MODEL_DEVICE && !showLive && zoom === "fit" && (
+              at actual size: that is for reading the capture's own pixels.
+              Not without a capture: the frame's "No screenshot" is the answer. */}
+          {frame3d && current.profileId === MODEL_DEVICE && !showLive && zoom === "fit"
+            && shownSrc && shownSrc !== screenFailed && (
             <GalaxyS25Model
               ref={model3d}
+              src={shownSrc}
+              alt={`${current.label}, rendered page`}
+              onScreenFail={setScreenFailed}
               className="absolute inset-0 z-30 bg-card"
               // A model mounts facing front, so leaving one turned and coming
               // back must not leave the button thinking it is still turned.
