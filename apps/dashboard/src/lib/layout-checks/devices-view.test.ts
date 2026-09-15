@@ -68,7 +68,9 @@ test("default selection is the worst device, or the smallest phone when all is c
 // ── the collapsed picker ────────────────────────────────────────────────────
 
 test("a closed group says whether there is anything in it", () => {
-  const v = (severity: Severity, profileId = severity) =>
+  // profileId is a device id, not a severity — it only defaults to the
+  // severity so the cases below read as one short line each.
+  const v = (severity: Severity, profileId: string = severity) =>
     ({ profileId, severity } as unknown as DeviceView);
   assert.deepEqual(groupSummary([v("clean", "a"), v("clean", "b")]),
     { label: "all clean", tone: "success" });

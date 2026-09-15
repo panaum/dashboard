@@ -6,6 +6,11 @@ import { motion, AnimatePresence } from "motion/react";
 import { X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
+// The portal may only render once there is a document. useSyncExternalStore
+// answers "are we on the client yet" without a setState in an effect, which
+// commits the server shell first and then immediately re-renders over it.
+const subscribeNever = () => () => {};
+
 export function Dialog({
   trigger,
   title,
@@ -19,10 +24,8 @@ export function Dialog({
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
-  const [mounted, setMounted] = React.useState(false);
+  const mounted = React.useSyncExternalStore(subscribeNever, () => true, () => false);
   const close = React.useCallback(() => setOpen(false), []);
-
-  React.useEffect(() => setMounted(true), []);
 
   React.useEffect(() => {
     if (!open) return;

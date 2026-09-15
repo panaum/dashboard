@@ -75,6 +75,11 @@ function Segmented({
   );
 }
 
+const subscribeMinute = (onChange: () => void) => {
+  const id = setInterval(onChange, 60_000);
+  return () => clearInterval(id);
+};
+
 export function QAChecklist({
   items,
   path,
@@ -113,7 +118,14 @@ export function QAChecklist({
     startTransition(() => { confirmAllMachinePassed({ path, items: batch }); });
   };
 
-  const stale = Boolean(prefillRunAt) && Date.now() - new Date(prefillRunAt as string).getTime() > 3600_000;
+  // "refresh checks" shows once the machine checks pass an hour old. Reading
+  // the clock during render was unstable by definition, and it also meant the
+  // button only appeared if something ELSE happened to re-render — leave the
+  // page open and it never arrived. A minute-resolution clock is both pure and
+  // actually live; on the server it reads 0, so nothing is stale before
+  // hydration.
+  const minute = React.useSyncExternalStore(subscribeMinute, () => Math.floor(Date.now() / 60_000), () => 0);
+  const stale = Boolean(prefillRunAt) && minute * 60_000 - new Date(prefillRunAt as string).getTime() > 3600_000;
   const refresh = async () => {
     if (!deliverableId) return;
     setRefreshing(true);

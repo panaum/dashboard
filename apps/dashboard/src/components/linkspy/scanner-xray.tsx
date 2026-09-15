@@ -22,15 +22,6 @@ export function ScannerXray({ url }: { url: string }) {
   const [showBoxes, setShowBoxes] = useState(true);
   const started = useRef(false);
 
-  // Opening the tab IS the request. The parent mounts this on first open and
-  // keeps it mounted, so the capture runs once, not on every tab switch.
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   async function load() {
     setState("loading");
     try {
@@ -46,6 +37,16 @@ export function ScannerXray({ url }: { url: string }) {
       setState("failed");
     }
   }
+
+  // Opening the tab IS the request. The parent mounts this on first open and
+  // keeps it mounted, so the capture runs once, not on every tab switch.
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   if (state === "idle" || state === "loading") {
     return (

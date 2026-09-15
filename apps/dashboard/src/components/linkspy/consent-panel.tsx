@@ -1,6 +1,5 @@
 import { ShieldCheck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { buildConsentView, type ConsentPayload } from "@/lib/linkspy/intent-consent-view";
 import { plainConsent, regimeSentence, GROUP_COPY } from "@/lib/linkspy/consent-plain";
 

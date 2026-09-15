@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ArrowLeft, CheckCircle2, ChevronRight, History, Loader2, ScanSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
-  filterLinks, groupByZone, latencyTone, bucketBadge, scoreTone, integrationTone,
+  filterLinks, groupByZone, latencyTone, bucketBadge, scoreTone,
   zoneSummary, zoneStatusLine, groupIntegrations, categoryAccent, formatStamp,
   type FullScan, type FullLink, type ScanFilter,
 } from "@/lib/linkspy/scanner-view";
@@ -273,10 +273,13 @@ function ScanResult({ scan, url }: { scan: FullScan; url: string }) {
     setTab(key);
     setOpened((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
   };
-  const links = scan.links ?? [];
   const t = scan.totals ?? { links: 0, ok: 0, broken: 0, unverifiable: 0, dead_cta: 0 };
   const allClear = t.broken === 0 && t.dead_cta === 0;
-  const groups = useMemo(() => groupByZone(filterLinks(links, filter, query)), [links, filter, query]);
+  // `scan.links ?? []` has to live INSIDE the memo: as a dependency it is a
+  // fresh array on every render whenever scan.links is nullish, so the memo
+  // never held and every render re-grouped the whole scan.
+  const groups = useMemo(() => groupByZone(filterLinks(scan.links ?? [], filter, query)),
+                         [scan.links, filter, query]);
   const shownCount = groups.reduce((n, g) => n + g.links.length, 0);
 
   return (
