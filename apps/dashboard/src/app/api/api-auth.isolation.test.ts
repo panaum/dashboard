@@ -36,6 +36,7 @@ const SESSION_GUARDED = [
   "src/app/api/devicepreview/live/route.ts",
   "src/app/api/devicepreview/live-token/route.ts",
   "src/app/api/embed-check/route.ts",
+  "src/app/api/models/galaxy-s25/route.ts",
 ];
 
 // Service-to-service: a shared secret compared timing-safely, or an HMAC envelope.

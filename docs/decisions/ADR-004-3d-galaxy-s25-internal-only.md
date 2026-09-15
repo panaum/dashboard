@@ -2,7 +2,7 @@
 
 **Status:** accepted, on trial. **Check on 2026-09-29.**
 **Date:** 2026-09-15
-**Related:** PR #119; `apps/dashboard/src/components/layout-checks/galaxy-s25-model.tsx`;
+**Related:** PRs #119, #120; `apps/dashboard/src/components/layout-checks/galaxy-s25-model.tsx`;
 `services/devicepreview/LIMITATIONS.md` ("The 3D Galaxy S25"); ADR-003
 
 ---
@@ -76,9 +76,21 @@ of the product while they do.
 
 As things stand, nothing client-facing can show it: the client report and the
 public QA certificates render neither the Devices panel nor the device frame.
-The model file itself is served from `public/`, outside the login — a
-deliberate choice (2026-09-15), noted here so it is not mistaken for an
-oversight.
+
+**The file is behind the login too.** The model lives in
+`apps/dashboard/assets/models/`, outside `public/`, and reaches the page only
+through `/api/models/galaxy-s25`, which checks the team session as the capture
+routes do and answers 401 without one. It is marked `private`, so no shared
+cache can serve it past that check.
+
+It was first committed to `public/`, where anyone with the production URL could
+fetch it without signing in. That was consistent while the concern was the
+wordmark, which had been stripped; it stopped being consistent once this record
+said the concern is the design itself. It was moved in #120, the day #119
+merged. Gating our copy is not about secrecy — the unmodified model is a free
+download on Sketchfab — it is that our production app should not hand
+Samsung's design to anyone who asks for it. **Do not move it back to
+`public/`**, for convenience or caching.
 
 ## What takes it out
 
@@ -90,9 +102,8 @@ oversight.
 
 ## The check
 
-**On 2026-09-29** — two weeks from the merge on 2026-09-15; if the merge landed
-later, the date moves with it — ask everyone who uses the Devices tab one
-question: *"Did you ever turn 3D off to get work done?"* Any yes, and it comes
+**On 2026-09-29** — two weeks from the merge of #119 (2026-09-15, 18:25 UTC) —
+ask everyone who uses the Devices tab one question: *"Did you ever turn 3D off to get work done?"* Any yes, and it comes
 out.
 
 There is no telemetry on the toggle, and there will not be: the choice lives in
@@ -109,7 +120,9 @@ It was built to come out cleanly. In `apps/dashboard`:
 - Delete `src/components/layout-checks/galaxy-s25-model.tsx`,
   `src/lib/layout-checks/frame3d.ts`, `model-rotation.ts`, `model-fit.ts` and
   `screen-crop.ts` (each with its `.test.ts`), `src/types/three.d.ts`,
-  `public/models/galaxy-s25.glb` and `scripts/optimise-galaxy-s25-model.mjs`.
+  `assets/models/galaxy-s25.glb`, `scripts/optimise-galaxy-s25-model.mjs` and
+  `src/app/api/models/galaxy-s25/route.ts` (and its line in
+  `src/app/api/api-auth.isolation.test.ts`).
 - In `src/components/layout-checks/devices-panel.tsx`, remove the lazy import,
   the 3D state, the **3D** and **Face front** buttons, the model element and
   the `inert` wrapper around `DeviceFrame`.

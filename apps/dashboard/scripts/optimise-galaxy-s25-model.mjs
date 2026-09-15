@@ -1,4 +1,4 @@
-// One-off: turns the downloaded Sketchfab model into public/models/galaxy-s25.glb.
+// One-off: turns the downloaded Sketchfab model into assets/models/galaxy-s25.glb.
 // Not part of the build, and gltf-transform is deliberately not a dependency of
 // this app. To re-run it, install the tools in a scratch directory and run the
 // script from there:
@@ -7,7 +7,10 @@
 //   npm i @gltf-transform/core@4.5.0 @gltf-transform/extensions@4.5.0 \
 //         @gltf-transform/functions@4.5.0 meshoptimizer@1.2.0
 //   node <repo>/apps/dashboard/scripts/optimise-galaxy-s25-model.mjs \
-//        ~/Downloads/samsung_s25.glb <repo>/apps/dashboard/public/models/galaxy-s25.glb
+//        ~/Downloads/samsung_s25.glb <repo>/apps/dashboard/assets/models/galaxy-s25.glb
+//
+// Not public/: the model is served to signed-in users by
+// src/app/api/models/galaxy-s25/route.ts (see ADR-004 for why).
 //
 // Source: "SAMSUNG S25" by Yassine24, CC Attribution —
 // https://sketchfab.com/3d-models/samsung-s25-3ea821af958f4e9d99aaba1eb32b423f
