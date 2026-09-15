@@ -25,6 +25,44 @@ tool measured, tried, or learned the hard way; none is hypothetical.
   not been checked against the physical device. The report footer names
   them. Confirm against hardware before quoting a figure.
 
+## Apple fonts, and how much the platform actually changes
+
+Measured, not estimated. The full argument and the decision are in
+`docs/decisions/ADR-003-devicepreview-stops-at-the-honest-label.md`.
+
+- **On a page that asks for an Apple system font stack, the platform changes
+  the rendering visibly.** Same fixture, same code, WebKit both sides,
+  iPhone 16: **14.25% of pixels differ** (12.53% strongly) between a macOS
+  capture and a Linux one. On a page that does *not* ask, the same comparison
+  is 2.30% — antialiasing, nothing more.
+- **It is not only rasterisation: content moves.** The top third of the page
+  aligns within a pixel or two, then every remaining text band is displaced by
+  **about 24 CSS px, a whole line**, and at one point by 56. Line ends on body
+  copy run ~10 CSS px further on the substituted face, and headings break at
+  different words.
+- **Identical page height is NOT evidence that layout survived.** Both
+  platforms reported the same `scrollHeight` on that fixture, and it is a
+  coincidence of two effects cancelling — Linux produced one *more* text band
+  than macOS. Do not quote the height figure as reassurance; it is the single
+  most misleading number in this comparison.
+- **It does not currently matter for our client work.** A census of 29 pages —
+  every page the Dashboard monitors plus every client page reachable from those
+  domains — found **0 that ask for `-apple-system`**, 8 that name `system-ui`
+  behind a webfont expected to load, and 21 that name neither. Re-run it with
+  `scripts/font-stack-census.py`; a page is only exposed when the platform face
+  is *first* in the stack.
+- **So there is no macOS routing, by decision, not by omission.** The capture
+  says which machine drew it instead, on the frame. That label is the
+  mitigation.
+- **`system-ui` is detected but never judged.** It is the same
+  platform-dependent face under a standards name, so the probe records it and
+  the frame says so — but no finding is raised and no verdict is given.
+  `-apple-system` can be judged because on Linux it falls back to the default
+  face and measures identically to a family that cannot exist. `system-ui`
+  resolves to *something* everywhere, and the obvious reference — `"SF Pro
+  Text"` by name — is not addressable on macOS: measured there it is identical
+  to the impossible-family control, so there is nothing to compare against.
+
 ## The BrowserStack backend
 
 - Screenshots come from physical devices, so pixels, fonts and vendor

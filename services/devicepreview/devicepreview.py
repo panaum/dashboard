@@ -379,11 +379,16 @@ FONTS_JS = """async () => {
   catch (e) {}
   // A page asking for Apple's system face will be substituted on Linux. That is
   // a fidelity note the reader needs, not a defect in the page.
-  let apple = false;
+  let apple = false, systemUi = false;
   try {
     for (const el of document.querySelectorAll('body, h1, h2, h3, p, a, button')) {
       const ff = getComputedStyle(el).fontFamily.toLowerCase();
-      if (/-apple-system|sf pro|san francisco|blinkmacsystemfont/.test(ff)) { apple = true; break; }
+      if (/-apple-system|sf pro|san francisco|blinkmacsystemfont/.test(ff)) apple = true;
+      // `system-ui` is the same platform-dependent face under a standards
+      // name: SF Pro on a Mac, whatever fontconfig picks in the container.
+      // A page naming it is exposed to the same difference.
+      if (/(^|[\\s,])system-ui([\\s,]|$)/.test(ff)) systemUi = true;
+      if (apple && systemUi) break;
     }
   } catch (e) {}
   // ...and whether it WAS. Asked is not answered: the same page gets Apple's
@@ -404,7 +409,7 @@ FONTS_JS = """async () => {
     } catch (e) {}
   }
   return { faces, stacks: stackOut, requestsAppleSystemFont: apple,
-           appleSystemFontAuthentic: appleAuthentic, timedOut };
+           appleSystemFontAuthentic: appleAuthentic, requestsSystemUi: systemUi, timedOut };
 }"""
 
 LAZY_SCROLL_JS = """async (maxViewports) => {
@@ -1190,6 +1195,8 @@ class LocalBackend(Backend):
                                         if r.get("status") is None or r["status"] >= 400
                                         or _not_a_font(r.get("contentType"))],
                 }
+                if fonts.get("requestsSystemUi"):
+                    res.fonts["systemUiRequested"] = True
                 if fonts.get("requestsAppleSystemFont"):
                     res.fonts["appleSystemFontRequested"] = True
                     # None when the probe could not run; the backend's own
@@ -1384,6 +1391,16 @@ def _font_findings(fonts: dict[str, Any], vw: int, vh: int, apple_authentic: boo
                                    f"though every request succeeded); {where} measure as their fallback face",
                         "selector": g["sample"] or "body", "box": whole, "family": fam})
 
+    # `systemUiRequested` deliberately produces NO finding here. It is the same
+    # platform-dependent face under a standards name, but three things argue
+    # against a findings row: it is not a defect in the page, it fires on every
+    # page that merely names it as a deep fallback behind a webfont that loads
+    # (8 of 29 real client pages, none of them exposed), and it cannot be
+    # judged anyway — `system-ui` resolves to SOMETHING everywhere, so the
+    # width-against-an-impossible-family test cannot tell SF Pro from whatever
+    # Linux picked, and "SF Pro Text" is not addressable by name on macOS to
+    # compare against. It is recorded on the capture and drawn on the frame,
+    # which is where provenance belongs.
     if fonts.get("appleSystemFontRequested"):
         # The page measured it. `apple_authentic` is the backend asserting a
         # thing about itself, which was the only input here and was wrong every

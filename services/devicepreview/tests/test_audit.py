@@ -707,6 +707,36 @@ class UserAgentTracksTheEngine(unittest.TestCase):
                 self.assertNotIn("{chrome}", prof.user_agent or "", prof.id)
 
 
+class SystemUiIsRecordedNotJudged(unittest.TestCase):
+    """system-ui is the same platform-dependent face under a standards name.
+    We record that a page depends on it. We do not raise a finding about it,
+    and we do not claim to know which face it got."""
+
+    def setUp(self):
+        self.mod = _module()
+
+    def _msgs(self, fonts):
+        base = {"faces": [], "stacks": [], "requests": [], "failed_requests": []}
+        return [f["message"] for f in self.mod._font_findings({**base, **fonts}, 390, 800)]
+
+    def test_naming_system_ui_raises_no_finding(self):
+        """It is not a defect in the page, and on real pages it sits behind a
+        webfont that loads. A row per page would be noise, not evidence."""
+        self.assertEqual(self._msgs({"systemUiRequested": True}), [])
+
+    def test_it_does_not_mute_the_measured_apple_finding(self):
+        both = self._msgs({"appleSystemFontRequested": True, "appleSystemFontAuthentic": False,
+                           "systemUiRequested": True})
+        self.assertEqual(len([x for x in both if "Apple's system font" in x]), 1)
+
+    def test_the_probe_reports_it_so_the_frame_can(self):
+        """Detection is the point: the flag reaches the capture, and the
+        Dashboard draws it beside the device."""
+        src = Path(self.mod.__file__).read_text(encoding="utf-8")
+        self.assertIn("requestsSystemUi", src, "FONTS_JS returns it")
+        self.assertIn('res.fonts["systemUiRequested"]', src, "and the capture records it")
+
+
 class AppleFontAuthenticityIsMeasured(unittest.TestCase):
     """Whether Apple's face actually drew is a property of the machine that
     rendered the page, not of the backend's opinion of itself."""

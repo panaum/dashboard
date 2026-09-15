@@ -27,6 +27,8 @@ export type DpDevice = {
   fonts?: {
     appleSystemFontRequested?: boolean;
     appleSystemFontAuthentic?: boolean | null;
+    /** The page names system-ui: the same platform-dependent face, unjudged. */
+    systemUiRequested?: boolean;
   } | null;
 };
 

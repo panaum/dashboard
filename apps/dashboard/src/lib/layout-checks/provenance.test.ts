@@ -46,6 +46,20 @@ test("a page that never asked for Apple's font is not told about it", () => {
   assert.equal(n.tone, "ok");
 });
 
+test("a page naming system-ui says so, without calling it a verdict", () => {
+  const n = frameNote({ fonts: { appleSystemFontRequested: false, systemUiRequested: true } },
+                      { host: { platform: "linux" } });
+  assert.equal(n.label, "Linux capture · system-ui fallback");
+  assert.equal(n.tone, "ok", "it usually never draws; saying it louder would be noise");
+  assert.match(n.detail, /only draws if the webfont in front of it does not/);
+});
+
+test("a measured Apple verdict outranks the system-ui note", () => {
+  const both = { fonts: { appleSystemFontRequested: true, appleSystemFontAuthentic: false, systemUiRequested: true } };
+  const n = frameNote(both, { host: { platform: "linux" } });
+  assert.equal(n.label, "Linux capture — Apple fonts substituted");
+});
+
 test("an unrecorded host is never presented as fine", () => {
   for (const device of [
     { fonts: { appleSystemFontRequested: false } },
