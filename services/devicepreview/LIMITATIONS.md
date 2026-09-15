@@ -206,6 +206,28 @@ findings; and a live page witnessing `element-wider` on `ipad-pro-13`.
   gate 3 as not run rather than passed. Uncovered until a replacement client
   page — one with a wide image clipped at the viewport edge — is chosen.
 
+## The 3D Galaxy S25 (Dashboard)
+
+On the Devices tab, the Galaxy S25 can be shown as a 3D model you can turn,
+with the capture on its screen. It is there for feel. It tells you nothing
+the flat frame does not, and less than it does:
+
+- **It is not a rendering of the page on a device.** It is the same Linux
+  capture, drawn as a texture on a model. Nothing about the page was
+  re-measured, and the frame's provenance label still applies.
+- **Only the first screen is on it.** The rest of the page, the finding pins,
+  the scroll ruler and the highlight are in the flat frame, which is what
+  findings are read from. Switch 3D off (or use Actual size) to work with them.
+- **The model is simplified and has no wordmark.** It is close to the handset's
+  shape; it is not an exact one, and the display's edges and punch-hole cover
+  a little of the capture, as the real screen would.
+- **Internal only.** If this tool ever becomes client-facing, the model comes
+  out first — because Samsung's industrial design is recognisable without the
+  wordmark and is not ours, or the model's author's, to present. The full
+  reasoning, the trial condition (it comes out if anyone turns it off to get
+  work done; check on 2026-09-29) and how to remove it are in
+  `docs/decisions/ADR-004-3d-galaxy-s25-internal-only.md`.
+
 ## Not built
 
 - `--record-motion` (video + trace) from the CLI specification is not
