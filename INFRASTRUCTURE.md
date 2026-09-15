@@ -408,8 +408,9 @@ galleries survive redeploys. Sizing: the service keeps two runs per site and
 strips the older one to JPEGs, so budget ≈ 100 MB per site (one run of PNGs at
 50–70 MB for the fourteen-profile matrix on a long page, plus two runs of
 900 px JPEGs at ≈ 13 MB each); the total floats with the number of sites, not
-with how often one is checked. Reads no `.env`; every variable is process
-environment. **Fails closed:** with `DEVICEPREVIEW_KEY` unset every request is
+with how often one is checked. Steps, and the survival test that tells a real
+mount from a mistyped path, are in `docs/runbooks/devicepreview-volume.md`.
+Reads no `.env`; every variable is process environment. **Fails closed:** with `DEVICEPREVIEW_KEY` unset every request is
 `503`, so this surface does not join the fail-open list in D13.
 
 | Variable | Purpose | Type | Shared with | Currently required |
