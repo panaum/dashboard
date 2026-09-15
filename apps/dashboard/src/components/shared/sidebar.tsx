@@ -33,14 +33,14 @@ export function Sidebar() {
           <span className="text-sm font-semibold text-text-primary">
             Deliverables
           </span>
-          <span className="text-[11px] text-text-muted">Apexure workspace</span>
+          <span className="text-[11px] text-text-secondary">Apexure workspace</span>
         </div>
       </div>
 
       <button
         type="button"
         onClick={() => window.dispatchEvent(new Event("command-palette:open"))}
-        className="mb-5 flex items-center gap-2 rounded-lg border border-border-soft bg-card px-3 py-2 text-sm text-text-muted shadow-xs transition-colors hover:border-accent/40 hover:text-text-primary"
+        className="mb-5 flex items-center gap-2 rounded-lg border border-border-soft bg-card px-3 py-2 text-sm text-text-secondary shadow-xs transition-colors hover:border-accent/40 hover:text-text-primary"
       >
         <Search className="size-4 shrink-0" strokeWidth={1.5} />
         <span className="flex-1 text-left">Search…</span>
@@ -49,7 +49,7 @@ export function Sidebar() {
         </kbd>
       </button>
 
-      <span className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+      <span className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-text-secondary">
         Menu
       </span>
       <nav className="flex flex-1 flex-col gap-0.5">
@@ -85,7 +85,7 @@ export function Sidebar() {
           );
         })}
 
-        <span className="mb-1 mt-4 px-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+        <span className="mb-1 mt-4 px-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-text-secondary">
           Apps
         </span>
         {/* A hop, not a page: /dashboard/linkspy mints a signed handoff and

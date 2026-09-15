@@ -18,7 +18,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "linkspy:report": "tsx scripts/linkspy-link-report.ts"
+    "linkspy:report": "tsx scripts/linkspy-link-report.ts",
+    "contrast": "node scripts/contrast-audit.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
