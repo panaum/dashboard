@@ -1,0 +1,45 @@
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: an Apple system font stack, at page scale</title>
+<style>
+  /* The whole point: every run of text asks for Apple's system face first.
+     On a Mac that resolves to SF Pro; in the Linux container it falls back.
+     No webfonts, no images, no layout tricks — so any pixel that differs
+     between two platforms differs because of the font, not because of
+     anything else on the page. */
+  :root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+  body { margin: 0; padding: 32px 24px; color: #1c1c2e; background: #fff;
+         font-family: inherit; line-height: 1.5; }
+  h1 { font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 16px; font-weight: 700; }
+  h2 { font-size: 21px; line-height: 1.25; margin: 32px 0 8px; font-weight: 600; }
+  p  { font-size: 16px; margin: 0 0 16px; max-width: 34em; }
+  .small { font-size: 12px; color: #66667a; }
+  .num { font-variant-numeric: tabular-nums; font-size: 15px; }
+  ul { font-size: 16px; padding-left: 20px; }
+</style></head>
+<body>
+  <h1>Radiant heating, measured at the edge of a line</h1>
+  <p>Every run of text on this page asks for Apple&rsquo;s system face before
+     anything else. On a Mac that is SF&nbsp;Pro. In the Linux container it is
+     whatever the fallback stack reaches first, and the two do not have the same
+     metrics &mdash; so a line that just fits on one platform may not on the other.</p>
+
+  <h2>Where a substitution shows first</h2>
+  <p>Narrow glyphs are where the difference bites: i, l, t, f and the figures.
+     A heading set tight enough to fill its measure will re-wrap when the face
+     changes, and a button label sized to its text will change width with it.</p>
+  <ul>
+    <li>Illustrative: filtering, fulfilment, identification, little, tilt</li>
+    <li>Figures: 0123456789 &mdash; <span class="num">1,048,576</span></li>
+    <li>Mixed: Wi-Fi 6E &middot; 1080&times;2340 &middot; 60&nbsp;fps</li>
+  </ul>
+
+  <h2>A paragraph long enough to wrap several times</h2>
+  <p>Pre-assembled boiler boards and complete hydronic mechanical packages are
+     specified by the room they serve, not by the panel that heats it. A
+     high-performance radiant floor system requires more than quality panels and
+     tubing: it needs the manifold, the mixing assembly and the controls to agree
+     with one another before anyone pours a slab over the top of them.</p>
+  <p class="small">Set at twelve pixels, which is where hinting differences are
+     easiest to see and hardest to defend.</p>
+</body></html>
