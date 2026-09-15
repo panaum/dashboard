@@ -387,7 +387,9 @@ FONTS_JS = """async () => {
       // `system-ui` is the same platform-dependent face under a standards
       // name: SF Pro on a Mac, whatever fontconfig picks in the container.
       // A page naming it is exposed to the same difference.
-      if (/(^|[\\s,])system-ui([\\s,]|$)/.test(ff)) systemUi = true;
+      // Quotes count as a boundary: Chromium computes BlinkMacSystemFont as
+      // `"system-ui"`, and Chromium and Firefox keep an author's quotes.
+      if (/(^|[\\s,"'])system-ui(["'\\s,]|$)/.test(ff)) systemUi = true;
       if (apple && systemUi) break;
     }
   } catch (e) {}

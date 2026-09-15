@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: BlinkMacSystemFont without -apple-system</title>
+<!-- Standalone on purpose: no _base.css, so no other stylesheet can put an
+     unquoted system-ui on a sampled element and make the test pass without
+     the fix. Chromium computes this stack as `"system-ui", sans-serif`. -->
+<style>body, h1, p, a, button { font-family: BlinkMacSystemFont, sans-serif; }</style></head>
+<body><h1>A page that asks for Blink's name for the system face</h1>
+<p>No -apple-system anywhere, so the Apple keywords cannot match once Chromium has rewritten this.</p></body></html>
