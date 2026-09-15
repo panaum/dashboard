@@ -49,7 +49,7 @@ import { REDUCE_QUERY } from "@/lib/layout-checks/motion";
 //   https://creativecommons.org/licenses/by/4.0/
 // The credit is also kept inside the file (asset.copyright and asset.extras).
 //
-// public/models/galaxy-s25.glb is NOT the file Sketchfab serves. It was made
+// assets/models/galaxy-s25.glb is NOT the file Sketchfab serves. It was made
 // from it by scripts/optimise-galaxy-s25-model.mjs, which:
 //   - removes the SAMSUNG wordmark on the back (its own mesh). No trademarks
 //     on a tool that might not stay internal, and nobody should have to find
@@ -64,8 +64,12 @@ import { REDUCE_QUERY } from "@/lib/layout-checks/motion";
 //     55k) and quantizes it: 3.54 MB → 429 KB.
 // Re-importing the download untouched brings all of that back. Re-run the
 // script instead.
+//
+// It reaches the page only through /api/models/galaxy-s25, which checks the
+// team session. Never put it in public/: that is outside the login, and the
+// reason this model is internal is the design it shows.
 
-const MODEL_URL = "/models/galaxy-s25.glb";
+const MODEL_URL = "/api/models/galaxy-s25";
 
 const FOV = 22;        // narrow, so the body is not distorted by perspective
 // Share of the tighter side of the box the handset fills, fitted to the pose
