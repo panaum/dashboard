@@ -47,8 +47,16 @@ const SURFACES: { name: string; bg: string; fg: string[]; graphical?: string[] }
   { name: "error tint on card", bg: composite(T.error, 0.12, T.card), fg: ["error-strong"] },
   { name: "warning tint on card", bg: composite(T.warning, 0.15, T.card), fg: ["warning-strong"] },
   { name: "success tint on card", bg: composite(T.success, 0.10, T.card), fg: ["success-strong"] },
-  // The scroll ruler beside the frame: a thumb on a track, a non-text control.
-  { name: "the ruler track", bg: T["border-soft"], fg: [], graphical: ["text-secondary/80"] },
+  // The pin badges: a white numeral on a darkened pill, on the capture and in
+  // the rail. On the bright fills these were the page's only contrast
+  // failures — 2.03:1 on amber, 3.59:1 on red, 4.21:1 on grey.
+  { name: "the error pin", bg: T["error-strong"], fg: ["white"] },
+  { name: "the warning pin", bg: T["warning-strong"], fg: ["white"] },
+  { name: "the note pin", bg: T["text-secondary"], fg: ["white"] },
+  // The scroll ruler beside the frame: a thumb on a track, and the pins'
+  // severity dots on it, all non-text marks.
+  { name: "the ruler track", bg: T["border-soft"], fg: [],
+    graphical: ["text-secondary/80", "error-strong", "warning-strong", "text-secondary"] },
   // The desktop frame's chrome bar, and the address pill on it.
   { name: "the handset body", bg: BODY, fg: ["white/70"] },
   { name: "the address pill on the body", bg: composite("#ffffff", 0.10, BODY), fg: ["white/70"] },
@@ -74,30 +82,16 @@ test("warning-strong on the dark stage is the regression this guards", () => {
   assert.ok(contrastRatio(T.warning, T["brand-primary"]) >= AA_NORMAL);
 });
 
-// Measured, below AA, and deliberately not fixed here: the pin badges are the
-// most prominent thing on the stage and recolouring them is a design decision,
-// not a contrast patch. Two fixes both work — white numerals on the darker
-// `-strong` pills (6.54 / 6.33 / 5.32), or dark numerals on the bright pills
-// as they are (4.76 / 8.42 / 6.28, but the info pin still fails at 4.05) — and
-// which one is right depends on whether the pill colour or the numeral is
-// carrying the signal. That belongs to the visual polish pass.
-//
-// The list is asserted EXACTLY: nothing joins it quietly, and fixing one makes
-// the test fail until the entry is deleted.
-const KNOWN_BELOW_AA: { name: string; fg: string; bg: string; measured: number }[] = [
-  { name: "white numerals on the error pin", fg: "white", bg: T.error, measured: 3.59 },
-  { name: "white numerals on the warning pin", fg: "white", bg: T.warning, measured: 2.03 },
-  { name: "white numerals on the info pin", fg: "white", bg: T["text-muted"], measured: 4.21 },
-];
+// Nothing on this page is below AA, and nothing is excused. The three pin
+// badges that used to be listed here now sit on darkened pills and are checked
+// in SURFACES like every other pair. If something ever has to be excused, it
+// goes here with its measured ratio — and the test below makes that a
+// deliberate edit rather than a quiet one.
+const KNOWN_BELOW_AA: { name: string; fg: string; bg: string; measured: number }[] = [];
 
-test("the known-failing pairs are still exactly these, and still failing", () => {
-  const still = KNOWN_BELOW_AA.filter((k) => contrastRatio(resolveColor(k.fg, T, k.bg), k.bg) < AA_NORMAL);
-  assert.equal(still.length, KNOWN_BELOW_AA.length,
-    "a known-failing pair now passes — delete its entry from KNOWN_BELOW_AA");
-  for (const k of KNOWN_BELOW_AA) {
-    const r = contrastRatio(resolveColor(k.fg, T, k.bg), k.bg);
-    assert.ok(Math.abs(r - k.measured) < 0.05, `${k.name}: measured ${r.toFixed(2)}, recorded ${k.measured}`);
-  }
+test("the page has no contrast exceptions", () => {
+  assert.deepEqual(KNOWN_BELOW_AA, [],
+    "a pair below AA was excused — fix it instead, or make the case in review");
 });
 
 test("no colour is used on this page without being declared above", () => {

@@ -87,7 +87,9 @@ const pg = await ctx.newPage();
 // Generous: a page rendering against a remote database can take well over
 // Playwright's 30-second default, and a timeout is not a contrast result.
 await pg.goto(url, { waitUntil: "domcontentloaded", timeout: 180000 });
-await pg.waitForTimeout(3500);
+// AUDIT_WAIT_MS: long enough for what you care about to render. Pins on the
+// capture only exist once the screenshot has loaded.
+await pg.waitForTimeout(Number(process.env.AUDIT_WAIT_MS ?? 3500));
 const fails = await pg.evaluate(PROBE);
 await b.close();
 
