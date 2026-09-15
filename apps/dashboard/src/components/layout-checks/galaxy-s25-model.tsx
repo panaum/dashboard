@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import type * as THREE from "three";
 import { cn } from "@/lib/utils";
 import { cameraDistance } from "@/lib/layout-checks/model-fit";
+import {
+  coast, dragged, facingFront, FRONT, isFront, LIMIT, releaseVelocity, settled, STRETCH, unresist,
+  type Coast, type Rotation, type Sample,
+} from "@/lib/layout-checks/model-rotation";
 
 // A 3D Galaxy S25, drawn in place of the CSS silhouette for that one handset.
 // It is there for feel, not for diagnosis: the capture, the pins and the
@@ -40,26 +44,39 @@ export const MODEL_DEVICE = "galaxy-s25";
 const MODEL_URL = "/models/galaxy-s25.glb";
 
 const FOV = 22;        // narrow, so the body is not distorted by perspective
-const FILL = 0.94;     // share of the tighter side of the box: close to the flat frame, room for the shadow
+const FILL = 0.94;     // share of the tighter side of the box, in the worst pose; room for the shadow
+/** Every pose the handset can reach, including a drag's give past the limits. */
+const TURNS = { yaw: LIMIT.yaw + STRETCH, pitch: LIMIT.pitch + STRETCH };
+
+/** What the page can ask of the model from outside it: the stage bar's button. */
+export type ModelControls = { faceFront: () => void };
 
 export function GalaxyS25Model({
   className,
-  onReady,
+  ref,
+  onCoverChange,
+  onFrontChange,
   onFail,
 }: {
   className?: string;
-  /** The model has loaded and its first frame is on the canvas. */
-  onReady?: () => void;
+  ref?: Ref<ModelControls>;
+  /** True once the first frame is drawn — from then the model covers the flat
+      frame, which must stop taking focus. False again when it unmounts. */
+  onCoverChange?: (covering: boolean) => void;
+  /** Whether the handset is at rest facing the viewer. */
+  onFrontChange?: (front: boolean) => void;
   /** No WebGL, or the model could not be loaded. The flat frame stays. */
   onFail?: (reason: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const controls = useRef<ModelControls | null>(null);
   const [ready, setReady] = useState(false);
   // The callbacks are read through a ref so a parent re-rendering with new
   // functions does not tear the scene down and load it again.
-  const callbacks = useRef({ onReady, onFail });
-  useEffect(() => { callbacks.current = { onReady, onFail }; });
+  const callbacks = useRef({ onCoverChange, onFrontChange, onFail });
+  useEffect(() => { callbacks.current = { onCoverChange, onFrontChange, onFail }; });
+  useImperativeHandle(ref, () => ({ faceFront: () => controls.current?.faceFront() }), []);
 
   useEffect(() => {
     const el = host.current, cv = canvas.current;
@@ -98,14 +115,15 @@ export function GalaxyS25Model({
       // environment the frame renders nearly black.
       const pmrem = new T.PMREMGenerator(renderer);
       const room = new RoomEnvironment();
-      const envMap = pmrem.fromScene(room, 0.04).texture;
+      const env = pmrem.fromScene(room, 0.04);
       room.dispose();
       pmrem.dispose();
-      cleanups.push(() => envMap.dispose());
-      scene.environment = envMap;
+      cleanups.push(() => env.dispose());
+      scene.environment = env.texture;
       scene.environmentIntensity = 0.9;
 
-      // Key from the upper right, fill from the left.
+      // Key from the upper right, fill from the left. They stay where they
+      // are while the handset turns, so its highlights move across it.
       const key = new T.DirectionalLight(0xffffff, 2);
       key.position.set(3, 4, 6);
       const fill = new T.DirectionalLight(0xffffff, 0.5);
@@ -119,41 +137,140 @@ export function GalaxyS25Model({
       // Unmounted while the model was on its way: everything else is already
       // released, so this is the only thing left to free.
       if (!alive) { disposeScene(model); return; }
-      scene.add(model);
       const box = new T.Box3().setFromObject(model);
       const size = box.getSize(new T.Vector3());
       model.position.sub(box.getCenter(new T.Vector3()));
+      // The handset turns about its own centre: the pivot sits there and the
+      // model is centred inside it.
+      const pivot = new T.Group();
+      pivot.add(model);
+      scene.add(pivot);
 
       // A soft shadow under the body: a blurred ellipse on the floor rather
       // than a shadow map, which would cost a render pass to draw a sliver.
+      // It does not turn with the handset.
       const shadowTex = contactShadow(T);
       const shadow = new T.Mesh(
         new T.PlaneGeometry(size.x * 1.7, size.x * 0.9),
         new T.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, toneMapped: false }),
       );
-      shadow.rotation.x = -Math.PI / 2;
-      shadow.position.y = -size.y / 2 - 0.005;
+      shadow.rotation.set(-Math.PI / 2, 0, 0);
+      shadow.position.set(0, -size.y / 2 - 0.005, 0);
       scene.add(shadow);
 
-      const draw = () => {
+      // ── Turning ────────────────────────────────────────────────────────
+      // There is no animation loop running at rest. A frame is requested
+      // when something moves — a drag, a coast after release, the turn back
+      // to front — and the chain of frames stops when that motion settles.
+      type Mode = "idle" | "drag" | "coast" | "front";
+      let mode: Mode = "idle";
+      let shown: Rotation = { ...FRONT };
+      let coasting: Coast = { rot: shown, vel: { yaw: 0, pitch: 0 } };
+      let frontFrom: Rotation = shown, frontAt = 0;
+      let grab: { id: number; x: number; y: number; raw: Rotation } | null = null;
+      let samples: Sample[] = [];
+      let raf = 0, lastFrame = 0, reportedFront = true;
+
+      const fit = () => {
         const w = el.clientWidth, h = el.clientHeight;
-        if (w === 0 || h === 0) return;
+        if (w === 0 || h === 0) return false;
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
-        camera.position.set(0, 0, cameraDistance({ width: size.x, height: size.y, depth: size.z }, FOV, w / h, FILL));
+        camera.position.set(0, 0, cameraDistance({ width: size.x, height: size.y, depth: size.z }, FOV, w / h, FILL, TURNS));
         camera.lookAt(0, 0, 0);
         camera.updateProjectionMatrix();
-        renderer.render(scene, camera);
+        return true;
       };
-      // Nothing moves, so there is no animation loop: a frame is drawn when
-      // the model arrives and again when the box changes size.
-      const ro = new ResizeObserver(draw);
+      const draw = () => {
+        const rad = Math.PI / 180;
+        // XYZ: yaw is applied first, then pitch in world space, so a tip is
+        // always towards the viewer whichever way the handset faces.
+        pivot.rotation.set(shown.pitch * rad, shown.yaw * rad, 0, "XYZ");
+        renderer.render(scene, camera);
+        const front = mode === "idle" && isFront(shown);
+        if (front !== reportedFront) { reportedFront = front; callbacks.current.onFrontChange?.(front); }
+      };
+      const frame = (now: number) => {
+        raf = 0;
+        const dt = lastFrame ? Math.min(50, now - lastFrame) : 1000 / 60;
+        lastFrame = now;
+        if (mode === "coast") {
+          coasting = coast(coasting, dt);
+          shown = coasting.rot;
+          if (settled(coasting)) mode = "idle";
+        } else if (mode === "front") {
+          shown = facingFront(frontFrom, now - frontAt);
+          if (isFront(shown)) { shown = { ...FRONT }; mode = "idle"; }
+        }
+        draw();
+        if (mode === "coast" || mode === "front") raf = requestAnimationFrame(frame);
+        else lastFrame = 0;
+      };
+      const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
+      cleanups.push(() => cancelAnimationFrame(raf));
+
+      const onDown = (e: PointerEvent) => {
+        if (grab || (e.pointerType === "mouse" && e.button !== 0)) return;
+        el.setPointerCapture(e.pointerId);
+        // Picked up mid-coast or mid-spring-back: carry on from where it is.
+        const raw = { yaw: unresist(shown.yaw, LIMIT.yaw), pitch: unresist(shown.pitch, LIMIT.pitch) };
+        grab = { id: e.pointerId, x: e.clientX, y: e.clientY, raw };
+        samples = [{ t: e.timeStamp, rot: raw }];
+        mode = "drag";
+        el.dataset.dragging = "true";
+        draw();
+      };
+      const onMove = (e: PointerEvent) => {
+        if (!grab || e.pointerId !== grab.id) return;
+        const next = dragged(grab.raw, e.clientX - grab.x, e.clientY - grab.y);
+        shown = next.shown;
+        samples.push({ t: e.timeStamp, rot: next.raw });
+        if (samples.length > 32) samples = samples.slice(-16);
+        kick();
+      };
+      const onUp = (e: PointerEvent) => {
+        if (!grab || e.pointerId !== grab.id) return;
+        grab = null;
+        delete el.dataset.dragging;
+        // A cancel (the browser took the gesture for a scroll) throws nothing.
+        const vel = e.type === "pointercancel" ? { yaw: 0, pitch: 0 } : releaseVelocity(samples, e.timeStamp);
+        coasting = { rot: shown, vel };
+        mode = "coast";
+        lastFrame = 0;
+        kick();
+      };
+      el.addEventListener("pointerdown", onDown);
+      el.addEventListener("pointermove", onMove);
+      el.addEventListener("pointerup", onUp);
+      el.addEventListener("pointercancel", onUp);
+      cleanups.push(() => {
+        el.removeEventListener("pointerdown", onDown);
+        el.removeEventListener("pointermove", onMove);
+        el.removeEventListener("pointerup", onUp);
+        el.removeEventListener("pointercancel", onUp);
+      });
+
+      controls.current = {
+        faceFront: () => {
+          if (grab || (mode === "idle" && isFront(shown))) return;
+          frontFrom = shown;
+          frontAt = performance.now();
+          mode = "front";
+          lastFrame = 0;
+          kick();
+        },
+      };
+      cleanups.push(() => { controls.current = null; });
+
+      // Redrawn when the box changes size, at whatever angle it is.
+      const ro = new ResizeObserver(() => { if (fit()) draw(); });
       ro.observe(el);
       cleanups.push(() => ro.disconnect());
 
-      draw();
+      if (fit()) draw();
       setReady(true);
-      callbacks.current.onReady?.();
+      callbacks.current.onCoverChange?.(true);
+      cleanups.push(() => callbacks.current.onCoverChange?.(false));
     })().catch((e: unknown) => {
       release();
       if (!alive) return;
@@ -167,8 +284,13 @@ export function GalaxyS25Model({
   }, []);
 
   return (
-    <div ref={host} aria-hidden className={cn(className, !ready && "invisible")}>
-      <canvas ref={canvas} className="block size-full" />
+    <div
+      ref={host}
+      role="img"
+      aria-label="Samsung Galaxy S25, 3D model. Drag to turn it."
+      className={cn("cursor-grab touch-pan-y select-none data-[dragging=true]:cursor-grabbing", className, !ready && "invisible")}
+    >
+      <canvas ref={canvas} aria-hidden className="block size-full" />
     </div>
   );
 }

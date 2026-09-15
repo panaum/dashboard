@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
 import { useSearchParams } from "next/navigation";
 import { readDeviceView, syncQuery } from "@/lib/layout-checks/deep-link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ChevronDown, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, ShieldAlert } from "lucide-react";
+import { ChevronDown, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, RotateCcw, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
-import { GalaxyS25Model, MODEL_DEVICE } from "@/components/layout-checks/galaxy-s25-model";
+import { GalaxyS25Model, MODEL_DEVICE, type ModelControls } from "@/components/layout-checks/galaxy-s25-model";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { BarLabel } from "@/components/layout-checks/check-shell";
 import { HealthMatrix } from "@/components/layout-checks/health-matrix";
@@ -88,6 +88,13 @@ export function DevicesPanel({
   // TEMPORARY, until the 3D toggle exists: the model is reachable only by
   // adding ?frame3d=1 to the address. Nothing links to it.
   const frame3d = params.get("frame3d") === "1";
+  // Once the model has drawn it covers the flat frame, and from then the
+  // frame's pins, scroll area and ruler must not take focus: nothing under an
+  // overlay may be reachable by keyboard. Reported by the model itself, so
+  // the frame is never inert while nothing covers it (loading, or failed).
+  const [covered3d, setCovered3d] = useState(false);
+  const [atFront, setAtFront] = useState(true);
+  const model3d = useRef<ModelControls>(null);
   const stored = new Set(storedFolds);
 
   // Rail state is per device: a new device means no selected finding, the
@@ -380,6 +387,7 @@ const picker = views.length ? (
       ) : (
         <motion.div key={`single-${current.profileId}`} {...swap} className="flex w-full flex-col items-center gap-2">
           <div className="relative w-full">
+          <div inert={covered3d}>
           <DeviceFrame
             shape={current.shape}
             deviceId={current.profileId}
@@ -402,11 +410,20 @@ const picker = views.length ? (
             onPartial={setPartial}
             minimap
           />
+          </div>
           {/* The flat frame is laid out and shown first; the 3D view covers it
               once its first frame is drawn, and never if it cannot be. Above
-              the pins (z-10, z-20), which would otherwise show through. */}
-          {frame3d && current.profileId === MODEL_DEVICE && !showLive && (
-            <GalaxyS25Model className="absolute inset-0 z-30 bg-card" />
+              the pins (z-10, z-20), which would otherwise show through. Not
+              at actual size: that is for reading the capture's own pixels. */}
+          {frame3d && current.profileId === MODEL_DEVICE && !showLive && zoom === "fit" && (
+            <GalaxyS25Model
+              ref={model3d}
+              className="absolute inset-0 z-30 bg-card"
+              // A model mounts facing front, so leaving one turned and coming
+              // back must not leave the button thinking it is still turned.
+              onCoverChange={(on) => { setCovered3d(on); if (!on) setAtFront(true); }}
+              onFrontChange={setAtFront}
+            />
           )}
           </div>
           <StageCaption title={current.label}>
@@ -436,6 +453,18 @@ const picker = views.length ? (
   // device's: the tooltip says so.
   const bar = current ? (
     <StageBar note={embed?.reason}>
+      {covered3d && (
+        // aria-disabled rather than disabled: a button that disables itself
+        // when pressed would drop keyboard focus onto the page.
+        <StageButton
+          onClick={() => model3d.current?.faceFront()}
+          aria-disabled={atFront}
+          className="aria-disabled:opacity-50 aria-disabled:hover:bg-card"
+          title={atFront ? "The handset is facing you." : "Turn the handset back to face you."}
+        >
+          <RotateCcw className="size-4" aria-hidden /> Face front
+        </StageButton>
+      )}
       {canCompare && (
         <StageButton
           on={showCompare}
