@@ -260,7 +260,7 @@ export function DevicesPanel({
       aria-controls="device-health"
       onClick={() => setHealth((h) => !h)}
       className={cn(
-        "inline-flex shrink-0 items-center gap-2 rounded-full border border-border-soft bg-card px-4 py-2 text-[13px] font-medium text-text-secondary shadow-xs transition-colors hover:bg-card-soft hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+        "inline-flex shrink-0 items-center gap-2 rounded-full border border-border-soft bg-card px-4 py-2 text-[13px] font-medium text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary",
         health && "bg-card-soft text-text-primary",
       )}
     >
@@ -273,7 +273,7 @@ export function DevicesPanel({
 
 const picker = views.length ? (
     <>
-      <div className="flex w-full items-center gap-2.5 @3xl:w-auto">
+      <div className="flex w-full items-center gap-2 @3xl:w-auto">
         <BarLabel>Device</BarLabel>
         <Listbox label="Device" options={options} value={current?.profileId ?? null} onChange={pick}
                  className="min-w-0 flex-1 @3xl:w-[19rem] @3xl:flex-none" />
@@ -287,20 +287,25 @@ const picker = views.length ? (
     </p>
   );
   const cov = coverage(views);
-  const chip = "inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-semibold";
+  // How the run splits, in words under the verdict. The tone rides on the
+  // number; a pill around each would be a box inside the sentence.
+  const count = (n: number, tone: string, word: string) => (
+    <span><span className={cn("font-semibold tabular-nums", tone)}>{n}</span> {word}</span>
+  );
   const chips = views.length ? (
     <>
-      {cov.failing > 0 && <span className={cn(chip, "bg-error/12 text-error-strong")}>{cov.failing} failing</span>}
-      {cov.warnings > 0 && <span className={cn(chip, "bg-warning/15 text-warning-strong")}>{cov.warnings} with warnings</span>}
-      {cov.clean > 0 && <span className={cn(chip, "bg-success/12 text-success-strong")}>{cov.clean} clean</span>}
-      {cov.inconclusive > 0 && <span className={cn(chip, "bg-card-soft text-text-secondary")}>{cov.inconclusive} not captured</span>}
+      {cov.failing > 0 && count(cov.failing, "text-error-strong", "failing")}
+      {cov.warnings > 0 && count(cov.warnings, "text-warning-strong", "with warnings")}
+      {cov.clean > 0 && count(cov.clean, "text-success-strong", "clean")}
+      {cov.inconclusive > 0 && count(cov.inconclusive, "text-text-primary", "not captured")}
     </>
   ) : null;
   const matrix = views.length && health ? (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col">
       {(
-        <section id="device-health" aria-label="Device health"
-                 className="rounded-2xl border border-border-soft bg-card px-4 py-4 shadow-xs @3xl:px-6">
+        // No card: the matrix has its own heading, and a box around a table
+        // that already has rows only adds a line.
+        <section id="device-health" aria-label="Device health">
           <HealthMatrix
             views={views}
             findingsOf={(id) => devices.find((d) => d.profile_id === id)?.findings ?? []}
@@ -326,7 +331,7 @@ const picker = views.length ? (
   const frame = current ? (
     <AnimatePresence mode="wait" initial={false}>
       {mode === "stream" ? (
-        <motion.div key="stream" {...swap} className="flex w-full flex-col items-center gap-3">
+        <motion.div key="stream" {...swap} className="flex w-full flex-col items-center gap-2">
           <div className="w-full max-w-[420px]">
             <LiveSession
               url={url}
@@ -339,8 +344,8 @@ const picker = views.length ? (
           <StageCaption title={current.label}>{" · "}{current.engineLabel}{" · "}{current.viewportLabel}{" · "}live</StageCaption>
         </motion.div>
       ) : mode === "compare" ? (
-        <motion.div key="compare" {...swap} className="flex w-full flex-col items-center gap-3">
-          <div className="grid w-full gap-3 md:grid-cols-3">
+        <motion.div key="compare" {...swap} className="flex w-full flex-col items-center gap-2">
+          <div className="grid w-full gap-4 md:grid-cols-3">
             {columns.map((c) => {
               const s = srcFor(c.profileId);
               const hl = selectedColItem && selectedCol === c.engine ? selectedColItem.box : null;
@@ -369,7 +374,7 @@ const picker = views.length ? (
           </div>
         </motion.div>
       ) : (
-        <motion.div key={`single-${current.profileId}`} {...swap} className="flex w-full flex-col items-center gap-3">
+        <motion.div key={`single-${current.profileId}`} {...swap} className="flex w-full flex-col items-center gap-2">
           <DeviceFrame
             shape={current.shape}
             deviceId={current.profileId}
@@ -394,11 +399,11 @@ const picker = views.length ? (
           />
           <StageCaption title={current.label}>
             {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
-            {showLive && <span className="mt-1 block text-[11px]">{LIVE_CAVEAT}</span>}
+            {showLive && <span className="block text-[11px] leading-4">{LIVE_CAVEAT}</span>}
             {!showLive && partial && (
-              // warning-strong is a token for light cards; on this navy stage
-              // it measured 2.70:1, under AA. warning is 8.42:1 here.
-              <span className="mt-1 block text-[11px] text-warning">
+              // The stage is near-white again, so the darkened hue: warning
+              // itself is ~2:1 on white and fails as text.
+              <span className="block text-[11px] leading-4 text-warning-strong">
                 First screen only — the full page for this run is no longer on the preview service. Run the check again to capture it.
               </span>
             )}
@@ -406,7 +411,7 @@ const picker = views.length ? (
                 is a claim about which handset this is; this is the claim about
                 what actually rendered, and it must travel with it. */}
             <span title={provNote.detail}
-                  className={cn("mt-1 block text-[11px]", provNote.tone === "warn" ? "text-warning" : "text-white/55")}>
+                  className={cn("block text-[11px] leading-4", provNote.tone === "warn" ? "text-warning-strong" : "text-text-secondary")}>
               {provNote.label}
             </span>
           </StageCaption>
@@ -463,7 +468,7 @@ const picker = views.length ? (
 
   // ── Rail ───────────────────────────────────────────────────────────────────
   const rail = current && showCompare ? (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       {columns.map((c) => (
         <FindingsRail
           key={c.profileId}
@@ -492,8 +497,8 @@ const picker = views.length ? (
       <div className="flex flex-col">
         <SectionHeading label="Findings" subject={current.label} />
         {/* Also one sentence, also no box. */}
-        <p className="flex items-start gap-2 text-[13px] leading-snug text-text-secondary">
-          <ShieldAlert className="mt-px size-5 shrink-0 text-text-secondary" aria-hidden />
+        <p className="flex items-start gap-2 text-[13px] leading-5 text-text-secondary">
+          <ShieldAlert className="size-5 shrink-0 text-text-secondary" aria-hidden />
           {current.status === "blocked" ? "Blocked by bot protection — nothing on this device was audited." : `Capture failed${current.error ? `: ${current.error}` : "."}`}
         </p>
       </div>

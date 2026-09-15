@@ -99,7 +99,7 @@ export function DevicePreviewRunner({
           onChange={(e) => setScope(e.target.value as Scope)}
           disabled={busy}
           aria-label="Which devices to run"
-          className="rounded-lg border border-border-soft bg-card px-2.5 py-2 text-[13px] text-text-primary"
+          className="rounded-lg border border-border-soft bg-card px-2 py-2 text-[13px] text-text-primary"
         >
           <option value="primary">14 primary devices</option>
           <option value="all">All 15, including the 260px canary</option>
@@ -115,7 +115,7 @@ export function DevicePreviewRunner({
       {!hosted && busy && (
         <div className="w-64">
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-card-soft">
-            <div className="h-full rounded-full bg-accent transition-[width] duration-500"
+            <div className="h-full rounded-full bg-text-secondary transition-[width] duration-500"
                  style={{ width: `${Math.max(4, progressPct(progress))}%` }} />
           </div>
         </div>

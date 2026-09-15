@@ -106,7 +106,7 @@ export function ViewportsPanel({
   );
 
   const frame = current !== null && runId ? (
-    <div className="flex w-full flex-col items-center gap-3">
+    <div className="flex w-full flex-col items-center gap-2">
       <DeviceFrame
         shape={widthShape(current)}
         viewport={widthViewport(current)}

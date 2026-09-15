@@ -14,13 +14,18 @@ import { useTabSlots } from "@/components/layout-checks/site-tabs";
 // the picker under that. Then the device on its own surface, with the
 // findings for that ONE screenshot beside it.
 //
-// The stage is a light surface, a step off the page — not a dark panel. The
-// device bezel is already near-black, so it reads harder against light than
-// it ever did against navy, and the page stays one product rather than two.
+// The stage is a near-white surface, not a dark panel, and it carries no
+// gradient and no shadow. The device bezel is already near-black, so it reads
+// harder against light than it ever did against navy, and the page stays one
+// product rather than two.
+//
+// SPACING. An 8px scale: 8, 16, 24, 32 and nothing between them for padding,
+// margins and gaps. The handset drawing's own bezels are geometry, not
+// spacing, and keep the proportions of the device they depict.
 //
 // TYPE SCALE. Five steps, and nothing between them:
 //   30  the site name (the page's h1, above this component)
-//   21  the verdict — the two-second read
+//   24  the verdict — the two-second read, on a line of its own
 //   15  a section's subject: which device, which width
 //   13  body: a finding, a caption, a control
 //   11  labels and metadata, uppercase where it names a control
@@ -55,23 +60,31 @@ export function Rise({ order = 0, className, children }: { order?: number; class
   );
 }
 
-/** The two-second read: what this run says, in one sentence — with how the
- *  run splits by device under it, and how the last few runs went beside it. */
+/** The two-second read: what this run says, in one sentence on a line of its
+ *  own. How the run splits by device, and how the last few runs went, sit on
+ *  the line under it — nothing shares the verdict's line. */
 export function VerdictLine({ verdict, chips, trend }: { verdict: TabVerdict; chips?: ReactNode; trend?: TrendPoint[] }) {
   const Icon = ICON[verdict.tone];
+  const hasTrend = Boolean(trend && trend.length > 1);
   return (
-    <div className="flex flex-col gap-4 @3xl:flex-row @3xl:items-start @3xl:justify-between">
-      <div className="flex items-start gap-2">
-        <Icon className={cn("mt-1 size-6 shrink-0", TONE[verdict.tone])} strokeWidth={2} aria-hidden />
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className={cn("text-[21px] font-semibold leading-tight tracking-tight text-balance", TONE[verdict.tone])}>
-            {verdict.headline}
-          </p>
-          {verdict.compare && <p className="text-[13px] leading-snug text-text-secondary">{verdict.compare}</p>}
-          {chips && <div className="mt-1 flex flex-wrap items-center gap-2">{chips}</div>}
+    <div className="flex flex-col gap-2">
+      <p className={cn("flex items-start gap-2 text-[24px] font-semibold leading-8 tracking-tight", TONE[verdict.tone])}>
+        {/* A 32px box the height of one line, so the mark centres on the
+            first line without a nudge that would sit off the spacing scale. */}
+        <span className="flex h-8 shrink-0 items-center"><Icon className="size-6" strokeWidth={2} aria-hidden /></span>
+        <span className="min-w-0 text-balance">{verdict.headline}</span>
+      </p>
+      {(verdict.compare || chips || hasTrend) && (
+        <div className="flex flex-col gap-4 @3xl:flex-row @3xl:items-start @3xl:justify-between">
+          {/* Indented to the verdict's text, past the 24px mark and its 8px gap. */}
+          <div className="flex min-w-0 flex-col gap-2 pl-8">
+            {verdict.compare && <p className="text-[13px] leading-5 text-text-secondary">{verdict.compare}</p>}
+            {/* Counts in words, not pills: the tone is on the number. */}
+            {chips && <p className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] leading-5 text-text-secondary">{chips}</p>}
+          </div>
+          {hasTrend && <Trend points={trend!} />}
         </div>
-      </div>
-      {trend && trend.length > 1 && <Trend points={trend} />}
+      )}
     </div>
   );
 }
@@ -93,7 +106,7 @@ function Trend({ points }: { points: TrendPoint[] }) {
   const oldest = points.slice(0, 8).at(-1)?.checkedAt;
   const when = oldest ? new Date(oldest).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
   return (
-    <div className="flex shrink-0 flex-col gap-1 @3xl:w-[240px]" aria-label={`Errors over the last ${values.length} runs: ${values.join(", ")}`}>
+    <div className="flex shrink-0 flex-col gap-2 @3xl:w-[240px]" aria-label={`Errors over the last ${values.length} runs: ${values.join(", ")}`}>
       <div className="flex items-baseline justify-between text-[11px]">
         <span className="font-semibold uppercase tracking-[0.08em] text-text-secondary">Last {values.length} runs</span>
         <span className="text-text-secondary">errors per run</span>
@@ -117,13 +130,13 @@ export function StageBar({ children, note }: { children: ReactNode; note?: React
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="flex flex-wrap items-center justify-center gap-2">{children}</div>
-      {note && <p className="max-w-sm text-center text-[12px] text-white/60">{note}</p>}
+      {note && <p className="max-w-sm text-center text-[12px] text-text-secondary">{note}</p>}
     </div>
   );
 }
 
-/** A button on the stage bar. The stage is dark, so these are light-on-dark;
- *  the accent still means "pressed", as it does everywhere else. */
+/** A button on the stage bar. Neutral until hovered; the accent means
+ *  "pressed" and nothing else, as it does everywhere on this page. */
 export function StageButton({
   on = false, children, className, ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { on?: boolean }) {
@@ -133,10 +146,10 @@ export function StageButton({
       aria-pressed={rest["aria-pressed"] ?? (on || undefined)}
       {...rest}
       className={cn(
-        "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-purple disabled:opacity-50",
+        "inline-flex h-9 items-center gap-2 rounded-lg border px-4 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:opacity-50",
         on
           ? "border-accent bg-accent text-white"
-          : "border-white/15 bg-white/[0.07] text-white/90 hover:bg-white/15",
+          : "border-border-soft bg-card text-text-primary hover:bg-card-soft",
         className,
       )}
     >
@@ -148,16 +161,16 @@ export function StageButton({
 /** Text under the device: the name in full strength, the rest quieter. */
 export function StageCaption({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
-    <p className="max-w-md text-center text-[13px] leading-snug text-white/60">
-      <span className="text-[15px] font-semibold text-white">{title}</span>
+    <p className="max-w-md text-center text-[13px] leading-5 text-text-secondary">
+      <span className="text-[15px] font-semibold text-text-primary">{title}</span>
       {children}
     </p>
   );
 }
 
-/** Classes for a DeviceFrame on the stage: a light rim, so a near-black bezel
- *  still has an edge against the navy behind it. */
-export const ON_STAGE = "ring-1 ring-white/[0.14] shadow-[0_30px_80px_-24px_rgba(0,0,0,0.7)]";
+/** Classes for a DeviceFrame on the stage. Nothing: a near-black bezel on a
+ *  near-white surface has its edge already, and needs no rim and no shadow. */
+export const ON_STAGE = "";
 
 /** A small uppercase label beside a control. */
 export function BarLabel({ children }: { children: ReactNode }) {
@@ -178,10 +191,13 @@ export function SectionHeading({ label, subject, children }: { label: string; su
 export const STAGE_ID = "check-stage";
 
 // How tall the frame may be. The screenshot is the thing being examined, so
-// it gets the height the window actually has rather than a number chosen in
-// advance — measured from where the stage starts to the bottom of the window,
-// less what the stage spends on its own padding, caption and buttons.
-const STAGE_RESERVE = 140;
+// it is sized to the WINDOW, not to whatever is left under the header: the
+// header takes ~390px, and fitting the stage into the remainder pinned the
+// frame at its floor. Sized to the window, the stage fills the screen once it
+// is scrolled into view, which choosing a finding does. The reserve is what
+// the stage spends around the frame: its padding, the caption lines, the
+// gaps and the button bar.
+const STAGE_RESERVE = 176;
 const STAGE_MIN = 380;
 
 const StageHeightContext = createContext<number | null>(null);
@@ -197,10 +213,7 @@ function useRoomBelow(ref: React.RefObject<HTMLElement | null>): number | null {
     const measure = () => {
       const el = ref.current;
       if (!el) return;
-      // Document-relative, so the answer is "how tall can this be when the
-      // page is at the top", not "how much is left from where you scrolled".
-      const top = el.getBoundingClientRect().top + window.scrollY;
-      setRoom(Math.max(STAGE_MIN, Math.round(window.innerHeight - top - STAGE_RESERVE)));
+      setRoom(Math.max(STAGE_MIN, Math.round(window.innerHeight - STAGE_RESERVE)));
     };
     measure();
     window.addEventListener("resize", measure);
@@ -220,10 +233,10 @@ export function revealStage() {
 
 function EmptyStage() {
   return (
-    <div className="flex flex-col items-center gap-3 text-center">
-      <MonitorSmartphone className="size-8 text-brand-purple" aria-hidden />
-      <p className="text-[15px] font-semibold text-white/90">Nothing to show yet</p>
-      <p className="max-w-xs text-[13px] leading-snug text-white/60">Run the check and the page appears here, on the device you pick.</p>
+    <div className="flex flex-col items-center gap-2 text-center">
+      <MonitorSmartphone className="size-8 text-text-secondary" aria-hidden />
+      <p className="text-[15px] font-semibold text-text-primary">Nothing to show yet</p>
+      <p className="max-w-xs text-[13px] leading-5 text-text-secondary">Run the check and the page appears here, on the device you pick.</p>
     </div>
   );
 }
@@ -292,26 +305,29 @@ export function CheckShell({
           the other's height, which is what left the stage half empty. */}
       <StageHeightContext.Provider value={room}>
         <div {...(slots?.panelProps ?? {})}
-             className="grid items-start gap-4 @4xl:grid-cols-[minmax(0,1fr)_340px]">
+             className="grid items-start gap-6 @4xl:grid-cols-[minmax(0,1fr)_344px]">
           <Rise order={1} className="min-w-0">
             <section
               ref={stage}
               id={STAGE_ID}
               aria-label="Screenshot"
-              className="relative flex scroll-mt-4 flex-col items-center gap-4 overflow-hidden rounded-2xl bg-brand-primary p-5 shadow-md"
+              className="relative flex scroll-mt-4 flex-col items-center gap-4 overflow-hidden rounded-2xl bg-card p-4"
             >
-              {/* The device is the point of this page, so it gets the room and
-                  the contrast: a near-black handset reads hardest against navy. */}
-              <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(184,176,240,0.26),transparent_58%),radial-gradient(ellipse_at_bottom_right,rgba(155,181,245,0.14),transparent_55%)]" />
-              <div className="relative flex w-full flex-col items-center gap-3">{frame ?? <EmptyStage />}</div>
+              {/* The device is the point of this page, so it gets the room. The
+                  surface is plain: no gradient, no shadow, no border — the
+                  near-black bezel is the edge. */}
+              <div className="relative flex w-full flex-col items-center gap-2">{frame ?? <EmptyStage />}</div>
               {action && <div className="relative">{action}</div>}
             </section>
           </Rise>
 
           <Rise order={2} className="min-w-0">
+            {/* No card. The heading and the space under it group the list; a
+                box would only add a line around something already grouped.
+                The top padding lines the heading up with the stage's contents. */}
             <section
               aria-label={railLabel ?? "Findings"}
-              className="rounded-2xl border border-border-soft bg-card p-4 shadow-xs"
+              className="pt-4"
             >
               {rail}
             </section>

@@ -38,12 +38,13 @@ export type RailItem = RailFinding & {
 // what decides whether this is a site-wide fix or one device's quirk. And a
 // copy button, because where a finding actually goes is a ticket or Slack.
 
-// Severity is the bar and the pin. The count chips spell it out in the
-// darkened hue, because the fill hues fail AA as 11px text.
-const ROW: Record<RailFinding["severity"], { bar: string; chip: string; pin: string; word: string }> = {
-  error: { bar: "bg-error", chip: "bg-error/10 text-error-strong", pin: "bg-error", word: "Error" },
-  warn:  { bar: "bg-warning", chip: "bg-warning/15 text-warning-strong", pin: "bg-warning", word: "Warning" },
-  info:  { bar: "bg-text-muted/40", chip: "bg-card-soft text-text-secondary", pin: "bg-text-muted", word: "Note" },
+// Severity is the bar and the pin. Where it is spelled out in words, the
+// words take the darkened hue — the fill hues fail AA as 11px text — and no
+// box: a count or a severity is a word in a line, not a pill.
+const ROW: Record<RailFinding["severity"], { bar: string; text: string; pin: string; word: string }> = {
+  error: { bar: "bg-error", text: "text-error-strong", pin: "bg-error", word: "Error" },
+  warn:  { bar: "bg-warning", text: "text-warning-strong", pin: "bg-warning", word: "Warning" },
+  info:  { bar: "bg-text-muted/40", text: "text-text-primary", pin: "bg-text-muted", word: "Note" },
 };
 
 function Summary({ items }: { items: RailItem[] }) {
@@ -54,10 +55,10 @@ function Summary({ items }: { items: RailItem[] }) {
     { k: "info" as const, n: n("info"), label: "note" },
   ].filter((p) => p.n > 0);
   return (
-    <span className="flex flex-wrap items-center gap-2">
+    <span className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-text-secondary">
       {parts.map((p) => (
-        <span key={p.k} className={cn("rounded-full px-2 py-1 text-[11px] font-semibold tabular-nums", ROW[p.k].chip)}>
-          {p.n} {p.label}{p.n === 1 ? "" : "s"}
+        <span key={p.k}>
+          <span className={cn("font-semibold tabular-nums", ROW[p.k].text)}>{p.n}</span> {p.label}{p.n === 1 ? "" : "s"}
         </span>
       ))}
     </span>
@@ -81,7 +82,7 @@ function CopyButton({ text, label, className }: { text: string; label: string; c
       type="button"
       onClick={copy}
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border border-border-soft px-3 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+        "inline-flex h-8 items-center gap-2 rounded-full border border-border-soft px-4 text-[11px] font-medium text-text-secondary transition-colors hover:bg-card hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-text-primary",
         state === "done" && "border-success/40 text-success-strong",
         state === "failed" && "border-error/40 text-error-strong",
         className,
@@ -185,7 +186,7 @@ export function FindingsRail({
   return (
     <div className="flex flex-col">
       {head}
-      <ul className="flex flex-col gap-1" aria-label={`Findings on ${deviceLabel}`}>
+      <ul className="flex flex-col gap-2" aria-label={`Findings on ${deviceLabel}`}>
         {shown.map((it) => {
           const on = it.id === selectedId;
           const s = ROW[it.severity];
@@ -199,10 +200,10 @@ export function FindingsRail({
           const notStored = it.box !== null && drawableHeight !== null && it.box.y >= drawableHeight;
           if (notStored) {
             return (
-              <li key={it.id} id={`finding-${it.id}`} className="relative flex flex-col items-start gap-1 rounded-lg py-2 pl-4 pr-2 opacity-80">
+              <li key={it.id} id={`finding-${it.id}`} className="relative flex flex-col items-start rounded-lg py-2 pl-4 pr-2 opacity-80">
                 <span aria-hidden className={cn("absolute inset-y-2 left-0 w-[3px] rounded-full", s.bar)} />
                 <span className="text-[13px] font-medium leading-snug text-text-secondary">{it.label}</span>
-                <span className="font-mono text-[11px] leading-snug text-text-secondary">{it.selector ?? "—"}</span>
+                <span className="font-mono text-[11px] leading-4 text-text-secondary">{it.selector ?? "—"}</span>
                 <span className="text-[11px] text-text-secondary">full page not stored for this run</span>
               </li>
             );
@@ -233,10 +234,12 @@ export function FindingsRail({
                 onClick={() => onSelect(it.id)}
                 style={{ "--thumb": `${THUMB_W}px` } as CSSProperties}
                 className={cn(
-                  "relative w-full rounded-lg py-2 pl-4 pr-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
-                  crop ? "grid grid-cols-[var(--thumb)_minmax(0,1fr)] items-start gap-3" : "flex flex-col items-start gap-1",
+                  "relative w-full rounded-lg py-2 pl-4 pr-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-primary",
+                  crop ? "grid grid-cols-[var(--thumb)_minmax(0,1fr)] items-start gap-4" : "flex flex-col items-start",
                   n !== null && !crop && "pl-8",
-                  !on && "hover:bg-card-soft",
+                  // The rail sits on the page now, not a white card, so hover
+                  // lifts the row to white rather than tinting it grey.
+                  !on && "hover:bg-card",
                 )}
               >
                 <span aria-hidden className={cn("absolute inset-y-2 left-0 w-[3px] rounded-full", s.bar)} />
@@ -264,22 +267,24 @@ export function FindingsRail({
                     {n}
                   </span>
                 ) : null}
-                <span className="flex min-w-0 flex-col gap-1">
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-medium leading-snug text-text-primary">
+                <span className="flex min-w-0 flex-col">
+                <span className="flex flex-wrap items-baseline gap-x-2 text-[13px] font-medium leading-5 text-text-primary">
                   <span className="sr-only">{s.word}{n !== null ? `, finding ${n}` : ""}: </span>
                   {it.label}
                   {/* Metadata, not selection: neutral, so the accent keeps one job. */}
                   {it.tag && (
-                    <span className="whitespace-nowrap rounded bg-card-soft px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">{it.tag}</span>
-                  )}
-                  {reachWords && (
-                    <span className={cn("whitespace-nowrap rounded bg-card-soft px-2 py-1 text-[11px]",
-                                        wide ? "font-semibold text-text-secondary" : "font-medium text-text-secondary")}>
-                      {reachWords}
-                    </span>
+                    <span className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-text-secondary">{it.tag}</span>
                   )}
                 </span>
-                <span className="font-mono text-[11px] leading-snug text-text-secondary">
+                {/* Its own line, so every row has the same shape whatever the
+                    label's length — inline, it ran beside a short label and
+                    wrapped under a long one. */}
+                {reachWords && (
+                  <span className={cn("text-[11px] leading-4 text-text-secondary", wide ? "font-semibold" : "font-medium")}>
+                    {reachWords}
+                  </span>
+                )}
+                <span className="font-mono text-[11px] leading-4 text-text-secondary">
                   {it.pageLevel ? "whole page" : (it.selector ?? "—")}
                 </span>
                 </span>
@@ -293,10 +298,10 @@ export function FindingsRail({
                          transition: `grid-template-rows ${ms(180)}ms ease` }}
               >
                 <div className="overflow-hidden">
-                  <div className={cn("mb-4 mt-1 flex flex-col items-start gap-2 text-[12px] leading-relaxed", n !== null && !crop ? "ml-8 mr-4" : "mx-4")}>
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", ROW[it.severity].chip)}>{s.word}</span>
-                      {check && <span className="rounded-full bg-card-soft px-2 py-0.5 text-[11px] font-semibold text-text-secondary">{check.label}</span>}
+                  <div className={cn("mb-4 flex flex-col items-start gap-2 text-[12px] leading-relaxed", n !== null && !crop ? "ml-8 mr-4" : "mx-4")}>
+                    <span className="flex flex-wrap items-center gap-x-4 text-[11px] font-semibold uppercase tracking-[0.08em]">
+                      <span className={ROW[it.severity].text}>{s.word}</span>
+                      {check && <span className="text-text-secondary">{check.label}</span>}
                     </span>
                     {(it.detail || it.message) && (
                       <p className="text-text-primary">{it.detail || it.message}</p>
@@ -311,16 +316,17 @@ export function FindingsRail({
                         still a control — reachable by tooling, confusing to
                         everyone. Nothing there is better than inert. */}
                     {others.length > 0 && (
-                      <span className="flex flex-col gap-1.5 pt-1">
+                      <span className="flex flex-col">
                         <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">Also on</span>
-                        <span className="flex flex-wrap gap-1.5">
-                          {others.slice(0, 8).map((d) => <span key={d} className="rounded-md bg-card-soft px-2 py-1 text-[11px] text-text-primary">{d}</span>)}
-                          {others.length > 8 && <span className="rounded-md bg-card-soft px-2 py-1 text-[11px] text-text-secondary">+{others.length - 8}</span>}
+                        {/* A list of names is a sentence, not a row of boxes. */}
+                        <span className="text-[12px] leading-5 text-text-primary">
+                          {others.slice(0, 8).join(", ")}
+                          {others.length > 8 && <span className="text-text-secondary">, and {others.length - 8} more</span>}
                         </span>
                       </span>
                     )}
                     {on && url && (
-                      <span className="mt-1 flex flex-wrap gap-2">
+                      <span className="flex flex-wrap gap-2">
                         <CopyButton text={copyOne(it)} label="Copy for the developer" />
                         <CopyButton text={viewLink({ finding: it.id }) ?? ""} label="Copy link" />
                       </span>
@@ -336,7 +342,7 @@ export function FindingsRail({
         <button
           type="button"
           onClick={onToggle}
-          className="mt-4 self-start rounded-full border border-border-soft px-3 py-1 text-[12px] font-medium text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
+          className="mt-4 inline-flex h-8 items-center self-start rounded-full border border-border-soft px-4 text-[12px] font-medium text-text-secondary transition-colors hover:bg-card hover:text-text-primary focus-visible:outline-2 focus-visible:outline-text-primary"
         >
           {hidden > 0 ? `Show ${hidden} more` : "Show fewer"}
         </button>

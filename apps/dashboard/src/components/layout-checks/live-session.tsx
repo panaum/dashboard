@@ -168,7 +168,7 @@ export function LiveSession({
   };
 
   return (
-    <div className="flex w-full flex-col items-center gap-2.5">
+    <div className="flex w-full flex-col items-center gap-2">
       <div
         className={cn("relative w-full max-w-full overflow-hidden rounded-md bg-white",
                       live ? "cursor-pointer" : "cursor-default")}
@@ -221,7 +221,7 @@ export function LiveSession({
       </div>
 
       <form
-        className="flex w-full max-w-[420px] items-center gap-1.5"
+        className="flex w-full max-w-[420px] items-center gap-2"
         onSubmit={(e) => { e.preventDefault(); go(); }}
       >
         <input
@@ -230,7 +230,7 @@ export function LiveSession({
           spellCheck={false}
           inputMode="url"
           aria-label="Address to open on this device"
-          className="h-8 min-w-0 flex-1 rounded-md border border-border-soft bg-card px-2.5 font-mono text-[12px] text-text-primary outline-none transition-colors focus:border-accent/50"
+          className="h-8 min-w-0 flex-1 rounded-md border border-border-soft bg-card px-2 font-mono text-[12px] text-text-primary outline-none transition-colors focus:border-accent/50"
         />
         <Button type="submit" variant="secondary" size="sm" title="Open this address on the device">
           <CornerDownLeft className="size-4" /> Go
