@@ -82,8 +82,8 @@ function CopyButton({ text, label, className }: { text: string; label: string; c
       onClick={copy}
       className={cn(
         "inline-flex items-center gap-2 rounded-full border border-border-soft px-3 py-1 text-[11px] font-medium text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
-        state === "done" && "border-success/40 text-success",
-        state === "failed" && "border-error/40 text-error",
+        state === "done" && "border-success/40 text-success-strong",
+        state === "failed" && "border-error/40 text-error-strong",
         className,
       )}
     >

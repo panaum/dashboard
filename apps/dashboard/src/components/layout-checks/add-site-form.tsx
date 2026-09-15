@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { addLayoutSite } from "@/app/dashboard/layout-checks/actions";
 
 const field =
-  "h-10 rounded-lg border border-border-soft bg-card px-3 text-sm text-text-primary shadow-xs outline-none transition-colors placeholder:text-text-muted focus:border-accent/50";
+  "h-10 rounded-lg border border-border-soft bg-card px-3 text-sm text-text-primary shadow-xs outline-none transition-colors placeholder:text-text-secondary focus:border-accent/50";
 
 export function AddSiteForm() {
   const [state, action, pending] = useActionState(addLayoutSite, {} as { error?: string; ok?: boolean });
@@ -27,7 +27,7 @@ export function AddSiteForm() {
           <Plus className="size-4" /> {pending ? "Adding…" : "Add page"}
         </Button>
       </div>
-      {state?.error && <p className="text-[13px] text-error">{state.error}</p>}
+      {state?.error && <p className="text-[13px] text-error-strong">{state.error}</p>}
     </form>
   );
 }

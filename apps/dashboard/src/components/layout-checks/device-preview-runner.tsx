@@ -121,7 +121,7 @@ export function DevicePreviewRunner({
         </div>
       )}
       {!hosted && note && (
-        <p className={`max-w-xs text-[12px] ${progress.phase === "failed" ? "text-error" : "text-text-muted"}`}>
+        <p className={`max-w-xs text-[12px] ${progress.phase === "failed" ? "text-error-strong" : "text-text-secondary"}`}>
           {note}
         </p>
       )}

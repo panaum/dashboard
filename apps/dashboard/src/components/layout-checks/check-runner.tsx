@@ -107,7 +107,7 @@ export function CheckRunner({
         </div>
       )}
       {note && (
-        <p className={`max-w-xs text-right text-[12px] ${phase === "failed" ? "text-error" : "text-text-muted"}`}>
+        <p className={`max-w-xs text-right text-[12px] ${phase === "failed" ? "text-error-strong" : "text-text-secondary"}`}>
           {note}
           {phase === "running" && " Takes about a minute and a half."}
         </p>

@@ -206,7 +206,7 @@ export function LiveSession({
             {state.phase === "closed" ? (
               <p className="text-[12.5px] leading-relaxed text-text-secondary">{state.detail}</p>
             ) : (
-              <p className="flex items-center gap-2 text-[12.5px] text-text-muted">
+              <p className="flex items-center gap-2 text-[12.5px] text-text-secondary">
                 <Loader2 className="size-4 animate-spin" /> Starting a browser on the device…
               </p>
             )}
@@ -251,7 +251,7 @@ export function LiveSession({
         </Button>
       </div>
 
-      <p className="max-w-sm text-center text-[11.5px] leading-relaxed text-text-muted">
+      <p className="max-w-sm text-center text-[11.5px] leading-relaxed text-text-secondary">
         {live
           ? "A real browser on the device's profile — taps arrive as touch events, and the visit is tagged as QA so it stays out of the client's analytics. It closes itself after a few minutes idle."
           : state.phase === "connecting"

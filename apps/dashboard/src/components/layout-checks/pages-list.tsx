@@ -45,7 +45,7 @@ export function PagesList({ rows }: { rows: ListRow[] }) {
                 type="search"
                 placeholder="Search pages"
                 aria-label="Search pages"
-                className="h-9 w-52 rounded-lg border border-border-soft bg-card pl-8 pr-3 text-[13px] text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent/50"
+                className="h-9 w-52 rounded-lg border border-border-soft bg-card pl-8 pr-3 text-[13px] text-text-primary outline-none transition-colors placeholder:text-text-secondary focus:border-accent/50"
               />
             </div>
           )}
@@ -105,18 +105,18 @@ function PageRow({ row, first }: { row: ListRow; first: boolean }) {
         </span>
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-medium text-text-primary group-hover:underline">{name}</span>
-          <span className="truncate text-[12px] text-text-muted">{row.url}</span>
-          <span className="mt-0.5 text-[11.5px] text-text-muted">{lastCheckedWords(row)}</span>
+          <span className="truncate text-[12px] text-text-secondary">{row.url}</span>
+          <span className="mt-0.5 text-[11.5px] text-text-secondary">{lastCheckedWords(row)}</span>
         </span>
       </Link>
 
       <div className="flex shrink-0 flex-col items-end gap-1">
         <span className="flex items-center gap-1.5">
-          <span className="text-[10.5px] uppercase tracking-[0.06em] text-text-muted">Widths</span>
+          <span className="text-[10.5px] uppercase tracking-[0.06em] text-text-secondary">Widths</span>
           <Badge tone={v.tone}>{v.label}</Badge>
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="text-[10.5px] uppercase tracking-[0.06em] text-text-muted">Devices</span>
+          <span className="text-[10.5px] uppercase tracking-[0.06em] text-text-secondary">Devices</span>
           <Badge tone={d.tone}>{d.label}</Badge>
         </span>
       </div>
