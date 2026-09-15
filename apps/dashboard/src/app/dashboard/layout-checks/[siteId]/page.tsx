@@ -85,6 +85,7 @@ export default async function LayoutSitePage({
       verdict={dVerdict}
       runId={dCur?.id ?? null}
       devices={deviceInputs}
+      provenance={{ backend: dReport?.backend ?? null, host: dReport?.host ?? null }}
       storedFolds={dCur?.shots.map((s) => s.profileId) ?? []}
       liveAvailable={devicePreviewConfigured()}
       url={site.url}

@@ -18,6 +18,7 @@ import { railItems } from "@/lib/layout-checks/findings-view";
 import { pinsFor } from "@/lib/layout-checks/pins";
 import { auditedCount, devicesWith, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
+import { frameNote, type RunProvenance } from "@/lib/layout-checks/provenance";
 import { ms } from "@/lib/layout-checks/motion";
 import { LiveSession } from "@/components/layout-checks/live-session";
 import { comparableEngines, engineColumns } from "@/lib/layout-checks/engines-view";
@@ -49,6 +50,7 @@ export function DevicesPanel({
   run,
   url,
   trend,
+  provenance,
 }: {
   verdict: TabVerdict;
   runId: string | null;
@@ -63,6 +65,9 @@ export function DevicesPanel({
   url: string;
   /** Errors per run, newest first, for the trend beside the verdict. */
   trend?: TrendPoint[];
+  /** Which machine rendered this run. The frame may never claim more than the
+   *  capture delivers, so this is drawn with the device, always. */
+  provenance?: RunProvenance;
 }) {
   const reduce = useReducedMotion();
   // A run in flight, drawn over the glance strip: every device grey, each one
@@ -103,6 +108,9 @@ export function DevicesPanel({
     setZoom("fit");                 // a new device is a new frame, fitted
   };
   const currentRaw = devices.find((d) => d.profile_id === current?.profileId);
+  // The frame's note is about what the machine did, which the view model
+  // deliberately does not carry — it comes off the raw capture.
+  const provNote = frameNote(currentRaw ?? {}, provenance ?? {});
   const items = useMemo(() => railItems(currentRaw?.findings ?? []), [currentRaw]);
   const selectedItem = items.find((i) => i.id === finding) ?? null;
 
@@ -388,10 +396,19 @@ const picker = views.length ? (
             {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
             {showLive && <span className="mt-1 block text-[11px]">{LIVE_CAVEAT}</span>}
             {!showLive && partial && (
-              <span className="mt-1 block text-[11px] text-warning-strong">
+              // warning-strong is a token for light cards; on this navy stage
+              // it measured 2.70:1, under AA. warning is 8.42:1 here.
+              <span className="mt-1 block text-[11px] text-warning">
                 First screen only — the full page for this run is no longer on the preview service. Run the check again to capture it.
               </span>
             )}
+            {/* Permanent, and next to the device on purpose. The bezel above
+                is a claim about which handset this is; this is the claim about
+                what actually rendered, and it must travel with it. */}
+            <span title={provNote.detail}
+                  className={cn("mt-1 block text-[11px]", provNote.tone === "warn" ? "text-warning" : "text-white/55")}>
+              {provNote.label}
+            </span>
           </StageCaption>
         </motion.div>
       )}
