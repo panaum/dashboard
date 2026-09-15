@@ -105,9 +105,16 @@ were corrected in #112.
    run `.github/workflows/q3-webkit-linux-vs-macos.yml` ("Apple fonts: macOS vs
    Linux capture") with the page's URL. It captures the page in WebKit on a
    macOS runner and on a Linux one with the container's fonts, and writes the
-   difference into the run summary with side-by-side images. It is free on a
-   public repo, and its artifacts are kept for 90 days. This replaces routing
-   for the pages that need an authentic rendering.
+   difference into the run summary with side-by-side images. Its artifacts are
+   kept for 90 days. This replaces routing for the pages that need an authentic
+   rendering.
+
+   **Cost.** The repo went private on 2026-09-15, so this is no longer free: every
+   run draws on GitHub's 2,000-minute monthly allowance for private repos, and
+   macOS minutes count against it at a higher rate than Linux ones. CI as a whole
+   uses roughly 600 minutes a month (293 Linux and 8 macOS minutes from 31 August
+   to 15 September), so an occasional run fits comfortably. It stops fitting if
+   escalation becomes routine, which is one of the conditions below.
 
 ## LisaMarie is exposed, and the decision stands
 
@@ -126,7 +133,7 @@ reasons.
 - **An authentic check exists when it is needed.** When LisaMarie's typography
   has to be signed off — before it leaves `dev.apexure.org`, for instance — run
   the escalation workflow against it. That is a manual step for the one site
-  that needs it, at no cost.
+  that needs it, a few minutes from the private-repo allowance.
 - **Routing is a permanent cost for an occasional need.** It means an
   asynchronous second capture path — dispatch, wait, ingest, authenticate —
   maintained for every run, to serve a single partly exposed property.
