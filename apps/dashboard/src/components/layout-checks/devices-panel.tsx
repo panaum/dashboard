@@ -9,6 +9,7 @@ import { ChevronDown, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximi
 import { cn } from "@/lib/utils";
 import { CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
+import { GalaxyS25Model, MODEL_DEVICE } from "@/components/layout-checks/galaxy-s25-model";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { BarLabel } from "@/components/layout-checks/check-shell";
 import { HealthMatrix } from "@/components/layout-checks/health-matrix";
@@ -84,6 +85,9 @@ export function DevicesPanel({
   const asked = readDeviceView(params, views.map((v) => v.profileId));
   const [selected, setSelected] = useState<string | null>(() => asked.device ?? defaultSelection(views));
   const current: DeviceView | undefined = views.find((v) => v.profileId === selected) ?? views[0];
+  // TEMPORARY, until the 3D toggle exists: the model is reachable only by
+  // adding ?frame3d=1 to the address. Nothing links to it.
+  const frame3d = params.get("frame3d") === "1";
   const stored = new Set(storedFolds);
 
   // Rail state is per device: a new device means no selected finding, the
@@ -375,6 +379,7 @@ const picker = views.length ? (
         </motion.div>
       ) : (
         <motion.div key={`single-${current.profileId}`} {...swap} className="flex w-full flex-col items-center gap-2">
+          <div className="relative w-full">
           <DeviceFrame
             shape={current.shape}
             deviceId={current.profileId}
@@ -397,6 +402,13 @@ const picker = views.length ? (
             onPartial={setPartial}
             minimap
           />
+          {/* The flat frame is laid out and shown first; the 3D view covers it
+              once its first frame is drawn, and never if it cannot be. Above
+              the pins (z-10, z-20), which would otherwise show through. */}
+          {frame3d && current.profileId === MODEL_DEVICE && !showLive && (
+            <GalaxyS25Model className="absolute inset-0 z-30 bg-card" />
+          )}
+          </div>
           <StageCaption title={current.label}>
             {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
             {showLive && <span className="block text-[11px] leading-4">{LIVE_CAVEAT}</span>}
