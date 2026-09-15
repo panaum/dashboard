@@ -21,7 +21,7 @@ const BODY = "#15181e";        // the handset body
 const HARDWARE = "#31363f";    // buttons, and the SE's earpiece
 const CHROME_H = 34;          // the desktop title bar
 const MAP_W = 10;             // the overview ruler beside the body
-const MAP_GAP = 12;
+const MAP_GAP = 16;
 const FADE_MS = 150;
 
 // `tried` — the fallback has already been swapped in, so a second error is
@@ -312,7 +312,7 @@ export function DeviceFrame({
      <div className="mx-auto flex w-fit items-start" style={{ gap: MAP_GAP }}>
       <div
         ref={frameRef}
-        className={cn("relative shadow-md", shape === "desktop" ? "rounded-xl" : "", frameClassName)}
+        className={cn("relative", shape === "desktop" ? "rounded-xl" : "", frameClassName)}
         style={{
           width: screenW + 2 * skin.bezelX,
           height: screenH + skin.bezelTop + skin.bezelBottom + chrome,
@@ -362,9 +362,9 @@ export function DeviceFrame({
           />
         )}
         {shape === "desktop" && (
-          <div className="flex items-center gap-2 px-3 text-[11px] text-white/70" style={{ height: CHROME_H }}>
-            <span className="flex gap-1.5" aria-hidden><i className="size-2.5 rounded-full bg-[#ff5f57]" /><i className="size-2.5 rounded-full bg-[#febc2e]" /><i className="size-2.5 rounded-full bg-[#28c840]" /></span>
-            <span className="ml-2 flex-1 truncate rounded-md bg-white/10 px-2.5 py-1 text-left">{title ?? ""}</span>
+          <div className="flex items-center gap-2 px-4 text-[11px] text-white/70" style={{ height: CHROME_H }}>
+            <span className="flex gap-2" aria-hidden><i className="size-2.5 rounded-full bg-[#ff5f57]" /><i className="size-2.5 rounded-full bg-[#febc2e]" /><i className="size-2.5 rounded-full bg-[#28c840]" /></span>
+            <span className="ml-2 block h-6 flex-1 truncate rounded-md bg-white/10 px-2 text-left leading-6">{title ?? ""}</span>
           </div>
         )}
         <div
@@ -452,7 +452,7 @@ export function DeviceFrame({
                 aria-pressed={on}
                 onClick={() => onPinSelect?.(pin.id)}
                 className={cn(
-                  "absolute z-10 grid size-[22px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full text-[11px] font-bold tabular-nums text-white shadow-[0_2px_6px_rgba(0,0,0,0.45)] ring-2 ring-white transition-transform duration-200 hover:scale-125 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+                  "absolute z-10 grid size-[22px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full text-[11px] font-bold tabular-nums text-white shadow-[0_2px_6px_rgba(0,0,0,0.45)] ring-2 ring-white transition-transform duration-200 hover:scale-125 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary",
                   PIN_TONE[pin.severity],
                   on && "z-20 scale-125 ring-accent",
                 )}
@@ -490,7 +490,7 @@ export function DeviceFrame({
           aria-valuemax={100}
           aria-valuenow={Math.round(Math.min(1, scroll.top / range) * 100)}
           tabIndex={0}
-          className="group relative shrink-0 touch-none select-none rounded-full bg-white/10 ring-1 ring-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-purple"
+          className="group relative shrink-0 touch-none select-none rounded-full bg-border-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
           style={{ width: MAP_W, height: screenH, marginTop: skin.bezelTop + chrome }}
           onPointerDown={onRulerDown}
           onPointerMove={onRulerMove}
@@ -499,7 +499,7 @@ export function DeviceFrame({
           onKeyDown={onRulerKey}
         >
           <div aria-hidden
-               className="pointer-events-none absolute inset-x-0 cursor-grab rounded-full bg-white/45 transition-colors group-hover:bg-white/65 group-active:bg-white/80"
+               className="pointer-events-none absolute inset-x-0 cursor-grab rounded-full bg-text-secondary/80 transition-colors group-hover:bg-text-secondary group-active:bg-text-primary"
                style={{ top: band.top, height: band.height }} />
           {clusterDots(pins, viewport.width, cssHeight, MAP_W, screenH).map((d) => {
             const on = selectedPin !== null && d.ids.includes(selectedPin);
@@ -512,7 +512,7 @@ export function DeviceFrame({
                 title={label}
                 aria-pressed={on}
                 onClick={(e) => { e.stopPropagation(); onPinSelect?.(d.ids[0]); }}
-                className={cn("absolute inset-x-0 h-[3px] -translate-y-1/2 rounded-sm transition-transform hover:scale-y-[1.8] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+                className={cn("absolute inset-x-0 h-[3px] -translate-y-1/2 rounded-sm transition-transform hover:scale-y-[1.8] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-text-primary",
                               PIN_TONE[d.severity], on && "z-10 scale-y-[1.8] ring-2 ring-accent")}
                 style={{ top: d.top }}
               />

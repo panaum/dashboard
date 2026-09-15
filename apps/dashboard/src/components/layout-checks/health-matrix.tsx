@@ -31,14 +31,16 @@ function Tick() {
 }
 
 function Verdict({ d, run }: { d: DeviceView; run: DeviceRunState | null }) {
-  const chip = "inline-flex h-6 items-center rounded-full px-2 text-[11px] font-semibold whitespace-nowrap";
-  if (run) return <span className={cn(chip, run === "failed" ? "bg-error/10 text-error-strong" : "bg-card-soft text-text-secondary")}>{RUN[run]}</span>;
-  if (d.severity === "inconclusive") return <span className={cn(chip, "bg-card-soft text-text-secondary")}>Not captured</span>;
-  if (d.severity === "clean") return <span className={cn(chip, "bg-success/12 text-success-strong")}>Clean</span>;
+  // Words in the row's last column, coloured by severity — a pill in every
+  // row of a table is a box repeated fourteen times.
+  const word = "whitespace-nowrap text-[11px] font-semibold";
+  if (run) return <span className={cn(word, run === "failed" ? "text-error-strong" : "text-text-secondary")}>{RUN[run]}</span>;
+  if (d.severity === "inconclusive") return <span className={cn(word, "text-text-secondary")}>Not captured</span>;
+  if (d.severity === "clean") return <span className={cn(word, "text-success-strong")}>Clean</span>;
   return (
-    <span className="flex gap-1.5">
-      {d.errors > 0 && <span className={cn(chip, "bg-error/12 text-error-strong")}>{d.errors} error{d.errors === 1 ? "" : "s"}</span>}
-      {d.warnings > 0 && <span className={cn(chip, "bg-warning/15 text-warning-strong")}>{d.warnings} warning{d.warnings === 1 ? "" : "s"}</span>}
+    <span className="flex gap-2">
+      {d.errors > 0 && <span className={cn(word, "text-error-strong")}>{d.errors} error{d.errors === 1 ? "" : "s"}</span>}
+      {d.warnings > 0 && <span className={cn(word, "text-warning-strong")}>{d.warnings} warning{d.warnings === 1 ? "" : "s"}</span>}
     </span>
   );
 }
@@ -74,16 +76,16 @@ export function HealthMatrix({
 
   return (
     <div className="@container" role="radiogroup" aria-label="Device health" onKeyDown={onKey}>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-baseline gap-x-4">
           <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">Device health</span>
           <span className="text-[13px] text-text-secondary">{views.length} devices · {CHECKS.length} checks · pick a row to open that device</span>
         </div>
         <div className="hidden items-center gap-4 text-[11px] text-text-secondary @3xl:flex">
-          <span className="flex items-center gap-1.5"><i className={cn("inline-block size-3 rounded", CELL.error)} />errors</span>
-          <span className="flex items-center gap-1.5"><i className={cn("inline-block size-3 rounded", CELL.warning)} />warnings</span>
-          <span className="flex items-center gap-1.5"><i className={cn("inline-block size-3 rounded", CELL.clean)} />clean</span>
-          <span className="flex items-center gap-1.5"><i className="inline-block size-3 rounded border border-dashed border-text-secondary" />can&apos;t measure here</span>
+          <span className="flex items-center gap-2"><i className={cn("inline-block size-3 rounded", CELL.error)} />errors</span>
+          <span className="flex items-center gap-2"><i className={cn("inline-block size-3 rounded", CELL.warning)} />warnings</span>
+          <span className="flex items-center gap-2"><i className={cn("inline-block size-3 rounded", CELL.clean)} />clean</span>
+          <span className="flex items-center gap-2"><i className="inline-block size-3 rounded border border-dashed border-text-secondary" />can&apos;t measure here</span>
         </div>
       </div>
 
@@ -97,7 +99,7 @@ export function HealthMatrix({
 
       {groups.map(({ group, devices }) => (
         <div key={group} className="flex flex-col">
-          <span className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">{group}</span>
+          <span className="px-4 pt-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">{group}</span>
           {devices.map((d) => {
             const on = d.profileId === selected;
             const run = runState?.(d) ?? null;
@@ -113,13 +115,13 @@ export function HealthMatrix({
                 tabIndex={d.profileId === tabTarget ? 0 : -1}
                 onClick={() => onPick(d.profileId)}
                 className={cn(
-                  "grid h-10 cursor-pointer items-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
+                  "grid h-10 cursor-pointer items-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-primary",
                   cols,
-                  on ? "bg-accent/[0.06] shadow-[inset_3px_0_0_var(--color-accent)]" : "hover:bg-page",
+                  on ? "bg-accent/[0.06] shadow-[inset_3px_0_0_var(--color-accent)]" : "hover:bg-card",
                   run === "waiting" && "opacity-60",
                 )}
               >
-                <span className="flex min-w-0 flex-col pl-3">
+                <span className="flex min-w-0 flex-col pl-4">
                   <span className={cn("truncate text-[13px] leading-tight", on ? "font-semibold text-accent" : "font-medium text-text-primary")}>{d.label}</span>
                   <span className="truncate text-[11px] leading-tight text-text-secondary">{d.engineLabel} · {d.viewportLabel}</span>
                 </span>
@@ -136,7 +138,7 @@ export function HealthMatrix({
                     )}
                   </span>
                 ))}
-                <span className="pl-3 pr-3 @3xl:pl-4"><Verdict d={d} run={run} /></span>
+                <span className="px-4"><Verdict d={d} run={run} /></span>
               </div>
             );
           })}

@@ -27,19 +27,31 @@ test("the arithmetic matches the WCAG worked examples", () => {
 //
 // `graphical` marks icons and non-text marks, which AA holds to 3:1 rather
 // than 4.5:1. It is not an escape hatch for small text.
+// The handset body in device-frame.tsx. Not a theme token — it is the colour
+// of the drawn hardware — but the desktop frame's chrome bar sets text on it.
+const BODY = "#15181e";
+
 const SURFACES: { name: string; bg: string; fg: string[]; graphical?: string[] }[] = [
-  { name: "card", bg: T.card,
-    fg: ["text-primary", "text-secondary", "accent", "error-strong", "success-strong"],
+  // The stage is a card again: a near-white surface under the device, with its
+  // caption, its warning line and its buttons on it.
+  { name: "card, and the stage", bg: T.card,
+    fg: ["text-primary", "text-secondary", "accent", "error-strong", "success-strong", "warning-strong"],
     graphical: ["text-muted"] },
   { name: "the accent pill", bg: T.accent, fg: ["white"] },
-  { name: "page", bg: T.page, fg: ["text-primary", "text-secondary", "accent"], graphical: ["text-muted"] },
+  // The verdict, its counts and the findings rail sit straight on the page:
+  // no card behind them, so their severity words are judged against it.
+  { name: "page", bg: T.page,
+    fg: ["text-primary", "text-secondary", "accent", "error-strong", "warning-strong", "success-strong"],
+    graphical: ["text-muted"] },
   { name: "card-soft", bg: T["card-soft"], fg: ["text-primary", "text-secondary", "accent"], graphical: ["text-muted"] },
   { name: "error tint on card", bg: composite(T.error, 0.12, T.card), fg: ["error-strong"] },
   { name: "warning tint on card", bg: composite(T.warning, 0.15, T.card), fg: ["warning-strong"] },
   { name: "success tint on card", bg: composite(T.success, 0.10, T.card), fg: ["success-strong"] },
-  { name: "the dark stage", bg: T["brand-primary"],
-    fg: ["white", "white/90", "white/70", "white/60", "white/55", "warning"],
-    graphical: ["brand-purple"] },
+  // The scroll ruler beside the frame: a thumb on a track, a non-text control.
+  { name: "the ruler track", bg: T["border-soft"], fg: [], graphical: ["text-secondary/80"] },
+  // The desktop frame's chrome bar, and the address pill on it.
+  { name: "the handset body", bg: BODY, fg: ["white/70"] },
+  { name: "the address pill on the body", bg: composite("#ffffff", 0.10, BODY), fg: ["white/70"] },
 ];
 
 test("every declared pair meets AA", () => {

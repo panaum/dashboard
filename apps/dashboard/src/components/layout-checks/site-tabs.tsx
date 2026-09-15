@@ -89,7 +89,7 @@ export function SiteTabs({
 
   const tabs = (
     <div role="tablist" aria-label="Layout checks" onKeyDown={onKey}
-         className="inline-flex shrink-0 rounded-full bg-card-soft p-1 ring-1 ring-border-soft">
+         className="inline-flex shrink-0 rounded-full bg-card-soft p-2">
       {TABS.map((t) => {
         const on = t.key === tab;
         return (
@@ -104,7 +104,7 @@ export function SiteTabs({
             tabIndex={on ? 0 : -1}
             onClick={() => select(t.key)}
             className={cn(
-              "relative rounded-full px-4 py-2 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+              "relative inline-flex h-8 items-center rounded-full px-4 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary",
               on ? "text-accent" : "text-text-secondary hover:text-text-primary",
             )}
           >

@@ -120,22 +120,22 @@ export default async function LayoutSitePage({
   return (
     // data-wide: the stage wants the room; the shared layout widens its container for it.
     <div className="flex flex-col gap-6" data-wide="">
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <Link href="/dashboard/layout-checks"
-              className="inline-flex w-fit items-center gap-1.5 text-[13px] text-text-secondary transition-colors hover:text-text-primary">
+              className="inline-flex w-fit items-center gap-2 text-[13px] text-text-secondary transition-colors hover:text-text-primary">
           <ArrowLeft className="size-3.5" /> All layout checks
         </Link>
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div className="min-w-0">
             <h1 className="truncate text-[30px] font-semibold leading-tight tracking-tight text-text-primary">{title}</h1>
             <a href={site.url} target="_blank" rel="noopener"
-               className="mt-1 inline-flex max-w-full items-center gap-1.5 truncate font-mono text-[12.5px] text-text-secondary transition-colors hover:text-accent">
+               className="mt-2 inline-flex max-w-full items-center gap-2 truncate font-mono text-[12.5px] text-text-secondary transition-colors hover:text-text-primary">
               <span className="truncate">{site.url}</span>
               <ExternalLink className="size-3.5 shrink-0" />
             </a>
           </div>
           <Link href={`/dashboard/layout-checks/${siteId}/report`}
-                className="inline-flex items-center gap-2 rounded-full border border-border-soft bg-card px-4 py-2 text-[13px] font-medium text-text-primary shadow-xs transition-colors hover:bg-card-soft">
+                className="inline-flex items-center gap-2 rounded-full border border-border-soft bg-card px-4 py-2 text-[13px] font-medium text-text-primary transition-colors hover:bg-card-soft">
             <FileText className="size-4" /> Client report
           </Link>
         </div>

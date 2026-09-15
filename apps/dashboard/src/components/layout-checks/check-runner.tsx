@@ -101,7 +101,7 @@ export function CheckRunner({
       {busy && (
         <div className="w-56">
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-card-soft">
-            <div className="h-full rounded-full bg-accent transition-[width] duration-500"
+            <div className="h-full rounded-full bg-text-secondary transition-[width] duration-500"
                  style={{ width: `${Math.max(4, pct)}%` }} />
           </div>
         </div>

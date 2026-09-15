@@ -84,7 +84,9 @@ if (process.env.AUDIT_COOKIE) {
   await ctx.addCookies([{ name: "session", value: process.env.AUDIT_COOKIE, domain: u.hostname, path: "/" }]);
 }
 const pg = await ctx.newPage();
-await pg.goto(url, { waitUntil: "domcontentloaded" });
+// Generous: a page rendering against a remote database can take well over
+// Playwright's 30-second default, and a timeout is not a contrast result.
+await pg.goto(url, { waitUntil: "domcontentloaded", timeout: 180000 });
 await pg.waitForTimeout(3500);
 const fails = await pg.evaluate(PROBE);
 await b.close();

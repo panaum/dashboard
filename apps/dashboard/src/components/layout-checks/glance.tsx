@@ -75,14 +75,14 @@ export function Glance({
   const tile = size === "tile";
   return (
     <div role="radiogroup" aria-label={label} onKeyDown={onKey}
-         className={cn("flex flex-wrap items-center", tile ? "gap-x-4 gap-y-3" : "gap-x-4 gap-y-2")}>
+         className="flex flex-wrap items-center gap-x-4 gap-y-2">
       {rows.map((r) => (
         <div key={r.name} className="flex items-center gap-2">
           {r.name && <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">{r.name}</span>}
-          <div className={cn("flex", tile ? "flex-wrap gap-2" : "gap-1")}>
+          <div className={cn("flex gap-2", tile && "flex-wrap")}>
             {r.cells.map((c) => {
               const on = c.id === selected;
-              const common = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+              const common = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary";
               return tile ? (
                 <button
                   key={c.id}
@@ -94,7 +94,7 @@ export function Glance({
                   tabIndex={c.id === tabTarget ? 0 : -1}
                   onClick={() => onPick(c.id)}
                   className={cn(
-                    "relative flex h-12 w-16 flex-col items-center justify-center overflow-hidden rounded-lg border transition-colors",
+                    "relative flex size-12 flex-col items-center justify-center overflow-hidden rounded-lg border transition-colors",
                     common, TILE[c.tone].face,
                     on && "border-accent bg-accent/10 ring-2 ring-accent hover:bg-accent/10",
                   )}
@@ -125,7 +125,7 @@ export function Glance({
         </div>
       ))}
       {legend && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-secondary">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-text-secondary">
           <span className="flex items-center gap-2"><i className={cn("inline-block size-2 rounded-[3px]", DOT.error)} />errors</span>
           <span className="flex items-center gap-2"><i className={cn("inline-block size-2 rounded-[3px]", DOT.warning)} />warnings</span>
           <span className="flex items-center gap-2"><i className={cn("inline-block size-2 rounded-[3px]", DOT.success)} />clean</span>
