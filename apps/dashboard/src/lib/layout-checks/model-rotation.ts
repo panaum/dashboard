@@ -125,3 +125,35 @@ export function facingFront(from: Rotation, elapsed: number): Rotation {
   const k = 1 - (1 - t) ** 3;   // ease out: quick to start, gentle to land
   return t >= 1 ? { ...FRONT } : { yaw: from.yaw * (1 - k), pitch: from.pitch * (1 - k) };
 }
+
+// ── Idle drift ─────────────────────────────────────────────────────────────
+// Left alone, the handset sways a few degrees about wherever it was put, so it
+// reads as an object rather than a picture. It is not a spin: it never goes
+// further than DRIFT from its resting pose, it starts only after the handset
+// has been still for DRIFT_DELAY_MS, and it fades in over DRIFT_RAMP_MS so it
+// never jumps. The two axes run at unrelated periods so it does not repeat
+// visibly. Off entirely when the reader has asked for reduced motion.
+
+export const DRIFT: Rotation = { yaw: 4, pitch: 1.5 };
+export const DRIFT_PERIOD_MS: Rotation = { yaw: 9_000, pitch: 13_700 };
+export const DRIFT_DELAY_MS = 2_000;
+export const DRIFT_RAMP_MS = 2_500;
+
+/** The sway to add to the resting pose, `idle` ms after the handset came to rest. */
+export function driftOffset(idle: number): Rotation {
+  if (!(idle > DRIFT_DELAY_MS)) return { yaw: 0, pitch: 0 };
+  const t = Math.min(1, (idle - DRIFT_DELAY_MS) / DRIFT_RAMP_MS);
+  const amp = t * t * (3 - 2 * t);   // smoothstep: no kick at the start
+  const phase = idle - DRIFT_DELAY_MS;
+  return {
+    yaw: amp * DRIFT.yaw * Math.sin((2 * Math.PI * phase) / DRIFT_PERIOD_MS.yaw),
+    pitch: amp * DRIFT.pitch * Math.sin((2 * Math.PI * phase) / DRIFT_PERIOD_MS.pitch),
+  };
+}
+
+/** Where a released handset ends up with reduced motion on: inside the limits
+ *  at once, with no coast and no spring. */
+export function clampToLimits(rot: Rotation): Rotation {
+  const clamp = (v: number, l: number) => Math.max(-l, Math.min(l, v));
+  return { yaw: clamp(rot.yaw, LIMIT.yaw), pitch: clamp(rot.pitch, LIMIT.pitch) };
+}

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  coast, dragged, excess, facingFront, isFront, releaseVelocity, resist, settled, unresist,
+  clampToLimits, coast, dragged, driftOffset, excess, facingFront, isFront, releaseVelocity, resist, settled, unresist,
+  DRIFT, DRIFT_DELAY_MS, DRIFT_RAMP_MS,
   COAST_TAU, DEG_PER_PX, FACE_FRONT_MS, LIMIT, MAX_SPEED, STRETCH, type Coast, type Sample,
 } from "./model-rotation";
 
@@ -112,4 +113,36 @@ test("face front starts where the handset is, lands exactly on front, and never 
   }
   assert.ok(isFront(facingFront(from, FACE_FRONT_MS)));
   assert.deepEqual(facingFront(from, FACE_FRONT_MS * 3), { yaw: 0, pitch: 0 });
+});
+
+// ── Idle drift and reduced motion ──
+
+test("no drift until the handset has been still for the delay", () => {
+  for (const idle of [-5, 0, 500, DRIFT_DELAY_MS]) assert.deepEqual(driftOffset(idle), { yaw: 0, pitch: 0 }, `${idle} ms`);
+  assert.deepEqual(driftOffset(Number.NaN), { yaw: 0, pitch: 0 });
+});
+
+test("drift is a few degrees at most — a sway, never a spin", () => {
+  let most = { yaw: 0, pitch: 0 };
+  for (let idle = 0; idle < 120_000; idle += 37) {
+    const d = driftOffset(idle);
+    most = { yaw: Math.max(most.yaw, Math.abs(d.yaw)), pitch: Math.max(most.pitch, Math.abs(d.pitch)) };
+  }
+  assert.ok(most.yaw <= DRIFT.yaw + 1e-9 && most.pitch <= DRIFT.pitch + 1e-9, JSON.stringify(most));
+  assert.ok(most.yaw > DRIFT.yaw * 0.95, "and it does reach its amplitude once faded in");
+});
+
+test("drift fades in and moves slowly: no jump from one frame to the next", () => {
+  const frame = 1000 / 60;
+  let prev = driftOffset(DRIFT_DELAY_MS);
+  for (let idle = DRIFT_DELAY_MS + frame; idle < DRIFT_DELAY_MS + DRIFT_RAMP_MS + 20_000; idle += frame) {
+    const d = driftOffset(idle);
+    assert.ok(Math.abs(d.yaw - prev.yaw) < 0.05 && Math.abs(d.pitch - prev.pitch) < 0.05, `jump at ${idle} ms`);
+    prev = d;
+  }
+});
+
+test("with reduced motion, a release past a limit lands inside it at once", () => {
+  assert.deepEqual(clampToLimits({ yaw: 191, pitch: -40 }), { yaw: 180, pitch: -30 });
+  assert.deepEqual(clampToLimits({ yaw: -12, pitch: 7 }), { yaw: -12, pitch: 7 });
 });

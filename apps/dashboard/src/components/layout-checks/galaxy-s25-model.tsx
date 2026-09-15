@@ -6,17 +6,41 @@ import { cn } from "@/lib/utils";
 import { cameraDistance } from "@/lib/layout-checks/model-fit";
 import { screenCrop } from "@/lib/layout-checks/screen-crop";
 import {
-  coast, dragged, facingFront, FRONT, isFront, LIMIT, releaseVelocity, settled, unresist,
+  clampToLimits, coast, dragged, driftOffset, DRIFT_DELAY_MS, facingFront, FRONT, isFront, LIMIT, releaseVelocity, settled, unresist,
   type Coast, type Rotation, type Sample,
 } from "@/lib/layout-checks/model-rotation";
+import { REDUCE_QUERY } from "@/lib/layout-checks/motion";
 
 // A 3D Galaxy S25, drawn in place of the CSS silhouette for that one handset.
 // It is there for feel, not for diagnosis: the capture, the pins and the
 // scroll ruler in the flat frame are what the findings are read from.
 //
-// INTERNAL TOOLING ONLY. The model is a third-party asset of a real, branded
-// handset. If this tool ever goes client-facing or becomes a product, the 3D
-// model is the first thing that has to come out.
+// INTERNAL TOOLING ONLY — and the reason matters more than the instruction.
+//
+// The rule: if this tool ever becomes client-facing in any form (a client
+// login, a client report or share link that shows the Devices tab, client
+// material with a screenshot or recording of it, or a product), the 3D model
+// comes out first, before anything else about that change ships.
+//
+// The reason is Samsung's industrial design, not only its name. Stripping the
+// SAMSUNG wordmark (below) does not make this a generic phone: what makes it
+// recognisably a Galaxy S25 — the flat-sided body and its proportions, three
+// separate lenses stacked in the top-left corner with no camera island, the
+// centred punch-hole — is Samsung's design, and manufacturers protect that
+// separately from their trademarks (registered designs, design patents, trade
+// dress). The CC BY licence comes from the person who built the 3D file. It
+// licenses their work and nothing else: CC BY 4.0 says in terms that patent
+// and trademark rights are not licensed, and it could not grant rights in
+// Samsung's design, which were never the modeller's to give. Used inside the
+// company as a reference while checking a page, that is an ordinary thing to
+// have. Shown to clients or shipped in a product, it would be our product
+// presenting Samsung's design and suggesting an association with Samsung that
+// does not exist. (This is the reasoning behind the rule, not legal advice; if
+// the question ever becomes live, it goes to someone qualified to answer it.)
+//
+// It is also on trial, and comes out if it gets in the way of work. The
+// conditions, the date to check them and how to remove it cleanly are in
+// docs/decisions/ADR-004-3d-galaxy-s25-internal-only.md.
 //
 // The model
 // ---------
@@ -51,6 +75,9 @@ const FILL = 0.97;
 
 /** What the page can ask of the model from outside it: the stage bar's button. */
 export type ModelControls = { faceFront: () => void };
+
+/** Drift is slow; half the display's frame rate is plenty, and half the work. */
+const DRIFT_FRAME_MS = 1000 / 30;
 
 /** The largest texture side the screen gets: sharper than the screen is ever
  *  drawn, and a 2048 × 946 texture is about 10 MB of GPU memory with mipmaps. */
@@ -130,6 +157,14 @@ export function GalaxyS25Model({
         throw new Error("webgl-unavailable");
       }
       cleanups.push(() => { renderer.dispose(); renderer.forceContextLoss(); });
+      // The GPU can take the context away (a driver reset, too many contexts,
+      // the machine sleeping). Nothing is drawn after that, so give the stage
+      // back to the flat frame rather than leave a frozen or blank handset.
+      // Registered after the renderer's release, so it is removed before our
+      // own forceContextLoss() on unmount fires the same event.
+      const onContextLost = () => { if (alive) callbacks.current.onFail?.("webgl-context-lost"); };
+      cv.addEventListener("webglcontextlost", onContextLost);
+      cleanups.push(() => cv.removeEventListener("webglcontextlost", onContextLost));
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setClearColor(0x000000, 0);
       renderer.outputColorSpace = T.SRGBColorSpace;
@@ -205,17 +240,38 @@ export function GalaxyS25Model({
       scene.add(shadow);
 
       // ── Turning ────────────────────────────────────────────────────────
-      // There is no animation loop running at rest. A frame is requested
-      // when something moves — a drag, a coast after release, the turn back
-      // to front — and the chain of frames stops when that motion settles.
+      // Frames are requested only while something moves: a drag, a coast
+      // after release, the turn back to front, or the idle drift (drawn at
+      // 30 frames a second, and only once it has started). With reduced
+      // motion there is no coast, no spring, no ease and no drift, so at rest
+      // nothing is drawn at all. Drift also stops while the handset is
+      // scrolled out of view, and the browser pauses frames in a hidden tab.
       type Mode = "idle" | "drag" | "coast" | "front";
       let mode: Mode = "idle";
-      let shown: Rotation = { ...FRONT };
-      let coasting: Coast = { rot: shown, vel: { yaw: 0, pitch: 0 } };
-      let frontFrom: Rotation = shown, frontAt = 0;
+      // The pose the reader put it in. Drift is added on top while idle and
+      // folded in the moment anything else starts, so nothing ever jumps.
+      let pose: Rotation = { ...FRONT };
+      let coasting: Coast = { rot: pose, vel: { yaw: 0, pitch: 0 } };
+      let frontFrom: Rotation = pose, frontAt = 0;
       let grab: { id: number; x: number; y: number; raw: Rotation } | null = null;
       let samples: Sample[] = [];
-      let raf = 0, lastFrame = 0, reportedFront = true;
+      let raf = 0, lastFrame = 0, lastDraw = 0, idleSince = performance.now(), reportedFront = true;
+      let driftTimer = 0;
+      let visible = true;
+      // The model covers the flat frame only once the capture is on its
+      // screen. Until then the frame is visible and says it is loading — a
+      // handset with a black screen in its place would hide that.
+      let covering = false;
+      const motion = window.matchMedia(REDUCE_QUERY);
+      let reduced = motion.matches;
+
+      const drifting = () => mode === "idle" && !reduced && visible && covering;
+      const view = (now: number): Rotation => {
+        if (!drifting()) return pose;
+        const d = driftOffset(now - idleSince);
+        return { yaw: pose.yaw + d.yaw, pitch: pose.pitch + d.pitch };
+      };
+      const settle = (now: number) => { mode = "idle"; idleSince = now; };
 
       const fit = () => {
         const w = el.clientWidth, h = el.clientHeight;
@@ -225,15 +281,18 @@ export function GalaxyS25Model({
         camera.updateProjectionMatrix();
         return true;
       };
-      const draw = () => {
+      const draw = (now = performance.now()) => {
         const rad = Math.PI / 180;
-        camera.position.set(0, 0, cameraDistance({ width: size.x, height: size.y, depth: size.z }, FOV, camera.aspect, FILL, shown));
+        const r = view(now);
+        camera.position.set(0, 0, cameraDistance({ width: size.x, height: size.y, depth: size.z }, FOV, camera.aspect, FILL, r));
         camera.lookAt(0, 0, 0);
         // XYZ: yaw is applied first, then pitch in world space, so a tip is
         // always towards the viewer whichever way the handset faces.
-        pivot.rotation.set(shown.pitch * rad, shown.yaw * rad, 0, "XYZ");
+        pivot.rotation.set(r.pitch * rad, r.yaw * rad, 0, "XYZ");
         renderer.render(scene, camera);
-        const front = mode === "idle" && isFront(shown);
+        lastDraw = now;
+        // "Facing front" is about the pose, not the sway on top of it.
+        const front = mode === "idle" && isFront(pose);
         if (front !== reportedFront) { reportedFront = front; callbacks.current.onFrontChange?.(front); }
       };
       const frame = (now: number) => {
@@ -242,24 +301,58 @@ export function GalaxyS25Model({
         lastFrame = now;
         if (mode === "coast") {
           coasting = coast(coasting, dt);
-          shown = coasting.rot;
-          if (settled(coasting)) mode = "idle";
+          pose = coasting.rot;
+          if (settled(coasting)) settle(now);
         } else if (mode === "front") {
-          shown = facingFront(frontFrom, now - frontAt);
-          if (isFront(shown)) { shown = { ...FRONT }; mode = "idle"; }
+          pose = facingFront(frontFrom, now - frontAt);
+          if (isFront(pose)) { pose = { ...FRONT }; settle(now); }
         }
-        draw();
-        if (mode === "coast" || mode === "front") raf = requestAnimationFrame(frame);
-        else lastFrame = 0;
+        const moving = mode === "coast" || mode === "front";
+        // Swaying only once the delay is up; before that there is nothing new
+        // to draw, so a timer waits for it instead of a loop of identical frames.
+        const swaying = drifting() && now - idleSince >= DRIFT_DELAY_MS;
+        if (moving || mode === "drag" || !swaying || now - lastDraw >= DRIFT_FRAME_MS) draw(now);
+        if (moving || swaying) {
+          raf = requestAnimationFrame(frame);
+        } else {
+          lastFrame = 0;
+          window.clearTimeout(driftTimer);
+          if (drifting()) driftTimer = window.setTimeout(kick, DRIFT_DELAY_MS - (now - idleSince) + 20);
+        }
       };
       const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
-      cleanups.push(() => cancelAnimationFrame(raf));
+      cleanups.push(() => { cancelAnimationFrame(raf); window.clearTimeout(driftTimer); });
+
+      const onMotionPreference = () => {
+        reduced = motion.matches;
+        if (reduced) {
+          // Whatever was moving stops where it should end up.
+          if (mode === "coast") { pose = clampToLimits(coasting.rot); settle(performance.now()); }
+          if (mode === "front") { pose = { ...FRONT }; settle(performance.now()); }
+          draw();
+        } else if (mode === "idle") {
+          idleSince = performance.now();
+          kick();
+        }
+      };
+      motion.addEventListener("change", onMotionPreference);
+      cleanups.push(() => motion.removeEventListener("change", onMotionPreference));
+
+      const io = new IntersectionObserver(([entry]) => {
+        const was = visible;
+        visible = entry.isIntersecting;
+        if (visible && !was && mode === "idle") { idleSince = performance.now(); kick(); }
+      });
+      io.observe(el);
+      cleanups.push(() => io.disconnect());
 
       const onDown = (e: PointerEvent) => {
         if (grab || (e.pointerType === "mouse" && e.button !== 0)) return;
         el.setPointerCapture(e.pointerId);
-        // Picked up mid-coast or mid-spring-back: carry on from where it is.
-        const raw = { yaw: unresist(shown.yaw, LIMIT.yaw), pitch: unresist(shown.pitch, LIMIT.pitch) };
+        // Picked up mid-coast, mid-spring-back or mid-sway: carry on from
+        // exactly what is on screen.
+        pose = view(performance.now());
+        const raw = { yaw: unresist(pose.yaw, LIMIT.yaw), pitch: unresist(pose.pitch, LIMIT.pitch) };
         grab = { id: e.pointerId, x: e.clientX, y: e.clientY, raw };
         samples = [{ t: e.timeStamp, rot: raw }];
         mode = "drag";
@@ -269,7 +362,7 @@ export function GalaxyS25Model({
       const onMove = (e: PointerEvent) => {
         if (!grab || e.pointerId !== grab.id) return;
         const next = dragged(grab.raw, e.clientX - grab.x, e.clientY - grab.y);
-        shown = next.shown;
+        pose = next.shown;
         samples.push({ t: e.timeStamp, rot: next.raw });
         if (samples.length > 32) samples = samples.slice(-16);
         kick();
@@ -278,9 +371,16 @@ export function GalaxyS25Model({
         if (!grab || e.pointerId !== grab.id) return;
         grab = null;
         delete el.dataset.dragging;
+        if (reduced) {
+          // No throw and no spring: it stays where it was let go, inside the limits.
+          pose = clampToLimits(pose);
+          settle(performance.now());
+          draw();
+          return;
+        }
         // A cancel (the browser took the gesture for a scroll) throws nothing.
         const vel = e.type === "pointercancel" ? { yaw: 0, pitch: 0 } : releaseVelocity(samples, e.timeStamp);
-        coasting = { rot: shown, vel };
+        coasting = { rot: pose, vel };
         mode = "coast";
         lastFrame = 0;
         kick();
@@ -299,10 +399,6 @@ export function GalaxyS25Model({
       let screenToken = 0;
       let pending: HTMLImageElement | null = null;
       const maxSide = Math.min(MAX_SCREEN_TEXTURE, renderer.capabilities.maxTextureSize);
-      // The model covers the flat frame only once the capture is on its
-      // screen. Until then the frame is visible and says it is loading — a
-      // handset with a black screen in its place would hide that.
-      let covering = false;
       const putOnScreen = (tex: THREE.Texture) => {
         const old = screenMat.map;
         screenMat.map = tex;
@@ -312,6 +408,9 @@ export function GalaxyS25Model({
         draw();
         if (!covering) {
           covering = true;
+          // The drift's clock starts when there is something to look at.
+          idleSince = performance.now();
+          kick();
           setReady(true);
           callbacks.current.onCoverChange?.(true);
         }
@@ -355,8 +454,9 @@ export function GalaxyS25Model({
 
       controls.current = {
         faceFront: () => {
-          if (grab || (mode === "idle" && isFront(shown))) return;
-          frontFrom = shown;
+          if (grab || (mode === "idle" && isFront(pose))) return;
+          if (reduced) { pose = { ...FRONT }; settle(performance.now()); draw(); return; }
+          frontFrom = view(performance.now());
           frontAt = performance.now();
           mode = "front";
           lastFrame = 0;
