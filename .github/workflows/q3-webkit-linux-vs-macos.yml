@@ -1,29 +1,34 @@
-# Q3 from the devicepreview alignment note: what IS the visual difference
-# between a Linux WebKit capture and a macOS one of the same page?
+# The escalation path in ADR-003: an authentic Apple-font capture, on demand.
 #
-# Throwaway and manual. It exists to produce evidence for one decision — whether
-# routing Apple profiles to a Mac is worth building — and should be deleted once
-# that decision is made.
+# devicepreview captures on Linux, where WebKit cannot draw Apple's system
+# face, and it says so on the frame. For a page whose text leads with that
+# face — dev.apexure.org/LisaMarie, as of the 2026-09-15 census — this runs the
+# same capture in WebKit on a macOS runner and on a Linux one, and diffs them,
+# so the typography can be checked for real before a client sees it. We
+# decided against routing captures to a Mac permanently; this is what replaces
+# that, for the pages that need it.
 #
-# Why a workflow rather than a laptop: the Linux half has to look like the
-# container we actually ship, and the only honest way to get that is a Linux
-# machine with the same fonts the Dockerfile installs. Fonts are the whole
-# question here, so a bare ubuntu-latest would answer a different one.
+# Why Linux as well as macOS: the comparison is the point. The Linux half
+# installs the same fonts the Dockerfile does, so it is the container we ship
+# rather than a bare runner, and the table says how far it is from the real
+# rendering on that page.
 #
-# Free: GitHub-hosted runners, including macOS, are free for public repos.
+# Free: GitHub-hosted runners, macOS included, cost nothing on a public repo.
+# Artifacts are kept for the repo's retention period (90 days).
 #
-# NOTE: workflow_dispatch only appears in the Actions UI once this file is on
-# the default branch. Merge first, then run it.
+# Run it from Actions → "Apple fonts: macOS vs Linux capture" → Run workflow,
+# with the page's URL. Fixtures in services/devicepreview/fixtures are served
+# at http://127.0.0.1:8000/fixtures/<name>.html if you need a control.
 
-name: "Q3 — WebKit: Linux vs macOS"
+name: "Apple fonts: macOS vs Linux capture"
 
 on:
   workflow_dispatch:
     inputs:
       url:
-        description: "Page to capture (a real client page makes the better evidence)"
+        description: "Page to capture — one whose text leads with an Apple system font"
         required: true
-        default: "https://www.apexure.com/"
+        default: "https://dev.apexure.org/LisaMarie/"
       devices:
         description: "Profile ids — WebKit ones are the point"
         required: true
@@ -61,7 +66,10 @@ jobs:
         working-directory: services/devicepreview
         run: |
           pip install -r requirements.txt
-          python -m playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} webkit
+          # All three, because --self-check below exercises all three — the
+          # same set the Dockerfile installs. Installing only webkit made the
+          # self-check fail on chromium and firefox and took the run with it.
+          python -m playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium firefox webkit
 
       # Fails the build if proportional text comes out monospace — the same
       # guard the Dockerfile runs, so a broken Linux font stack cannot quietly
@@ -69,6 +77,15 @@ jobs:
       - name: Font-fallback self-check
         working-directory: services/devicepreview
         run: python devicepreview.py --self-check
+
+      # So a fixture in this repo can be the subject. The interesting question
+      # is about a font stack, and a fixture isolates it: no webfonts, no
+      # images, so a pixel that differs differs because of the face.
+      - name: Serve the repo's fixtures
+        working-directory: services/devicepreview
+        run: |
+          nohup python -m http.server 8000 >/dev/null 2>&1 &
+          for i in $(seq 1 40); do curl -sf http://127.0.0.1:8000/ >/dev/null && break; sleep 0.25; done
 
       # Inputs go through env, never interpolated into the shell: this repo is
       # public and workflow_dispatch inputs are attacker-controlled text.
