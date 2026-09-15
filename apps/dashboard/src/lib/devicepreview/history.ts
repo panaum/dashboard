@@ -23,11 +23,20 @@ export type DpDevice = {
   findings: { severity: string; rule: string; message: string; selector?: string; scope?: string }[];
   diff?: { percent?: number; regressed?: boolean; missing?: boolean } | null;
   images?: Record<string, string>;
+  /** Measured in the page: did -apple-system actually draw here? */
+  fonts?: {
+    appleSystemFontRequested?: boolean;
+    appleSystemFontAuthentic?: boolean | null;
+  } | null;
 };
 
 export type DpReport = {
   schemaVersion: number;
   url: string;
+  /** Which backend ran, and on what. The frame says so; see provenance.ts. */
+  backend?: string;
+  host?: { platform?: string; release?: string };
+  fidelityNote?: string;
   startedAt: string;
   finishedAt?: string;
   summary: DpSummary;
