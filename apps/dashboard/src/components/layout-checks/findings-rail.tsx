@@ -42,9 +42,9 @@ export type RailItem = RailFinding & {
 // words take the darkened hue — the fill hues fail AA as 11px text — and no
 // box: a count or a severity is a word in a line, not a pill.
 const ROW: Record<RailFinding["severity"], { bar: string; text: string; pin: string; word: string }> = {
-  error: { bar: "bg-error", text: "text-error-strong", pin: "bg-error", word: "Error" },
-  warn:  { bar: "bg-warning", text: "text-warning-strong", pin: "bg-warning", word: "Warning" },
-  info:  { bar: "bg-text-muted/40", text: "text-text-primary", pin: "bg-text-muted", word: "Note" },
+  error: { bar: "bg-error", text: "text-error-strong", pin: "bg-error-strong", word: "Error" },
+  warn:  { bar: "bg-warning", text: "text-warning-strong", pin: "bg-warning-strong", word: "Warning" },
+  info:  { bar: "bg-text-muted/40", text: "text-text-primary", pin: "bg-text-secondary", word: "Note" },
 };
 
 function Summary({ items }: { items: RailItem[] }) {

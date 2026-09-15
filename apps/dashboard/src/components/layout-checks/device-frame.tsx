@@ -32,8 +32,12 @@ export type Box = { x: number; y: number; width: number; height: number };
 /** A pin drawn on the capture: the number the list shows beside the same finding. */
 export type PinMarker = Pin & { label: string };
 
+// The pins carry a number, so the pill is its container and the numeral is
+// the content: white on the darkened hue. The bright fills measured 2.03:1
+// (amber), 3.59:1 (red) and 4.21:1 (grey) with a white numeral — all under AA.
+// Darkened: 6.33, 6.54 and 5.61. The same map colours the ruler's dots.
 const PIN_TONE: Record<PinMarker["severity"], string> = {
-  error: "bg-error", warn: "bg-warning", info: "bg-text-muted",
+  error: "bg-error-strong", warn: "bg-warning-strong", info: "bg-text-secondary",
 };
 
 export function DeviceFrame({
