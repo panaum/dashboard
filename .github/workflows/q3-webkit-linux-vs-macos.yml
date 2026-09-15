@@ -73,6 +73,15 @@ jobs:
         working-directory: services/devicepreview
         run: python devicepreview.py --self-check
 
+      # So a fixture in this repo can be the subject. The interesting question
+      # is about a font stack, and a fixture isolates it: no webfonts, no
+      # images, so a pixel that differs differs because of the face.
+      - name: Serve the repo's fixtures
+        working-directory: services/devicepreview
+        run: |
+          nohup python -m http.server 8000 >/dev/null 2>&1 &
+          for i in $(seq 1 40); do curl -sf http://127.0.0.1:8000/ >/dev/null && break; sleep 0.25; done
+
       # Inputs go through env, never interpolated into the shell: this repo is
       # public and workflow_dispatch inputs are attacker-controlled text.
       - name: Capture
