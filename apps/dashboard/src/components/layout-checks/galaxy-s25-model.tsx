@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { cameraDistance } from "@/lib/layout-checks/model-fit";
 import { screenCrop } from "@/lib/layout-checks/screen-crop";
 import {
-  coast, dragged, facingFront, FRONT, isFront, LIMIT, releaseVelocity, settled, STRETCH, unresist,
+  coast, dragged, facingFront, FRONT, isFront, LIMIT, releaseVelocity, settled, unresist,
   type Coast, type Rotation, type Sample,
 } from "@/lib/layout-checks/model-rotation";
 
@@ -45,9 +45,10 @@ export const MODEL_DEVICE = "galaxy-s25";
 const MODEL_URL = "/models/galaxy-s25.glb";
 
 const FOV = 22;        // narrow, so the body is not distorted by perspective
-const FILL = 0.94;     // share of the tighter side of the box, in the worst pose; room for the shadow
-/** Every pose the handset can reach, including a drag's give past the limits. */
-const TURNS = { yaw: LIMIT.yaw + STRETCH, pitch: LIMIT.pitch + STRETCH };
+// Share of the tighter side of the box the handset fills, fitted to the pose
+// it is in: facing front it is the size of the flat frame it replaces, and the
+// camera eases back only while it is turned. Short of 1 to leave the shadow room.
+const FILL = 0.97;
 
 /** What the page can ask of the model from outside it: the stage bar's button. */
 export type ModelControls = { faceFront: () => void };
@@ -197,7 +198,7 @@ export function GalaxyS25Model({
       // It does not turn with the handset.
       const shadowTex = contactShadow(T);
       const shadow = new T.Mesh(
-        new T.PlaneGeometry(size.x * 1.7, size.x * 0.9),
+        new T.PlaneGeometry(size.x * 1.7, size.x * 0.6),
         new T.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, toneMapped: false }),
       );
       shadow.rotation.set(-Math.PI / 2, 0, 0);
@@ -222,13 +223,13 @@ export function GalaxyS25Model({
         if (w === 0 || h === 0) return false;
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
-        camera.position.set(0, 0, cameraDistance({ width: size.x, height: size.y, depth: size.z }, FOV, w / h, FILL, TURNS));
-        camera.lookAt(0, 0, 0);
         camera.updateProjectionMatrix();
         return true;
       };
       const draw = () => {
         const rad = Math.PI / 180;
+        camera.position.set(0, 0, cameraDistance({ width: size.x, height: size.y, depth: size.z }, FOV, camera.aspect, FILL, shown));
+        camera.lookAt(0, 0, 0);
         // XYZ: yaw is applied first, then pitch in world space, so a tip is
         // always towards the viewer whichever way the handset faces.
         pivot.rotation.set(shown.pitch * rad, shown.yaw * rad, 0, "XYZ");
