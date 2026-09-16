@@ -593,6 +593,19 @@ AUDIT_JS = """(cfg) => {
     for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim().length > 1) return true;
     return false;
   };
+  // Something a visitor could lose if it were cut off: visible text anywhere
+  // inside, or an image or other media that is not marked decorative. A wide
+  // element is usually a container, so its own text alone cannot be the test —
+  // a clipped row of photos and captions has none. Decoration — gradients,
+  // empty shapes, an aria-hidden SVG wave — has neither.
+  const MEDIA = 'img,picture,video,canvas,svg,iframe';
+  const decorative = (el) => !!el.closest('[aria-hidden="true"]');
+  const holdsContent = (el) => {
+    if (el.matches(MEDIA) && !decorative(el)) return true;
+    if (textRects(el).length) return true;
+    for (const m of el.querySelectorAll(MEDIA)) if (vis(m) && !decorative(m)) return true;
+    return false;
+  };
   const rollup = (rule, sev, count, what) => findings.push({ severity: sev, rule,
     message: count + ' more ' + what + ' not listed', selector: 'body', box: { x: 0, y: 0, width: vw, height: vh } });
 
@@ -623,7 +636,10 @@ AUDIT_JS = """(cfg) => {
   // 291px photo sitting at x=768 in a 1024px viewport loses 35px, and is not
   // "wider than the viewport" by any reading. The width-only wording missed
   // the exact bug that motivated this rule. Only content counts: images and
-  // text-bearing elements, never decorative bleed.
+  // text-bearing elements, never decorative bleed — in both shapes. Wider
+  // elements once skipped that test, and fautons.com's hero ribbon (aria-hidden,
+  // five empty spans, 525px in a 375px viewport) was reported on iPhone SE as
+  // content that "cannot be seen".
   if (rules['element-wider']) {
     let n = 0;
     for (const el of all) {
@@ -639,6 +655,7 @@ AUDIT_JS = """(cfg) => {
       if (inSlider(el)) continue;
       const isImg = el.tagName === 'IMG' || el.tagName === 'PICTURE';
       if (!wider && !isImg && !ownText(el)) continue;    // positioned decoration bleeding is a design choice
+      if (wider && !holdsContent(el)) continue;           // …and so is decoration wider than the screen
       const clip = clippedBy(el);
       if (!clip) continue;                                // unclipped → that is the overflow rule's job
       if (/auto|scroll/.test(getComputedStyle(clip).overflowX)) continue; // a scrollable strip is meant to extend

@@ -65,6 +65,29 @@ class OverflowRule(unittest.TestCase):
         self.assertEqual(rep["summary"]["errors"], len([f for f in dev["findings"] if f["severity"] == "error"]))
 
 
+class ElementWiderIgnoresDecoration(unittest.TestCase):
+    """Wider than the viewport is not the same as clipped content.
+
+    fautons.com on iPhone SE reported a hero "ribbon" 525px wide in a 375px
+    viewport: aria-hidden, five empty spans, nothing to read or see but colour.
+    The rule already ignored decoration pushed past the edge; an element WIDER
+    than the viewport skipped that test. But wide elements are usually
+    containers, so "no text of its own" cannot be the test for them either —
+    that would lose a clipped row of photos and captions.
+    """
+
+    def test_wide_decoration_with_nothing_to_lose_is_silent(self):
+        _, rep = run("element-wider-decoration.html", TOUCH)
+        self.assertNotIn("element-wider", rules_fired(rep, TOUCH),
+                         "an aria-hidden ribbon of empty spans and a decorative SVG are not clipped content")
+
+    def test_wide_container_holding_content_still_fires_once(self):
+        _, rep = run("element-wider-container.html", TOUCH)
+        found = [f for f in rep["devices"][0]["findings"] if f["rule"] == "element-wider"]
+        self.assertEqual(len(found), 1, f"expected one finding for the row, got {[f['selector'] for f in found]}")
+        self.assertTrue(found[0]["selector"].startswith("div#culprit"), found[0]["selector"])
+
+
 class ElementWiderRule(unittest.TestCase):
     def test_clipped_wide_element_is_a_warning_not_overflow(self):
         code, rep = run("element-wider.html", TOUCH)
