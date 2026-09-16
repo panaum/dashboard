@@ -12,8 +12,8 @@
   "schemaVersion": 1,
   "profiles": [
     {
-      "id": "iphone-18-pro-max",
-      "label": "iPhone 18 Pro Max",
+      "id": "iphone-17-pro-max",
+      "label": "iPhone 17 Pro Max",
       "engine": "webkit",
       "platform": "ios",
       "tier": "primary",
@@ -27,8 +27,11 @@
       "hasTouch": true,
       "userAgent": null,
       "verified": false,
-      "browserstack": null,
-      "browserstackAbsent": "Announced 9 September 2026 and on sale from the 18th; BrowserStack's screenshots list carried no iPhone 18 Pro Max when this profile was added (checked 2026-09-16). Their iPhone 17 Pro Max on iOS 26 is the same 440 x 956 viewport if a real-device shot is needed."
+      "browserstack": {
+        "os": "ios",
+        "os_version": "26",
+        "device": "iPhone 17 Pro Max"
+      }
     },
     {
       "id": "iphone-16",

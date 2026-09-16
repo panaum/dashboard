@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { cutoutBox, skinFor } from "@/lib/layout-checks/device-skin";
 
 test("an iPhone is identified by its island and its buttons on both sides", () => {
-  const s = skinFor("iphone-18-pro-max", "phone");
+  const s = skinFor("iphone-17-pro-max", "phone");
   assert.equal(s.cutout, "island");
   assert.ok(s.buttons.some((b) => b.side === "left"));
   assert.ok(s.buttons.some((b) => b.side === "right"));
