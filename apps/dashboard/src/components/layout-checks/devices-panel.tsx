@@ -22,6 +22,7 @@ import { pinsFor } from "@/lib/layout-checks/pins";
 import { auditedCount, devicesWith, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
 import { frameNote, type RunProvenance } from "@/lib/layout-checks/provenance";
+import { captureHold, holdNote } from "@/lib/layout-checks/capture-hold";
 import { ms } from "@/lib/layout-checks/motion";
 import { LiveSession } from "@/components/layout-checks/live-session";
 import { comparableEngines, engineColumns } from "@/lib/layout-checks/engines-view";
@@ -245,6 +246,13 @@ export function DevicesPanel({
     fold: runId && stored.has(profileId) ? `/api/devicepreview/shot?runId=${runId}&profile=${encodeURIComponent(profileId)}` : null,
   });
   const src = current ? srcFor(current.profileId) : { live: null, fold: null };
+  // A full page taller than a screenshot can be stops short, and the frame
+  // simply ends: an image that ends mid-page reads as a broken page unless the
+  // caption says otherwise. Only once the full page is the image on screen —
+  // the fold is one screen by design, which is not a hold.
+  const hold = !showLive && shownSrc !== null && shownSrc === src.live
+    ? captureHold(currentRaw?.page?.scrollHeight ?? null, imageMeta?.cssHeight ?? null)
+    : null;
 
   // ── Picker: the dropdown, the glance strip, and the run line while a run is on ──
   const runState = (d: DeviceView): DeviceRunState | null => running ? progress.devices[d.label] ?? "waiting" : null;
@@ -469,6 +477,9 @@ const picker = views.length ? (
                 First screen only — the full page for this run is no longer on the preview service. Run the check again to capture it.
               </span>
             )}
+            {hold && (
+              <span className="block text-[11px] leading-4 text-text-secondary">{holdNote(hold)}</span>
+            )}
             {/* Permanent, and next to the device on purpose. The bezel above
                 is a claim about which handset this is; this is the claim about
                 what actually rendered, and it must travel with it. */}
@@ -603,6 +614,7 @@ const picker = views.length ? (
         expanded={expanded}
         onToggle={() => setExpanded((e) => !e)}
         drawableHeight={imageMeta?.cssHeight ?? null}
+        hold={hold}
         where={`${current.label} · ${current.engineLabel} · ${current.viewportLabel}`}
         url={url}
         reachOf={reachOf}

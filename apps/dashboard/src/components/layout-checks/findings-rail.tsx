@@ -8,6 +8,7 @@ import { ms } from "@/lib/layout-checks/motion";
 import { RAIL_CAP, railSlice, type RailFinding } from "@/lib/layout-checks/findings-view";
 import { SectionHeading } from "@/components/layout-checks/check-shell";
 import { pinNumber, pinsFor, type Pin } from "@/lib/layout-checks/pins";
+import { undrawnLabel, type Hold } from "@/lib/layout-checks/capture-hold";
 import { reachLabel, reachTone, type Reach } from "@/lib/layout-checks/reach";
 import { allFindingsText, findingText, type CopyFinding } from "@/lib/layout-checks/copy-finding";
 import { boxWithin, cropFor, cropStyle } from "@/lib/layout-checks/crop";
@@ -104,6 +105,7 @@ export function FindingsRail({
   expanded,
   onToggle,
   drawableHeight,
+  hold = null,
   where,
   url,
   reachOf,
@@ -123,6 +125,10 @@ export function FindingsRail({
   onToggle: () => void;
   /** Height of the loaded screenshot in CSS px; a box below it cannot be drawn. */
   drawableHeight: number | null;
+  /** Set when the capture stops short of the page's foot, which is why a box
+      below it cannot be drawn — a different thing from a run whose full page
+      is gone, and the row says which. */
+  hold?: Hold | null;
   /** "Samsung Galaxy S25 · Chromium · 412 × 892" — the "where" a copied finding carries. */
   where?: string;
   /** The page under test; a copied finding is useless without it. */
@@ -204,7 +210,7 @@ export function FindingsRail({
                 <span aria-hidden className={cn("absolute inset-y-2 left-0 w-[3px] rounded-full", s.bar)} />
                 <span className="text-[13px] font-medium leading-snug text-text-secondary">{it.label}</span>
                 <span className="font-mono text-[11px] leading-4 text-text-secondary">{it.selector ?? "—"}</span>
-                <span className="text-[11px] text-text-secondary">full page not stored for this run</span>
+                <span className="text-[11px] text-text-secondary">{undrawnLabel(hold)}</span>
               </li>
             );
           }
