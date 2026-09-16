@@ -24,8 +24,9 @@ export type DpDevice = {
   diff?: { percent?: number; regressed?: boolean; missing?: boolean } | null;
   images?: Record<string, string>;
   /** The page as the run measured it, in CSS px. `scrollHeight` is the whole
-   *  page, which a full-page capture cannot always reach: see capture-hold.ts. */
-  page?: { scrollWidth?: number; scrollHeight?: number } | null;
+   *  page, which a full-page capture cannot always reach: see capture-hold.ts.
+   *  `fullScale` is "css" where the full page was captured at 1x to fit. */
+  page?: { scrollWidth?: number; scrollHeight?: number; fullScale?: "device" | "css" } | null;
   /** Measured in the page: did -apple-system actually draw here? */
   fonts?: {
     appleSystemFontRequested?: boolean;

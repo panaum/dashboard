@@ -151,13 +151,25 @@ Measured, not estimated. The full argument and the decision are in
   deadline that fires is recorded in the notes and can leave a verdict
   incomplete.
 - Full-page captures are clipped at the viewport width (so overflow shows as
-  overflow, not as a wider image) and capped at whatever fits the engine's
-  32 767-device-pixel screenshot limit — which is that limit divided by the
-  profile's pixel density, so about 16 380 CSS px at 2x and 10 920 at 3x, not a
-  flat number. A page taller than that is captured down to the ceiling and the
-  run carries a note saying where the image stops; the findings below it were
-  still measured from the DOM and simply cannot be drawn. Some engines repeat a
-  fixed header down a full-page capture; the note says so.
+  overflow, not as a wider image) and one image cannot exceed the engines'
+  32 767-pixel limit in any dimension. At the device's own pixel density that
+  ceiling is about 16 380 CSS px of page at 2x and 10 920 at 3x, which an
+  ordinary long marketing page passes: a 19 588px page came back a little past
+  half, which is not a picture of the page. So a page that will not fit at its
+  device's density is captured at 1x instead — the whole page, one image pixel
+  per CSS pixel, and the run says so in its notes. It is the same render: the
+  viewport, the density the page sees, the images it chose and every finding
+  are unchanged, because the scale is how the picture is taken and not what is
+  in it. The fold capture beside it stays at the device's density, which is
+  what reading 11px type or a 24px target at 1:1 needs.
+  Only a page over 32 767 **CSS** px is still cut short, with a note saying
+  where the image stops; the findings below it were measured from the DOM and
+  simply cannot be drawn. Some engines repeat a fixed header down a full-page
+  capture; the note says so.
+- A baseline diff compares the full captures, so the first run of a page that
+  crosses into 1x differs from its baseline in size as well as content and is
+  reported as `sizeChanged`. That is a one-off per page, and the next run
+  compares like with like.
 
 ## Baseline diffing
 
