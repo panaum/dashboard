@@ -198,7 +198,8 @@ GET  /api/devicepreview/report   ?run_id=   → report.json
 GET  /api/devicepreview/file     ?run_id=&path=report.html | <profile>/full.png | <profile>/diff.png …
 GET  /api/devicepreview/image    ?run_id=&profile=&kind=fold|full|thumb|diff&max_width=1400   → JPEG, downscaled
 GET  /api/devicepreview/runs     ?url=      → retained runs for that page, newest first
-GET  /health                                → {ok, running, retained, configured, runs_dir, retain_per_site, live_session, busy}
+GET  /health                                → {ok, running, retained, configured, runs_dir, retain_per_site, live_session, busy,
+                                               commit, branch, devices:{count, profiles, digest}}
 WS   /api/devicepreview/live-session ?token=  → a real browser, streamed (Chromium profiles)
 ```
 
@@ -249,6 +250,14 @@ running, and a capture returns `429 run_capacity` while a session is open.
 Without that, an instance could hold an audit's three engines and a live
 Chromium at once. Closing the tab ends the session — the browser is released
 within a fraction of a second, not at the idle timeout.
+
+**Is the deployment running the code I merged?** `/health` says so: `commit` is
+the sha the build came from (Railway injects it; `null` means this build cannot
+say, never a guess), `branch` is its branch, and `devices` is the matrix it
+would run — the profile ids and a short digest of `devices.json`, so two
+deployments can be compared without reading fifteen ids. A device list that
+does not match what you merged means the service has not redeployed, whatever
+the dashboard shows.
 
 **Is live streaming deployed here?** `/health` carries a `live_session` field on
 builds that have it, so its presence is the answer and its value is whether a
