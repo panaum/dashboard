@@ -8,6 +8,7 @@ import { ms } from "@/lib/layout-checks/motion";
 import { RAIL_CAP, railSlice, type RailFinding } from "@/lib/layout-checks/findings-view";
 import { SectionHeading } from "@/components/layout-checks/check-shell";
 import { pinNumber, pinsFor, type Pin } from "@/lib/layout-checks/pins";
+import { undrawnLabel, type Hold } from "@/lib/layout-checks/capture-hold";
 import { reachLabel, reachTone, type Reach } from "@/lib/layout-checks/reach";
 import { allFindingsText, findingText, type CopyFinding } from "@/lib/layout-checks/copy-finding";
 import { boxWithin, cropFor, cropStyle } from "@/lib/layout-checks/crop";
@@ -104,6 +105,8 @@ export function FindingsRail({
   expanded,
   onToggle,
   drawableHeight,
+  hold = null,
+  loading = false,
   where,
   url,
   reachOf,
@@ -123,6 +126,13 @@ export function FindingsRail({
   onToggle: () => void;
   /** Height of the loaded screenshot in CSS px; a box below it cannot be drawn. */
   drawableHeight: number | null;
+  /** Set when the capture stops short of the page's foot, which is why a box
+      below it cannot be drawn — a different thing from a run whose full page
+      is gone, and the row says which. */
+  hold?: Hold | null;
+  /** True while the frame is still fetching the capture these pictures are cut
+      from. A full page is several megabytes, so this is seconds, not a flash. */
+  loading?: boolean;
   /** "Samsung Galaxy S25 · Chromium · 412 × 892" — the "where" a copied finding carries. */
   where?: string;
   /** The page under test; a copied finding is useless without it. */
@@ -204,7 +214,7 @@ export function FindingsRail({
                 <span aria-hidden className={cn("absolute inset-y-2 left-0 w-[3px] rounded-full", s.bar)} />
                 <span className="text-[13px] font-medium leading-snug text-text-secondary">{it.label}</span>
                 <span className="font-mono text-[11px] leading-4 text-text-secondary">{it.selector ?? "—"}</span>
-                <span className="text-[11px] text-text-secondary">full page not stored for this run</span>
+                <span className="text-[11px] text-text-secondary">{undrawnLabel(hold)}</span>
               </li>
             );
           }
@@ -222,6 +232,11 @@ export function FindingsRail({
             ? cropFor(it.box, thumbs.pageWidth, thumbs.pageHeight, THUMB_W, THUMB_H, 20, 140, Math.round(thumbs.pageWidth * 0.45)) : null;
           // Which of the things in that window is the finding.
           const outline = crop && it.box ? boxWithin(crop, it.box) : null;
+          // The picture is cut from the capture the frame is fetching, and the
+          // page's height is not known until it lands. Until then the window is
+          // a guess and the box is empty, so it reads as loading rather than as
+          // a picture that failed — and nothing is outlined on nothing.
+          const pending = loading && thumbs?.pageHeight == null;
           const check = checkFor(it.rule);
           const others = on ? (alsoOn?.(it) ?? []) : [];
           return (
@@ -244,9 +259,11 @@ export function FindingsRail({
               >
                 <span aria-hidden className={cn("absolute inset-y-2 left-0 w-[3px] rounded-full", s.bar)} />
                 {crop && thumbs?.src ? (
-                  <span aria-hidden data-thumb className="relative block overflow-hidden rounded-lg bg-card-soft ring-1 ring-inset ring-border-soft"
+                  <span aria-hidden data-thumb
+                        className={cn("relative block overflow-hidden rounded-lg bg-card-soft ring-1 ring-inset ring-border-soft",
+                                      pending && "motion-safe:animate-pulse")}
                         style={{ width: THUMB_W, height: THUMB_H, ...cropStyle(thumbs.src, crop, thumbs.pageWidth) }}>
-                    {outline && (
+                    {outline && !pending && (
                       /* White on a dark halo, so it is legible over any
                          screenshot without spending the accent, which on this
                          page means "selected" and nothing else. */

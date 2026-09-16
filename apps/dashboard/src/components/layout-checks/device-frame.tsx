@@ -26,7 +26,10 @@ const FADE_MS = 150;
 
 // `tried` — the fallback has already been swapped in, so a second error is
 // the end of the road. `dead` — nothing loaded and nothing left to try.
-type Layer = { key: number; src: string; loaded: boolean; tried: boolean; dead: boolean };
+// `vp` is the device and size the layer was fetched for. A capture of one
+// device is not an answer about another, so the frame does not leave it on
+// screen as though it were: see `waiting` below.
+type Layer = { key: number; src: string; vp: string; loaded: boolean; tried: boolean; dead: boolean };
 export type Box = { x: number; y: number; width: number; height: number };
 
 /** A pin drawn on the capture: the number the list shows beside the same finding. */
@@ -62,6 +65,7 @@ export function DeviceFrame({
   minimap = false,
   onShown,
   onPartial,
+  onLoading,
   children,
 }: {
   shape: Shape;
@@ -102,6 +106,9 @@ export function DeviceFrame({
   /** True while the frame is showing only the fold because the full page was
       asked for and could not be had — so the caption can say so. */
   onPartial?: (partial: boolean) => void;
+  /** True while no capture for this device and size has painted yet. The rail
+      draws its pictures from the same image, and shows the same waiting. */
+  onLoading?: (loading: boolean) => void;
   children?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -162,7 +169,8 @@ export function DeviceFrame({
   const partial = Boolean(src && upgradeSrc && upgradeSrc !== src && shown === src && upFailed === src);
   useEffect(() => { onPartial?.(partial); }, [partial, onPartial]);
 
-  const [layers, setLayers] = useState<Layer[]>(() => shown ? [{ key: 0, src: shown, loaded: false, tried: false, dead: false }] : []);
+  const vp = `${deviceId}:${viewport.width}x${viewport.height}`;
+  const [layers, setLayers] = useState<Layer[]>(() => shown ? [{ key: 0, src: shown, vp, loaded: false, tried: false, dead: false }] : []);
   const keyRef = useRef(0);
   useEffect(() => {
     setLayers((ls) => {
@@ -170,9 +178,9 @@ export function DeviceFrame({
       if (top && top.src === shown) return ls;
       if (!shown) return [];
       keyRef.current += 1;
-      return [...ls.slice(-1), { key: keyRef.current, src: shown, loaded: false, tried: false, dead: false }];
+      return [...ls.slice(-1), { key: keyRef.current, src: shown, vp, loaded: false, tried: false, dead: false }];
     });
-  }, [shown]);
+  }, [shown, vp]);
   const screenRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   // The size transition belongs to a change of selection and to nothing else.
@@ -301,14 +309,24 @@ export function DeviceFrame({
     el.scrollTo({ top: Math.min(max, Math.max(0, el.scrollTop + by)), behavior: ms(200) === 0 ? "auto" : "smooth" });
   };
 
-  // Nothing on screen yet and nothing has given up: still fetching. Once any
-  // layer has painted, a swap crossfades over it rather than blanking it.
+  // Nothing on screen for THIS device and size yet, and nothing has given up:
+  // still fetching. Once a layer for the same device has painted, a swap
+  // crossfades over it rather than blanking it — the fold giving way to the
+  // full page is the same capture, only longer.
+  //
+  // Changing device or width is a different question, and the old capture is
+  // not its answer: left on screen it is scaled into the new frame, which for
+  // several seconds shows a 350px page as though it were 768px. So it stays
+  // underneath and the "loading" cover goes over it until the real one lands.
   const top = layers[layers.length - 1];
-  const waiting = layers.length > 0 && !layers.some((l) => l.loaded && !l.dead) && !top?.dead;
-  const dead = Boolean(top?.dead) && !layers.some((l) => l.loaded && !l.dead);
+  const here = (l: Layer) => l.loaded && !l.dead && l.vp === vp;
+  const waiting = layers.length > 0 && !layers.some(here) && !top?.dead;
+  const dead = Boolean(top?.dead) && !layers.some(here);
 
   // A box is drawable only where the image exists: the fold image cannot show
   // a finding 3000px down the page. The rail says "below the fold" for those.
+  useEffect(() => { onLoading?.(waiting); }, [waiting, onLoading]);
+
   const drawable = highlight && cssHeight !== null && highlight.y < cssHeight && scale > 0 ? highlight : null;
 
   return (
@@ -408,7 +426,7 @@ export function DeviceFrame({
               refused before the fold is fetched — and a large frame with
               nothing in it reads as a broken page. Say which it is. */}
           {!liveSrc && waiting && (
-            <div role="status" className="absolute inset-0 grid place-items-center gap-2 bg-white px-4 text-center">
+            <div role="status" className="absolute inset-0 z-30 grid place-items-center gap-2 bg-white px-4 text-center">
               <span className="flex flex-col items-center gap-2">
                 <Loader2 className="size-5 animate-spin text-text-secondary" aria-hidden />
                 <span className="text-[12px] text-text-secondary">Loading the screenshot…</span>
@@ -416,7 +434,7 @@ export function DeviceFrame({
             </div>
           )}
           {!liveSrc && dead && (
-            <div className="absolute inset-0 grid place-items-center bg-white px-6 text-center">
+            <div className="absolute inset-0 z-30 grid place-items-center bg-white px-6 text-center">
               <span className="flex flex-col items-center gap-2">
                 <ImageOff className="size-6 text-text-secondary" aria-hidden />
                 <span className="text-[13px] font-medium text-text-primary">This screenshot is no longer stored</span>
