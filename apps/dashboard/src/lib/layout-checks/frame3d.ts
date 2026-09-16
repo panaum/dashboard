@@ -1,11 +1,9 @@
 // The 3D handset preference: off unless someone turned it on, and remembered
 // in this browser once they have. Internal tooling only — see
-// src/components/layout-checks/galaxy-s25-model.tsx.
+// src/components/layout-checks/handset-3d.tsx. Which devices have a model is
+// src/lib/layout-checks/models-3d.ts.
 
 import { useSyncExternalStore } from "react";
-
-/** The one handset with a 3D model. */
-export const MODEL_DEVICE = "galaxy-s25";
 
 export const STORAGE_KEY = "layout-checks.frame3d";
 const CHANGED = "layout-checks:frame3d";

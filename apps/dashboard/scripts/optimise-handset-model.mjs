@@ -1,21 +1,34 @@
-// One-off: turns the downloaded Sketchfab model into assets/models/galaxy-s25.glb.
+// One-off: turns a downloaded Sketchfab handset into assets/models/<id>.glb.
+//
 // Not part of the build, and gltf-transform is deliberately not a dependency of
-// this app. To re-run it, install the tools in a scratch directory and run the
+// this app. To run it, install the tools in a scratch directory and run the
 // script from there:
 //
 //   mkdir /tmp/gltf-tool && cd /tmp/gltf-tool && npm init -y
 //   npm i @gltf-transform/core@4.5.0 @gltf-transform/extensions@4.5.0 \
 //         @gltf-transform/functions@4.5.0 meshoptimizer@1.2.0
-//   node <repo>/apps/dashboard/scripts/optimise-galaxy-s25-model.mjs \
-//        ~/Downloads/samsung_s25.glb <repo>/apps/dashboard/assets/models/galaxy-s25.glb
+//   node <repo>/apps/dashboard/scripts/optimise-handset-model.mjs <id> \
+//        ~/Downloads/<download>.glb <repo>/apps/dashboard/assets/models/<id>.glb
 //
-// Not public/: the model is served to signed-in users by
-// src/app/api/models/galaxy-s25/route.ts (see ADR-004 for why).
+// <id> is a key of MODELS below: what to strip from that particular download,
+// and how hard to simplify each part. The output is NOT the file Sketchfab
+// serves, and the difference is the point — see the entry's notes, the
+// registry (src/lib/layout-checks/models-3d.ts) and
+// docs/decisions/ADR-004-3d-galaxy-s25-internal-only.md.
 //
-// Source: "SAMSUNG S25" by Yassine24, CC Attribution —
-// https://sketchfab.com/3d-models/samsung-s25-3ea821af958f4e9d99aaba1eb32b423f
-// What this changes, and why, is recorded in
-// src/components/layout-checks/galaxy-s25-model.tsx.
+// Every model comes out of here with:
+//   - no maker's wordmark or logo (trademarks, on a tool that might not stay
+//     internal, and nobody should have to find and undo a branded model later);
+//   - no stock wallpaper: the screen material is renamed "Screen" and the
+//     capture is drawn on it;
+//   - the screen's UVs re-projected from its vertices, because a model's own
+//     UVs wander by a few pixels and bend straight lines in a capture;
+//   - no glass transmission, which makes three.js render the scene a second
+//     time for a few pixels of lens;
+//   - geometry simplified and quantized, and the credit kept in asset.extras.
+//
+// Not public/: models are served to signed-in users by
+// src/app/api/models/[model]/route.ts (see ADR-004 for why).
 
 import { createRequire } from "node:module";
 
@@ -26,24 +39,36 @@ const { ALL_EXTENSIONS } = await load("@gltf-transform/extensions");
 const { prune, weld, simplifyPrimitive, quantize, dedup } = await load("@gltf-transform/functions");
 const { MeshoptSimplifier } = await load("meshoptimizer");
 
-const [input, output] = process.argv.slice(2);
-if (!input || !output) {
-  console.error("usage: node optimise-galaxy-s25-model.mjs <samsung_s25.glb> <galaxy-s25.glb>");
+// Per model: the meshes to remove by material name, the material that becomes
+// the screen, and how far each part is simplified — the share of triangles
+// kept, and the largest deviation allowed relative to the part's size.
+const MODELS = {
+  "galaxy-s25": {
+    source: '"SAMSUNG S25" by Yassine24, CC BY 4.0',
+    // The SAMSUNG wordmark on the back is its own mesh.
+    removeMeshes: ["S25_Body.002"],
+    screen: "Wallpapers",
+    // The camera glass was 55k of the model's 108k triangles and is drawn a
+    // few pixels wide.
+    keep: {
+      "Glass.Camera": [0.08, 0.004],
+      Camera: [0.25, 0.003],
+      "Light.001": [0.1, 0.01],
+      Light: [0.15, 0.01],
+      S25_Body: [0.5, 0.0015],
+      Frame: [0.5, 0.0015],
+      Screen_Frame: [0.6, 0.0015],
+    },
+  },
+};
+
+const [id, input, output] = process.argv.slice(2);
+const model = MODELS[id];
+if (!model || !input || !output) {
+  console.error(`usage: node optimise-handset-model.mjs <${Object.keys(MODELS).join("|")}> <download.glb> <out.glb>`);
   process.exit(2);
 }
-
-// How far each part is simplified: the share of triangles kept, and the
-// largest deviation allowed, relative to the part's size. The camera glass is
-// 55k triangles of a 108k model and is drawn a few pixels wide.
-const KEEP = {
-  "Glass.Camera": [0.08, 0.004],
-  Camera: [0.25, 0.003],
-  "Light.001": [0.1, 0.01],
-  Light: [0.15, 0.01],
-  S25_Body: [0.5, 0.0015],
-  Frame: [0.5, 0.0015],
-  Screen_Frame: [0.6, 0.0015],
-};
+const KEEP = model.keep;
 
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const doc = await io.read(input);
@@ -58,13 +83,15 @@ const material = (name) => {
   return m;
 };
 
-// 1. The SAMSUNG wordmark on the back is its own mesh. Remove it.
-const wordmark = material("S25_Body.002");
-for (const node of root.listNodes()) {
-  const mesh = node.getMesh();
-  if (mesh && mesh.listPrimitives().some((p) => p.getMaterial() === wordmark)) {
-    mesh.dispose();
-    node.dispose();
+// 1. Wordmarks and logos are their own meshes. Remove them.
+for (const name of model.removeMeshes) {
+  const branded = material(name);
+  for (const node of root.listNodes()) {
+    const mesh = node.getMesh();
+    if (mesh && mesh.listPrimitives().some((p) => p.getMaterial() === branded)) {
+      mesh.dispose();
+      node.dispose();
+    }
   }
 }
 
@@ -73,9 +100,9 @@ for (const node of root.listNodes()) {
 //    wander by up to ~3 CSS px, which bends straight lines in a capture; the
 //    screen is flat, so a straight projection from its vertices is exact.
 //    u runs with -x and v with +y in the mesh's own space, because the model's
-//    node turns it 180° about z (checked with a test pattern: not mirrored,
-//    top at the top).
-const screen = material("Wallpapers");
+//    node turns it 180° about z (check each model with a test pattern: not
+//    mirrored, top at the top).
+const screen = material(model.screen);
 screen.setName("Screen")
   .setBaseColorTexture(null).setEmissiveTexture(null)
   .setBaseColorFactor([0, 0, 0, 1]).setEmissiveFactor([0, 0, 0]);
@@ -139,11 +166,11 @@ for (const ext of root.listExtensionsUsed()) {
 // CC BY 4.0 asks for changes to be indicated. The author, licence and source
 // Sketchfab wrote into asset.extras are kept as they are.
 const asset = root.getAsset();
-asset.copyright = "SAMSUNG S25 by Yassine24, CC BY 4.0";
+asset.copyright = model.source;
 asset.extras = {
   ...asset.extras,
-  modified: "Apexure, 2026-09-15: SAMSUNG wordmark mesh and wallpaper texture removed; screen UVs "
-    + "re-projected; transmission removed; simplified and quantized for the web.",
+  modified: `Apexure: ${model.removeMeshes.join(", ")} (wordmark/logo) and the wallpaper texture removed; `
+    + "screen UVs re-projected; transmission removed; simplified and quantized for the web.",
 };
 
 console.log(`out: ${tris()} triangles, ${root.listMaterials().map((m) => m.getName()).join(", ")}; ${root.listTextures().length} textures`);

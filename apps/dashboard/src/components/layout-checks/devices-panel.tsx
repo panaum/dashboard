@@ -9,8 +9,9 @@ import { ChevronDown, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximi
 import { cn } from "@/lib/utils";
 import { CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
-import type { ModelControls } from "@/components/layout-checks/galaxy-s25-model";
-import { MODEL_DEVICE, useFrame3d } from "@/lib/layout-checks/frame3d";
+import type { ModelControls } from "@/components/layout-checks/handset-3d";
+import { useFrame3d } from "@/lib/layout-checks/frame3d";
+import { modelFor, modelUrl } from "@/lib/layout-checks/models-3d";
 import { FindingsRail } from "@/components/layout-checks/findings-rail";
 import { BarLabel } from "@/components/layout-checks/check-shell";
 import { HealthMatrix } from "@/components/layout-checks/health-matrix";
@@ -34,15 +35,15 @@ import {
   type DeviceInput, type DeviceView,
 } from "@/lib/layout-checks/devices-view";
 
-// The 3D handset is fetched only when it is switched on and the Galaxy S25 is
-// on the stage: its component, three.js and the model are all behind this.
-// A fetch that fails resolves to nothing, so the flat frame simply stays —
-// it must never take the page down with it.
-type ModelProps = ComponentProps<typeof import("@/components/layout-checks/galaxy-s25-model").GalaxyS25Model>;
+// The 3D handset is fetched only when it is switched on and a device that has
+// a model is on the stage: its component, three.js and the model itself are
+// all behind this. A fetch that fails resolves to nothing, so the flat frame
+// simply stays — it must never take the page down with it.
+type ModelProps = ComponentProps<typeof import("@/components/layout-checks/handset-3d").Handset3d>;
 const NoModel: ComponentType<ModelProps> = () => null;
-const GalaxyS25Model = lazy<ComponentType<ModelProps>>(() =>
-  import("@/components/layout-checks/galaxy-s25-model")
-    .then((m) => ({ default: m.GalaxyS25Model }))
+const Handset3d = lazy<ComponentType<ModelProps>>(() =>
+  import("@/components/layout-checks/handset-3d")
+    .then((m) => ({ default: m.Handset3d }))
     .catch(() => ({ default: NoModel })));
 
 // The Devices tab: pick one device, see that device. The picker is a dropdown
@@ -98,7 +99,9 @@ export function DevicesPanel({
   const [selected, setSelected] = useState<string | null>(() => asked.device ?? defaultSelection(views));
   const current: DeviceView | undefined = views.find((v) => v.profileId === selected) ?? views[0];
   // The 3D handset: off unless switched on, and remembered in this browser.
+  // Only for devices with a model in the registry.
   const [frame3d, setFrame3d] = useFrame3d();
+  const model3dSpec = modelFor(current?.profileId);
   // No WebGL, or the model or three.js could not be fetched: the flat frame
   // stays, without a word. Switching 3D off and on tries again.
   const [model3dFailed, setModel3dFailed] = useState(false);
@@ -435,11 +438,12 @@ const picker = views.length ? (
               the pins (z-10, z-20), which would otherwise show through. Not
               at actual size: that is for reading the capture's own pixels.
               Not without a capture: the frame's "No screenshot" is the answer. */}
-          {frame3d && !model3dFailed && current.profileId === MODEL_DEVICE && !showLive && zoom === "fit"
+          {frame3d && !model3dFailed && model3dSpec && !showLive && zoom === "fit"
             && shownSrc && shownSrc !== screenFailed && (
             <Suspense fallback={null}>
-            <GalaxyS25Model
+            <Handset3d
               ref={model3d}
+              modelUrl={modelUrl(model3dSpec)}
               src={shownSrc}
               alt={`${current.label}, rendered page`}
               viewport={current.viewport}
@@ -479,7 +483,7 @@ const picker = views.length ? (
 
   // The bar under the device. "Open in a window" is your browser, not the
   // device's: the tooltip says so.
-  const show3dToggle = current?.profileId === MODEL_DEVICE && !showCompare && !showStream && !showLive;
+  const show3dToggle = Boolean(model3dSpec) && !showCompare && !showStream && !showLive;
   const showing3d = frame3d && zoom === "fit";
   const bar = current ? (
     <StageBar note={embed?.reason}>
