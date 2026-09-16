@@ -135,6 +135,9 @@ export function DevicesPanel({
   // Only the fold could be had for this device: said under the frame, once,
   // rather than left to be inferred from a page that stops after one screen.
   const [partial, setPartial] = useState(false);
+  // The rail's pictures are cut from the frame's capture, so they wait on the
+  // same fetch and say so at the same time.
+  const [frameLoading, setFrameLoading] = useState(false);
   const pick = (profileId: string) => {
     setSelected(profileId); setFinding(null); setImageMeta(null); setColMeta({});
     setStreaming(false);            // the session is pinned to one profile
@@ -437,6 +440,7 @@ const picker = views.length ? (
             onPinSelect={selectFromPin}
             onShown={setShownSrc}
             onPartial={setPartial}
+            onLoading={setFrameLoading}
             minimap
           />
           </div>
@@ -615,6 +619,7 @@ const picker = views.length ? (
         onToggle={() => setExpanded((e) => !e)}
         drawableHeight={imageMeta?.cssHeight ?? null}
         hold={hold}
+        loading={frameLoading}
         where={`${current.label} · ${current.engineLabel} · ${current.viewportLabel}`}
         url={url}
         reachOf={reachOf}
