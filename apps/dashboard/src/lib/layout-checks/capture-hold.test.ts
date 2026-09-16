@@ -36,12 +36,18 @@ test("nothing is claimed from a height that is not there", () => {
   }
 });
 
-test("the note says where it stops, how long the page is, and why", () => {
-  const note = holdNote({ shown: 10919, page: 19588 });
-  assert.equal(note, "Capture stops 10,919px into a 19,588px page — the tallest a screenshot can be. "
+test("the note says where it stops, how long the page is, and what to do", () => {
+  // An old run of a page that today's capture would take whole: one button.
+  assert.equal(holdNote({ shown: 10919, page: 19588 }),
+    "Capture stops 10,919px into a 19,588px page. Run the check again and the new capture takes in all of it. "
     + "Findings below it were measured, not drawn.");
   // Long enough to be worth grouping the digits.
   assert.match(holdNote({ shown: 10919, page: 32767 }), /32,767px/);
+  // A page no image can hold at any scale: re-running would stop short again,
+  // so it is not offered.
+  const huge = holdNote({ shown: 32767, page: 48000 });
+  assert.match(huge, /No screenshot can be taller, at any scale/);
+  assert.doesNotMatch(huge, /Run the check again/);
 });
 
 test("a finding with no picture says which of the two reasons it is", () => {

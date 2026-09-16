@@ -45,9 +45,20 @@ export function captureHold(page: number | null | undefined, shown: number | nul
   return { shown, page };
 }
 
-/** The line under the frame. */
+/** No image may be taller than this in any dimension, at any scale. */
+const IMAGE_LIMIT_PX = 32767;
+
+/** The line under the frame — and, where there is one, what to do about it. */
 export function holdNote(hold: Hold): string {
-  return `Capture stops ${px(hold.shown)}px into a ${px(hold.page)}px page — the tallest a screenshot can be. `
+  // A run keeps the image it was taken with, so an old capture stays short
+  // however the service captures today. Running the check again is the whole
+  // fix, and saying so turns a dead end into one button — but only where it is
+  // true: a page taller than any image at any scale will stop short again.
+  const fixable = hold.page <= IMAGE_LIMIT_PX;
+  return `Capture stops ${px(hold.shown)}px into a ${px(hold.page)}px page. `
+    + (fixable
+        ? "Run the check again and the new capture takes in all of it. "
+        : "No screenshot can be taller, at any scale. ")
     + "Findings below it were measured, not drawn.";
 }
 

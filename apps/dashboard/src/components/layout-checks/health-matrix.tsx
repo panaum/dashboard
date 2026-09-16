@@ -1,11 +1,12 @@
 "use client";
 
-import { type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { rovingTarget } from "@/lib/layout-checks/roving";
 import { CHECKS, cellsFor, cellWords, type Cell, type Finding } from "@/lib/layout-checks/matrix";
 import { groupDevices, type DeviceView } from "@/lib/layout-checks/devices-view";
 import type { DeviceRunState } from "@/lib/layout-checks/run-progress";
+import { serviceLine, type ServiceHealth } from "@/lib/layout-checks/service-line";
 
 // Every device against every check. Rows are the picker — one radio group,
 // one tab stop, arrows walk the rows — so choosing a device and reading its
@@ -62,6 +63,20 @@ export function HealthMatrix({
   /** While a run is on: what the service has said about each device so far. */
   runState?: (d: DeviceView) => DeviceRunState | null;
 }) {
+  // Which build of the service took these captures, asked when the panel is
+  // opened and not before. A panel about what the fleet did is where "and is
+  // the fleet the one I merged" belongs.
+  const [health, setHealth] = useState<ServiceHealth | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/devicepreview/monitor?view=health", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((h) => { if (alive) setHealth(h as ServiceHealth); })
+      .catch(() => { if (alive) setHealth({ unavailable: true }); });
+    return () => { alive = false; };
+  }, []);
+  const line = serviceLine(health, process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA);
+
   const groups = groupDevices(views);
   const all = groups.flatMap((g) => g.devices);
   const tabTarget = all.some((d) => d.profileId === selected) ? selected : all[0]?.profileId ?? null;
@@ -144,6 +159,7 @@ export function HealthMatrix({
           })}
         </div>
       ))}
+      {line && <p className="mt-4 text-[11px] leading-4 text-text-secondary">{line}</p>}
     </div>
   );
 }
