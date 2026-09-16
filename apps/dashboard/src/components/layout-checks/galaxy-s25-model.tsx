@@ -4,7 +4,7 @@ import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "reac
 import type * as THREE from "three";
 import { cn } from "@/lib/utils";
 import { cameraDistance } from "@/lib/layout-checks/model-fit";
-import { screenCrop } from "@/lib/layout-checks/screen-crop";
+import { screenCrop, scrollRange, toSourcePixels } from "@/lib/layout-checks/screen-crop";
 import {
   clampToLimits, coast, dragged, driftOffset, DRIFT_DELAY_MS, facingFront, FRONT, isFront, LIMIT, releaseVelocity, settled, unresist,
   type Coast, type Rotation, type Sample,
@@ -86,6 +86,7 @@ const MAX_SCREEN_TEXTURE = 2048;
 export function GalaxyS25Model({
   src,
   alt,
+  viewport,
   className,
   ref,
   onCoverChange,
@@ -98,6 +99,9 @@ export function GalaxyS25Model({
   src: string;
   /** What the capture is, for a screen reader: the flat frame is inert. */
   alt: string;
+  /** The profile's viewport in CSS px: how much page one screen holds, and so
+      how far the capture can be scrolled on it. */
+  viewport: { width: number; height: number };
   className?: string;
   ref?: Ref<ModelControls>;
   /** True once the handset is drawn with the capture on its screen — from
@@ -118,6 +122,7 @@ export function GalaxyS25Model({
   // The scene is built once; a new capture reaches it through this.
   const screen = useRef<{ show: (url: string) => void } | null>(null);
   const latestSrc = useRef(src);
+  const latestViewport = useRef(viewport);
   const [ready, setReady] = useState(false);
   // The callbacks are read through a ref so a parent re-rendering with new
   // functions does not tear the scene down and load it again.
@@ -125,6 +130,7 @@ export function GalaxyS25Model({
   useEffect(() => { callbacks.current = { onCoverChange, onFrontChange, onScreenFail, onFail }; });
   // A new capture — the full page replacing the fold, or a new run — updates
   // the screen in place: no reload of the model, no change of angle.
+  useEffect(() => { latestViewport.current = viewport; }, [viewport]);
   useEffect(() => {
     latestSrc.current = src;
     screen.current?.show(src);
@@ -398,13 +404,22 @@ export function GalaxyS25Model({
 
       let screenToken = 0;
       let pending: HTMLImageElement | null = null;
+      // The capture now on the screen, and how far down the page it is
+      // scrolled. Both are kept: scrolling redraws a different band of the
+      // same image, and a capture that arrives later (the full page replacing
+      // the fold) keeps the reader where they were.
+      let shot: HTMLImageElement | null = null;
+      let scrollCss = 0;
+      let shotCanvas: HTMLCanvasElement | null = null;
+      let shotTexture: THREE.CanvasTexture | null = null;
       const maxSide = Math.min(MAX_SCREEN_TEXTURE, renderer.capabilities.maxTextureSize);
+
       const putOnScreen = (tex: THREE.Texture) => {
         const old = screenMat.map;
         screenMat.map = tex;
         screenMat.color.setHex(0xffffff);
         screenMat.needsUpdate = true;
-        old?.dispose();
+        if (old && old !== tex) old.dispose();
         draw();
         if (!covering) {
           covering = true;
@@ -415,6 +430,63 @@ export function GalaxyS25Model({
           callbacks.current.onCoverChange?.(true);
         }
       };
+
+      // Draw the band of the capture that the screen is showing. The canvas and
+      // its texture are made once and redrawn in place, so scrolling uploads a
+      // texture rather than building a new one every wheel tick.
+      const paint = (img: HTMLImageElement): boolean => {
+        const natural = { width: img.naturalWidth, height: img.naturalHeight };
+        scrollCss = Math.max(0, Math.min(scrollRange(natural, latestViewport.current), scrollCss));
+        const crop = screenCrop(natural, screenAspect, maxSide,
+                               toSourcePixels(scrollCss, natural, latestViewport.current));
+        if (!crop) return false;
+        const canvas = shotCanvas ?? (shotCanvas = document.createElement("canvas"));
+        const g = canvas.getContext("2d");
+        if (!g) return false;
+        if (canvas.width !== crop.width || canvas.height !== crop.height) {
+          canvas.width = crop.width;
+          canvas.height = crop.height;
+          shotTexture?.dispose();
+          shotTexture = null;
+        }
+        // White under a page shorter than the screen, as the flat frame has.
+        g.fillStyle = "#ffffff";
+        g.fillRect(0, 0, canvas.width, canvas.height);
+        g.imageSmoothingQuality = "high";
+        g.drawImage(img, 0, crop.sourceTop, crop.sourceWidth, crop.sourceHeight,
+                    0, 0, crop.width, crop.drawnHeight);
+        if (shotTexture) {
+          shotTexture.needsUpdate = true;
+          draw();
+        } else {
+          shotTexture = new T.CanvasTexture(canvas);
+          shotTexture.colorSpace = T.SRGBColorSpace;
+          shotTexture.flipY = false;   // glTF's UVs put v = 0 at the top of the image
+          shotTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+          putOnScreen(shotTexture);
+        }
+        return true;
+      };
+
+      // The wheel scrolls the capture, and only while there is capture left to
+      // scroll: a stored fold is one screen, and at the top and the foot of a
+      // full page the wheel belongs to the Dashboard page behind it. Work must
+      // not get stuck under the handset.
+      const onWheel = (e: WheelEvent) => {
+        if (!shot) return;
+        const natural = { width: shot.naturalWidth, height: shot.naturalHeight };
+        const range = scrollRange(natural, latestViewport.current);
+        if (range <= 0) return;
+        const lines = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? latestViewport.current.height : 1;
+        const next = Math.max(0, Math.min(range, scrollCss + e.deltaY * lines));
+        if (next === scrollCss) return;
+        e.preventDefault();
+        scrollCss = next;
+        paint(shot);
+      };
+      el.addEventListener("wheel", onWheel, { passive: false });
+      cleanups.push(() => el.removeEventListener("wheel", onWheel));
+
       screen.current = {
         show: (url) => {
           // Only the newest capture may land: a slow fold must not overwrite
@@ -427,21 +499,8 @@ export function GalaxyS25Model({
           img.onload = () => {
             pending = null;
             if (!alive || token !== screenToken) return;
-            const crop = screenCrop({ width: img.naturalWidth, height: img.naturalHeight }, screenAspect, maxSide);
-            const c = document.createElement("canvas");
-            const g = crop ? c.getContext("2d") : null;
-            if (!crop || !g) { failed(); return; }
-            c.width = crop.width;
-            c.height = crop.height;
-            g.fillStyle = "#ffffff";
-            g.fillRect(0, 0, c.width, c.height);
-            g.imageSmoothingQuality = "high";
-            g.drawImage(img, 0, 0, crop.sourceWidth, crop.sourceHeight, 0, 0, crop.width, crop.drawnHeight);
-            const tex = new T.CanvasTexture(c);
-            tex.colorSpace = T.SRGBColorSpace;
-            tex.flipY = false;   // glTF's UVs put v = 0 at the top of the image
-            tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-            putOnScreen(tex);
+            shot = img;
+            if (!paint(img)) failed();
           };
           img.onerror = () => { pending = null; failed(); };
           img.src = url;
@@ -449,6 +508,7 @@ export function GalaxyS25Model({
       };
       cleanups.push(() => {
         screen.current = null;
+        shot = null;
         if (pending) { pending.onload = null; pending.onerror = null; }
       });
 
