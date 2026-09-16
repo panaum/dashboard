@@ -16,7 +16,7 @@
 
 import type { Shape } from "@/lib/layout-checks/devices-view";
 
-export type Cutout = "island" | "hole" | "hole-left" | "earpiece" | "none";
+export type Cutout = "island" | "notch" | "hole" | "hole-left" | "earpiece" | "none";
 
 /** A side button, as fractions of the body's height so it scales with the frame. */
 export type SideButton = { side: "left" | "right"; top: number; height: number };
@@ -96,9 +96,11 @@ const BY_SHAPE: Record<Shape, Skin> = {
 // Keyed on the profile id the run actually used. A device missing here falls
 // back to its shape, so a new profile is plain rather than wrong.
 const BY_ID: Record<string, Skin> = {
-  "iphone-16-pro-max": IPHONE_MODERN,
-  "iphone-16-pro": IPHONE_MODERN,
+  "iphone-18-pro-max": IPHONE_MODERN,
   "iphone-16": IPHONE_MODERN,
+  // The 13 Pro Max is the notched generation: a wider cutout is the tell, and
+  // its corners are a shade squarer than the Dynamic Island phones'.
+  "iphone-13-pro-max": { ...IPHONE_MODERN, cutout: "notch", radius: 44, screenRadius: 32 },
   "iphone-se-3": IPHONE_SE,
   "ipad-pro-13": TABLET,
   "ipad-air-11": TABLET,
@@ -130,6 +132,11 @@ export function cutoutBox(skin: Skin, screenW: number): { width: number; height:
   if (skin.cutout === "none" || room < 3 || screenW <= 0) return null;
   if (skin.cutout === "island") {
     return { width: Math.round(screenW * 0.3), height: Math.min(room, Math.round(screenW * 0.075)) };
+  }
+  // A notch is the wider, shallower cutout of the pre-Dynamic-Island iPhones:
+  // 162pt of a 428pt screen on a 13 Pro Max, against roughly 30% for an island.
+  if (skin.cutout === "notch") {
+    return { width: Math.round(screenW * 0.38), height: Math.min(room, Math.round(screenW * 0.07)) };
   }
   if (skin.cutout === "earpiece") {
     return { width: Math.round(screenW * 0.26), height: Math.min(room, 5) };

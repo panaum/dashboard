@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { cutoutBox, skinFor } from "@/lib/layout-checks/device-skin";
 
 test("an iPhone is identified by its island and its buttons on both sides", () => {
-  const s = skinFor("iphone-16-pro", "phone");
+  const s = skinFor("iphone-18-pro-max", "phone");
   assert.equal(s.cutout, "island");
   assert.ok(s.buttons.some((b) => b.side === "left"));
   assert.ok(s.buttons.some((b) => b.side === "right"));
@@ -34,7 +34,7 @@ test("an unknown profile falls back to its shape rather than borrowing a body", 
 });
 
 test("every button sits inside the body", () => {
-  for (const id of ["iphone-16", "iphone-se-3", "galaxy-s25", "galaxy-tab-s10-plus", "galaxy-z-flip-cover"]) {
+  for (const id of ["iphone-16", "iphone-13-pro-max", "iphone-se-3", "galaxy-s25", "galaxy-tab-s10-plus", "galaxy-z-flip-cover"]) {
     for (const b of skinFor(id, "phone").buttons) {
       assert.ok(b.top >= 0 && b.top + b.height <= 1, `${id}: ${b.top}+${b.height}`);
     }
@@ -54,4 +54,15 @@ test("a cutout is never taller than the bezel that holds it", () => {
 test("nothing is drawn where there is no cutout or no room for one", () => {
   assert.equal(cutoutBox(skinFor("ipad-pro-13", "tablet"), 400), null);
   assert.equal(cutoutBox(skinFor("galaxy-s25", "phone"), 0), null);
+});
+
+test("the notched generation is drawn wider than a Dynamic Island, and both fit their bezel", () => {
+  const notch = cutoutBox(skinFor("iphone-13-pro-max", "phone"), 300);
+  const island = cutoutBox(skinFor("iphone-16", "phone"), 300);
+  assert.ok(notch && island);
+  assert.ok(notch.width > island.width, `notch ${notch.width} should be wider than island ${island.width}`);
+  for (const [name, box] of [["notch", notch], ["island", island]] as const) {
+    assert.ok(box.height <= skinFor("iphone-16", "phone").bezelTop - 4, `${name} must fit the top bezel`);
+    assert.ok(box.width < 300, `${name} must be narrower than the screen`);
+  }
 });
