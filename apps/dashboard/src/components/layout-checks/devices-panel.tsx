@@ -442,6 +442,7 @@ const picker = views.length ? (
               ref={model3d}
               src={shownSrc}
               alt={`${current.label}, rendered page`}
+              viewport={current.viewport}
               onScreenFail={setScreenFailed}
               onFail={() => setModel3dFailed(true)}
               className="absolute inset-0 z-30 bg-card"
