@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fixture: wide decoration is not clipped content</title><link rel="stylesheet" href="_base.css">
+<style>
+  .hero { position: relative; overflow: hidden; height: 320px; background: #eef; padding: 16px; }
+  /* The shape of the real page this came from (fautons.com, iPhone SE): a
+     blurred-looking ribbon of empty spans, wider than the screen, bleeding
+     off the right edge of a clipped hero. */
+  .ribbon { position: absolute; left: 40px; top: -40px; width: 150vw; height: 360px; pointer-events: none; }
+  .blade { display: block; height: 56px; margin: 12px 0; border-radius: 28px; background: linear-gradient(90deg, #fc0, #f9c); }
+  .wave { position: absolute; left: 0; bottom: 0; width: 200vw; height: 40px; }
+</style></head>
+<body>
+<p>A negative control. Inside the clipped hero below are two things wider than the viewport: a ribbon of empty coloured spans, and an SVG wave marked aria-hidden. Both bleed off the edge by design, and neither holds anything a visitor could lose — element-wider must stay silent.</p>
+<div class="hero">
+  <p>The hero's own text fits.</p>
+  <div class="ribbon" id="ribbon" aria-hidden="true"><span class="blade"></span><span class="blade"></span><span class="blade"></span><span class="blade"></span></div>
+  <svg class="wave" aria-hidden="true" viewBox="0 0 100 10" preserveAspectRatio="none"><path d="M0 5 Q 25 0 50 5 T 100 5 V10 H0Z" fill="#ccd"/></svg>
+</div>
+</body></html>

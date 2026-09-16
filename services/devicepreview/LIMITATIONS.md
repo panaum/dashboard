@@ -195,16 +195,54 @@ Measured, not estimated. The full argument and the decision are in
 
 Detection and capture changes run three calibration gates first: the test
 suite; apexure.com on `iphone-16` + `desktop-1440-firefox` for webfont
-findings; and a live page witnessing `element-wider` on `ipad-pro-13`.
+findings; and a live page witnessing `element-wider` on `ipad-pro-13` or
+`iphone-se-3`.
 
+**Two of the three are degraded.** Only gate 1, the suite, currently confirms
+anything. A change that runs the gates today is checked against fixtures, not
+against real pages, and must say so.
+
+- **Gate 2 runs, but has nothing to witness, so it is not a pass.** The gate
+  exists to confirm that every webfont warning on a real page rests on text
+  you can see drawn in the fallback face. apexure.com was that page while it
+  declared two Poppins faces `font-display: optional`: about one load in four
+  to eight, Firefox and WebKit skipped them and the rule had to say so,
+  correctly, about the nav and hero text. By 2026-09-16 the site serves only
+  Inter, Plus Jakarta Sans and IBM Plex Mono, all `swap`, all loading. Three
+  runs that day reported no webfont findings, and the screenshots agreed —
+  true, but trivially so: a rule that reported nothing at all would pass it
+  too. Record gate 2 as "ran, nothing to witness", never as passed, until a
+  page that actually exercises the rule replaces it.
 - **Gate 3 has no live page, and is recorded as uncovered.** Its page,
   elitepractice.clickfunnels.com/dr-dania-alkhani, was a ClickFunnels 404 stub
   by 2026-09-09 and now serves Cloudflare's block page to headless browsers.
-  `fixtures/element-wider.html` and `ElementWiderRule` still exercise the rule
-  in the suite, but a fixture is not a substitute for a real page: nothing
-  confirms the rule against one. Every detection change since has reported
-  gate 3 as not run rather than passed. Uncovered until a replacement client
-  page — one with a wide image clipped at the viewport edge — is chosen.
+  Five replacements tried on 2026-09-16 (dev.apexure.org/surpassind/applications/
+  automotive/, apexure.com, blace.com, fautons.com, wbiwarm.com) produced no
+  clipped image on either device. Uncovered until a client page with a wide
+  image clipped at the viewport edge is chosen.
+- **What still covers the rules** is the suite: `fixtures/webfont*.html` for
+  gate 2's rule; `fixtures/element-wider*.html`, `edge-cut.html` and
+  `ElementWiderRule` for gate 3's. A fixture is written to produce the finding
+  it tests, so it cannot show the rule behaving on a page nobody designed for
+  it — which is the whole point of a live gate.
+
+What a replacement page needs:
+
+- **For gate 2:** visible text — ideally in the first screen, in a face whose
+  fallback is plainly different — set in a webfont that fails, on both WebKit
+  (`iphone-16`) and Gecko (`desktop-1440-firefox`). Deterministic beats
+  intermittent: a font file that 404s, or a font URL that returns an HTML page
+  instead of a font, fails in every engine on every load. (A font on another
+  domain served without `Access-Control-Allow-Origin` is refused by Firefox;
+  confirm WebKit refuses it too before relying on it.) Then every run has a
+  witness; a `font-display: optional` face gives one only on
+  some loads. Better still if the same page has other webfonts that load
+  properly, so the gate also shows the rule staying quiet about healthy faces.
+  In the Dashboard, a "Webfont failed to load" error on a Devices tab is the
+  thing to look for.
+- **For gate 3:** an `img` or `picture` wider than the screen, or pushed past
+  its edge, inside a container that clips the overflow, so part of the image
+  cannot be seen — at 1024px (iPad Pro 13) or 375px (iPhone SE).
 
 ## The 3D Galaxy S25 (Dashboard)
 
