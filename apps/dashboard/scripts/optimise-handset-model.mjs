@@ -76,6 +76,34 @@ const MODELS = {
     defaultKeep: [0.22, 0.004],
     keep: {},
   },
+  "iphone-13-pro-max": {
+    source: '"Apple iPhone 13 Pro Max" by DatSketch, CC BY 4.0',
+    // Apple's logo stays, as on the iPhone 16 (ADR-004). Here it is its own
+    // mesh on an unbroken back, so it could be removed; the decision is the
+    // same for both handsets rather than per model.
+    removeMeshes: [],
+    screen: "Wallpaper",
+    // The notch is cut into the bezel that hangs in front of the display, so
+    // that mesh keeps every triangle: simplifying it would round the notch off.
+    never: ["Bezel"],
+    uv: { u: "-x", v: "-y" },
+    defaultKeep: [0.45, 0.003],
+    keep: {},
+  },
+  "iphone-17-pro-max": {
+    source: '"iPhone 17 Pro Max" by MG990, CC BY 4.0',
+    removeMeshes: [],
+    screen: "screen.001",
+    // The Dynamic Island is cut into the screen itself, which is never
+    // simplified anyway.
+    never: [],
+    // This model's screen is authored with its length along local z and its
+    // width along local y — the axes are named in the mesh's own space, not
+    // the world's.
+    uv: { u: "-y", v: "-z" },
+    defaultKeep: [0.5, 0.003],
+    keep: {},
+  },
 };
 
 const [id, input, output] = process.argv.slice(2);
@@ -187,9 +215,11 @@ await doc.transform(prune({ keepAttributes: true }), dedup(), weld());
 await MeshoptSimplifier.ready;
 for (const mesh of root.listMeshes()) {
   for (const prim of mesh.listPrimitives()) {
+    const matName = prim.getMaterial()?.getName();
     if (prim.getMaterial() === screen) continue;          // the screen's outline and its island cutout stay exact
+    if ((model.never || []).includes(matName)) continue;  // …and anything else the model says shapes the handset
     const tris = (prim.getIndices()?.getCount() ?? prim.getAttribute("POSITION").getCount()) / 3;
-    const k = KEEP[prim.getMaterial()?.getName()] ?? (tris > LEAVE_ALONE ? DEFAULT_KEEP : null);
+    const k = KEEP[matName] ?? (tris > LEAVE_ALONE ? DEFAULT_KEEP : null);
     if (k) simplifyPrimitive(prim, { simplifier: MeshoptSimplifier, ratio: k[0], error: k[1] });
   }
 }
