@@ -258,7 +258,9 @@ the flat frame does not, and less than it does:
   findings are read from. Switch 3D off (or use Actual size) to work with them.
 - **The model is simplified and has no wordmark.** It is close to the handset's
   shape; it is not an exact one, and the display's edges and punch-hole cover
-  a little of the capture, as the real screen would.
+  a little of the capture, as the real screen would. Only devices listed in
+  `apps/dashboard/src/lib/layout-checks/models-3d.ts` have one; the rest keep
+  the flat frame.
 - **Internal only.** If this tool ever becomes client-facing, the model comes
   out first — because Samsung's industrial design is recognisable without the
   wordmark and is not ours, or the model's author's, to present. The full

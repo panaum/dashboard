@@ -6,7 +6,7 @@
 // If code needs something that is not below, add it here after reading
 // three's source for the pinned version (node_modules/three/src), not a guess.
 //
-// Used by src/components/layout-checks/galaxy-s25-model.tsx.
+// Used by src/components/layout-checks/handset-3d.tsx.
 
 declare module "three" {
   export const SRGBColorSpace: "srgb";

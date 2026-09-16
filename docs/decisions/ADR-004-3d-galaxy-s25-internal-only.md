@@ -2,7 +2,8 @@
 
 **Status:** accepted, on trial. **Check on 2026-09-29.**
 **Date:** 2026-09-15
-**Related:** PRs #119, #120; `apps/dashboard/src/components/layout-checks/galaxy-s25-model.tsx`;
+**Related:** PRs #119, #120, #123; `apps/dashboard/src/components/layout-checks/handset-3d.tsx`;
+`apps/dashboard/src/lib/layout-checks/models-3d.ts` (which handsets have a model);
 `services/devicepreview/LIMITATIONS.md` ("The 3D Galaxy S25"); ADR-003
 
 ---
@@ -30,12 +31,15 @@ was accepted on a trial with a condition that takes it out.
 
 The model is not the file Sketchfab serves: the SAMSUNG wordmark mesh and the
 wallpaper were removed and it was simplified from 108,208 to 21,574 triangles
-(3.54 MB → 429 KB) by `apps/dashboard/scripts/optimise-galaxy-s25-model.mjs`.
+(3.54 MB → 429 KB) by `apps/dashboard/scripts/optimise-handset-model.mjs`.
 
 ## Decision
 
-1. **Galaxy S25 only**, behind a **3D** toggle in the stage bar. **Off by
-   default**; the choice is remembered in each browser.
+1. **Only devices with a model**, behind a **3D** toggle in the stage bar,
+   which appears for those devices alone. **Off by default**; the choice is
+   remembered in each browser. The models are listed in `models-3d.ts`; each
+   one is a handset whose design belongs to its maker, so every addition is
+   another entry under the rule below, not a free one.
 2. **The flat frame always comes first.** It renders immediately; the 3D view
    covers it only once the handset is drawn with the capture on its screen. If
    WebGL is missing, the context is lost, or any piece fails to load, the flat
@@ -79,8 +83,8 @@ public QA certificates render neither the Devices panel nor the device frame.
 
 **The file is behind the login too.** The model lives in
 `apps/dashboard/assets/models/`, outside `public/`, and reaches the page only
-through `/api/models/galaxy-s25`, which checks the team session as the capture
-routes do and answers 401 without one. It is marked `private`, so no shared
+through `/api/models/<file>`, which checks the team session as the capture
+routes do, answers 401 without one, and serves only files named in the registry. It is marked `private`, so no shared
 cache can serve it past that check.
 
 It was first committed to `public/`, where anyone with the production URL could
@@ -117,12 +121,13 @@ section's date; the client-facing rule stays regardless.
 
 It was built to come out cleanly. In `apps/dashboard`:
 
-- Delete `src/components/layout-checks/galaxy-s25-model.tsx`,
-  `src/lib/layout-checks/frame3d.ts`, `model-rotation.ts`, `model-fit.ts` and
-  `screen-crop.ts` (each with its `.test.ts`), `src/types/three.d.ts`,
-  `assets/models/galaxy-s25.glb`, `scripts/optimise-galaxy-s25-model.mjs` and
-  `src/app/api/models/galaxy-s25/route.ts` (and its line in
-  `src/app/api/api-auth.isolation.test.ts`).
+- Delete `src/components/layout-checks/handset-3d.tsx`,
+  `src/lib/layout-checks/frame3d.ts`, `models-3d.ts`, `model-rotation.ts`,
+  `model-fit.ts` and `screen-crop.ts` (each with its `.test.ts`),
+  `src/types/three.d.ts`, every file in `assets/models/`,
+  `scripts/optimise-handset-model.mjs`, `src/app/api/models/[model]/route.ts`
+  (and its line in `src/app/api/api-auth.isolation.test.ts`), and the
+  `outputFileTracingIncludes` entry in `next.config.ts`.
 - In `src/components/layout-checks/devices-panel.tsx`, remove the lazy import,
   the 3D state, the **3D** and **Face front** buttons, the model element and
   the `inert` wrapper around `DeviceFrame`.

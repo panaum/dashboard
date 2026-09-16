@@ -10,66 +10,47 @@ import {
   type Coast, type Rotation, type Sample,
 } from "@/lib/layout-checks/model-rotation";
 import { REDUCE_QUERY } from "@/lib/layout-checks/motion";
+import { SCREEN_MATERIAL } from "@/lib/layout-checks/models-3d";
 
-// A 3D Galaxy S25, drawn in place of the CSS silhouette for that one handset.
-// It is there for feel, not for diagnosis: the capture, the pins and the
-// scroll ruler in the flat frame are what the findings are read from.
+// A 3D handset, drawn in place of the CSS silhouette for the devices that have
+// a model. It is there for feel, not for diagnosis: the capture, the pins and
+// the scroll ruler in the flat frame are what the findings are read from.
+//
+// Which devices have one, who made each model and what was stripped from it:
+// src/lib/layout-checks/models-3d.ts. Adding a handset is an entry there and
+// an optimised file, not a second copy of this component.
 //
 // INTERNAL TOOLING ONLY — and the reason matters more than the instruction.
 //
 // The rule: if this tool ever becomes client-facing in any form (a client
 // login, a client report or share link that shows the Devices tab, client
-// material with a screenshot or recording of it, or a product), the 3D model
-// comes out first, before anything else about that change ships.
+// material with a screenshot or recording of it, or a product), the 3D models
+// come out first, before anything else about that change ships.
 //
-// The reason is Samsung's industrial design, not only its name. Stripping the
-// SAMSUNG wordmark (below) does not make this a generic phone: what makes it
+// The reason is the manufacturer's industrial design, not only its name.
+// Stripping the wordmark does not make a model a generic phone: what makes it
 // recognisably a Galaxy S25 — the flat-sided body and its proportions, three
 // separate lenses stacked in the top-left corner with no camera island, the
 // centred punch-hole — is Samsung's design, and manufacturers protect that
 // separately from their trademarks (registered designs, design patents, trade
-// dress). The CC BY licence comes from the person who built the 3D file. It
-// licenses their work and nothing else: CC BY 4.0 says in terms that patent
-// and trademark rights are not licensed, and it could not grant rights in
-// Samsung's design, which were never the modeller's to give. Used inside the
-// company as a reference while checking a page, that is an ordinary thing to
-// have. Shown to clients or shipped in a product, it would be our product
-// presenting Samsung's design and suggesting an association with Samsung that
-// does not exist. (This is the reasoning behind the rule, not legal advice; if
-// the question ever becomes live, it goes to someone qualified to answer it.)
+// dress). The same is true of every handset added here. A model's CC BY licence
+// comes from the person who built the file. It licenses their work and nothing
+// else: CC BY 4.0 says in terms that patent and trademark rights are not
+// licensed, and it could not grant rights in a design that was never the
+// modeller's to give. Used inside the company as a reference while checking a
+// page, that is an ordinary thing to have. Shown to clients or shipped in a
+// product, it would be our product presenting someone else's design and
+// suggesting an association that does not exist. (This is the reasoning behind
+// the rule, not legal advice; if the question ever becomes live, it goes to
+// someone qualified to answer it.)
 //
-// It is also on trial, and comes out if it gets in the way of work. The
-// conditions, the date to check them and how to remove it cleanly are in
-// docs/decisions/ADR-004-3d-galaxy-s25-internal-only.md.
+// The models reach the page only through /api/models/<file>, which checks the
+// team session. Never put one in public/: that is outside the login, and the
+// reason they are internal is the designs they show.
 //
-// The model
-// ---------
-// Source: "SAMSUNG S25" by Yassine24, CC Attribution 4.0 —
-//   https://sketchfab.com/3d-models/samsung-s25-3ea821af958f4e9d99aaba1eb32b423f
-//   https://creativecommons.org/licenses/by/4.0/
-// The credit is also kept inside the file (asset.copyright and asset.extras).
-//
-// assets/models/galaxy-s25.glb is NOT the file Sketchfab serves. It was made
-// from it by scripts/optimise-galaxy-s25-model.mjs, which:
-//   - removes the SAMSUNG wordmark on the back (its own mesh). No trademarks
-//     on a tool that might not stay internal, and nobody should have to find
-//     and undo a branded model later;
-//   - removes Samsung's wallpaper from the screen and renames that material
-//     "Screen" — the capture is drawn there instead;
-//   - re-projects the screen's UVs from its vertices, because the originals
-//     wander by up to ~3 CSS px and bend straight lines in a capture;
-//   - drops the glass's transmission, which made three.js render the scene a
-//     second time for a few pixels of lens;
-//   - simplifies it (108,208 → 21,574 triangles; the camera glass alone was
-//     55k) and quantizes it: 3.54 MB → 429 KB.
-// Re-importing the download untouched brings all of that back. Re-run the
-// script instead.
-//
-// It reaches the page only through /api/models/galaxy-s25, which checks the
-// team session. Never put it in public/: that is outside the login, and the
-// reason this model is internal is the design it shows.
-
-const MODEL_URL = "/api/models/galaxy-s25";
+// They are also on trial, and come out if they get in the way of work. The
+// conditions, the date to check them and how to remove all of this cleanly are
+// in docs/decisions/ADR-004-3d-galaxy-s25-internal-only.md.
 
 const FOV = 22;        // narrow, so the body is not distorted by perspective
 // Share of the tighter side of the box the handset fills, fitted to the pose
@@ -87,7 +68,8 @@ const DRIFT_FRAME_MS = 1000 / 30;
  *  drawn, and a 2048 × 946 texture is about 10 MB of GPU memory with mipmaps. */
 const MAX_SCREEN_TEXTURE = 2048;
 
-export function GalaxyS25Model({
+export function Handset3d({
+  modelUrl,
   src,
   alt,
   viewport,
@@ -98,6 +80,8 @@ export function GalaxyS25Model({
   onScreenFail,
   onFail,
 }: {
+  /** The model for this device, from the registry: /api/models/<file>. */
+  modelUrl: string;
   /** The capture the flat frame is showing — the fold, then the full page
       once it arrives. Its first screen is drawn on the handset's screen. */
   src: string;
@@ -203,7 +187,7 @@ export function GalaxyS25Model({
 
       const camera = new T.PerspectiveCamera(FOV, 1, 0.1, 100);
 
-      const gltf = await new GLTFLoader().loadAsync(MODEL_URL);
+      const gltf = await new GLTFLoader().loadAsync(modelUrl);
       const model = gltf.scene;
       // Unmounted while the model was on its way: everything else is already
       // released, so this is the only thing left to free.
@@ -215,7 +199,7 @@ export function GalaxyS25Model({
       // model is centred inside it.
 
       // ── The screen ─────────────────────────────────────────────────────
-      // The model's "Screen" mesh (see the header: its UVs are re-projected
+      // The model's screen mesh (its UVs are re-projected by the optimiser
       // so the image lands straight). Unlit, because a screen gives off light
       // rather than reflecting it: the capture shows its own colours at any
       // angle. Black until the capture has loaded, though that is never seen:
@@ -223,9 +207,9 @@ export function GalaxyS25Model({
       let screenMesh: THREE.Mesh | null = null;
       model.traverse((o) => {
         const m = o as THREE.Mesh;
-        if (m.isMesh && !Array.isArray(m.material) && m.material.name === "Screen") screenMesh = m;
+        if (m.isMesh && !Array.isArray(m.material) && m.material.name === SCREEN_MATERIAL) screenMesh = m;
       });
-      if (!screenMesh) throw new Error("model-has-no-screen");
+      if (!screenMesh) throw new Error(`model-has-no-${SCREEN_MATERIAL}-material`);
       const screenBox = new T.Box3().setFromObject(screenMesh).getSize(new T.Vector3());
       const screenAspect = screenBox.x / screenBox.y;
       const screenMat = new T.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
@@ -547,7 +531,8 @@ export function GalaxyS25Model({
       alive = false;
       release();
     };
-  }, []);
+    // A different handset is a different model: tear the scene down and load it.
+  }, [modelUrl]);
 
   return (
     <div
