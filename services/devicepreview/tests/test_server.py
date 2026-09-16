@@ -66,6 +66,39 @@ class Service(unittest.TestCase):
         self.assertFalse(health["live_session"], "nothing open on a fresh service")
         self.assertFalse(health["busy"])
 
+    def test_health_says_which_commit_and_which_device_matrix(self):
+        """The deployment question, answerable in one request.
+
+        Three times running, whether Railway was serving the merged code had to
+        be inferred from behaviour. /health now states the commit it was built
+        from and the device matrix it would run.
+        """
+        import json as _json
+        h = self.client.get("/health").json()
+        fleet = _json.loads((ROOT / "devices.json").read_text())["profiles"]
+        self.assertEqual(h["devices"]["count"], len(fleet))
+        self.assertEqual(h["devices"]["profiles"], [p["id"] for p in fleet],
+                         "the ids, in the matrix's own order")
+        self.assertEqual(len(h["devices"]["digest"]), 12, "same digest, same matrix")
+        self.assertIsNone(h["commit"], "nothing in the environment says, so it must not guess")
+        os.environ["GIT_COMMIT"] = "0123456789abcdef"
+        try:
+            self.assertEqual(self.client.get("/health").json()["commit"], "0123456789abcdef")
+        finally:
+            os.environ.pop("GIT_COMMIT")
+
+    def test_health_says_so_when_the_device_matrix_cannot_be_read(self):
+        """A missing or broken devices.json is reported, not silently empty —
+        an empty fleet and an unreadable one are different deployments."""
+        moved = self.mod.DEVICES_FILE.with_suffix(".json.hidden")
+        self.mod.DEVICES_FILE.rename(moved)
+        try:
+            devices = self.client.get("/health").json()["devices"]
+            self.assertEqual(devices["count"], 0)
+            self.assertTrue(devices.get("error"), "it must say why, not just report nothing")
+        finally:
+            moved.rename(self.mod.DEVICES_FILE)
+
     def test_unconfigured_service_refuses_everything(self):
         mod = _load({"RUNS_DIR": str(self.runs)})          # no DEVICEPREVIEW_KEY
         from fastapi.testclient import TestClient

@@ -10,7 +10,8 @@ already drives: start a job, poll it, fetch what it produced.
     GET  /api/devicepreview/file     ?run_id=&path=            report.html, <profile>/full.png, …
     GET  /api/devicepreview/image    ?run_id=&profile=&kind=   JPEG variant, downscaled, for storage
     GET  /api/devicepreview/runs     ?url=                     retained runs for a page
-    GET  /health
+    GET  /health                     also: which commit and which device matrix
+                                     this build is running
 
 Each run is the CLI in its own process — Playwright's sync API and three
 engines stay out of the server's event loop, and a run that hangs is killed
@@ -30,6 +31,7 @@ D13) and this one is not joining them.
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
@@ -56,6 +58,39 @@ RUN_TIMEOUT_S = int(os.environ.get("RUN_TIMEOUT_S", "900"))
 CONCURRENCY = os.environ.get("DEVICEPREVIEW_CONCURRENCY", "2")
 MAX_RUNNING = int(os.environ.get("MAX_RUNNING", "1"))
 SERVICE_KEY = os.environ.get("DEVICEPREVIEW_KEY", "")
+DEVICES_FILE = HERE / "devices.json"
+
+
+def _commit() -> str | None:
+    """The commit this build came from, or None.
+
+    Railway injects RAILWAY_GIT_COMMIT_SHA into the running container; the
+    others are for a different host or a build arg. None means "this build
+    cannot say" — never a guess, because the question being asked is exactly
+    whether the deployment matches a commit.
+    """
+    for var in ("RAILWAY_GIT_COMMIT_SHA", "GIT_COMMIT", "SOURCE_COMMIT"):
+        value = (os.environ.get(var) or "").strip()
+        if value:
+            return value[:40]
+    return None
+
+
+def _fleet() -> dict[str, Any]:
+    """The device matrix this build would run.
+
+    Read per request rather than at import, so it answers for the file on
+    disk now. The digest lets two deployments be compared without reading
+    fifteen ids: same digest, same matrix.
+    """
+    try:
+        raw = DEVICES_FILE.read_bytes()
+        profiles = json.loads(raw).get("profiles", [])
+    except (OSError, ValueError) as exc:
+        return {"count": 0, "profiles": [], "digest": None, "error": str(exc)[:120]}
+    return {"count": len(profiles),
+            "profiles": [p.get("id") for p in profiles],
+            "digest": hashlib.sha256(raw).hexdigest()[:12]}
 
 app = FastAPI(title="devicepreview", docs_url=None, redoc_url=None)
 
@@ -289,10 +324,17 @@ def health():
     # question you cannot otherwise ask from outside: whether this build has
     # live sessions at all — the websocket route 404s to a plain GET exactly
     # like a path that does not exist.
+    # `commit` and `devices` answer the question that used to take an
+    # inference: is the deployed service running the code that was merged, and
+    # the device matrix that came with it? Unauthenticated, like the rest of
+    # this endpoint: a commit sha and a list of device ids say nothing a
+    # caller could use, and needing a key to ask would defeat the point.
     return {"ok": True, "running": running, "retained": sum(1 for e in _runs.values() if e["status"] == "done"),
             "configured": bool(SERVICE_KEY), "runs_dir": str(RUNS_DIR), "retain_per_site": RETAIN_PER_SITE,
             "live_session": live_session_open(),
-            "busy": running > 0 or live_session_open()}
+            "busy": running > 0 or live_session_open(),
+            "commit": _commit(), "branch": (os.environ.get("RAILWAY_GIT_BRANCH") or None),
+            "devices": _fleet()}
 
 
 @app.post("/api/devicepreview/run")
