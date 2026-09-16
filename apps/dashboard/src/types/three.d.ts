@@ -11,6 +11,8 @@
 declare module "three" {
   export const SRGBColorSpace: "srgb";
   export const ACESFilmicToneMapping: 4;
+  /** Render both faces: a screen mesh may be authored facing either way. */
+  export const DoubleSide: 2;
 
   export class Vector3 {
     constructor(x?: number, y?: number, z?: number);
@@ -84,6 +86,7 @@ declare module "three" {
       transparent?: boolean;
       depthWrite?: boolean;
       toneMapped?: boolean;
+      side?: number;
     });
   }
 

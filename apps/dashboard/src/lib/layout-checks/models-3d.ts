@@ -65,6 +65,38 @@ export const DEVICE_MODELS: readonly DeviceModel[] = [
       + "60,986 → 21,789 triangles. The Apple logo stays — see ADR-004.",
     turn: 180,
   },
+  {
+    device: "iphone-13-pro-max",
+    file: "iphone-13-pro-max",
+    credit: {
+      title: "Apple iPhone 13 Pro Max",
+      author: "DatSketch",
+      profile: "https://sketchfab.com/DatSketch",
+      licence: "CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)",
+      source: "https://sketchfab.com/3d-models/apple-iphone-13-pro-max-4328dea00e47497dbeac73c556121bc9",
+    },
+    // The notch is cut into the bezel that hangs in front of the display, so
+    // that mesh is never simplified. Apple's logo stays (ADR-004); here it is
+    // its own mesh on an unbroken back, so it could have gone either way.
+    stripped: "Apple's wallpaper. Screen UVs re-projected; textures re-encoded and capped at "
+      + "512px; simplified and quantized, 28,063 → 18,527 triangles. The Apple logo stays — see ADR-004.",
+    turn: 180,
+  },
+  {
+    device: "iphone-17-pro-max",
+    file: "iphone-17-pro-max",
+    credit: {
+      title: "iPhone 17 Pro Max",
+      author: "MG990",
+      profile: "https://sketchfab.com/MG990",
+      licence: "CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)",
+      source: "https://sketchfab.com/3d-models/iphone-17-pro-max-87fc1df741384124a8ce0226d2b2058d",
+    },
+    // This one carries no Apple logo at all, so there was nothing to decide.
+    stripped: "Apple's wallpaper (2048 x 4096, 2.5 MB of the 3.9 MB download). Screen UVs "
+      + "re-projected; simplified and quantized, 29,544 → 17,943 triangles.",
+    turn: 90,
+  },
 ];
 
 export function modelFor(device: string | null | undefined): DeviceModel | null {
