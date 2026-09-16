@@ -96,7 +96,7 @@ const BY_SHAPE: Record<Shape, Skin> = {
 // Keyed on the profile id the run actually used. A device missing here falls
 // back to its shape, so a new profile is plain rather than wrong.
 const BY_ID: Record<string, Skin> = {
-  "iphone-18-pro-max": IPHONE_MODERN,
+  "iphone-17-pro-max": IPHONE_MODERN,
   "iphone-16": IPHONE_MODERN,
   // The 13 Pro Max is the notched generation: a wider cutout is the tell, and
   // its corners are a shade squarer than the Dynamic Island phones'.
