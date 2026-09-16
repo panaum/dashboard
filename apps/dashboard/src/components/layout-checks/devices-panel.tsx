@@ -444,6 +444,7 @@ const picker = views.length ? (
             <Handset3d
               ref={model3d}
               modelUrl={modelUrl(model3dSpec)}
+              turn={model3dSpec.turn}
               src={shownSrc}
               alt={`${current.label}, rendered page`}
               viewport={current.viewport}

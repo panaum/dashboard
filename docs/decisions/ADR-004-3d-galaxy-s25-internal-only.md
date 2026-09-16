@@ -2,7 +2,7 @@
 
 **Status:** accepted, on trial. **Check on 2026-09-29.**
 **Date:** 2026-09-15
-**Related:** PRs #119, #120, #123; `apps/dashboard/src/components/layout-checks/handset-3d.tsx`;
+**Related:** PRs #119, #120, #123, #124; `apps/dashboard/src/components/layout-checks/handset-3d.tsx`;
 `apps/dashboard/src/lib/layout-checks/models-3d.ts` (which handsets have a model);
 `services/devicepreview/LIMITATIONS.md` ("The 3D Galaxy S25"); ADR-003
 
@@ -35,7 +35,7 @@ wallpaper were removed and it was simplified from 108,208 to 21,574 triangles
 
 ## Decision
 
-1. **Only devices with a model**, behind a **3D** toggle in the stage bar,
+1. **Only devices with a model** (Galaxy S25, iPhone 16), behind a **3D** toggle in the stage bar,
    which appears for those devices alone. **Off by default**; the choice is
    remembered in each browser. The models are listed in `models-3d.ts`; each
    one is a handset whose design belongs to its maker, so every addition is
@@ -77,6 +77,37 @@ the rest of it.
 This is the reasoning behind the rule, not legal advice. If the question ever
 becomes live, it goes to someone qualified to answer it, and the model is out
 of the product while they do.
+
+### The iPhone 16 keeps Apple's logo (2026-09-16)
+
+**What changed.** The Galaxy S25's SAMSUNG wordmark was stripped. The iPhone
+16's Apple logo is **not** stripped, and stays on the model we ship. The two
+models therefore differ, visibly, and anyone comparing them will notice — this
+is why.
+
+**Why.** Three iPhone 16 models were checked against the same gate. Only one
+has a real Dynamic Island cut into its screen rather than painted or missing,
+and that model's logo fills a logo-shaped hole in the back panel: the back
+glass mesh has boundary loops in the outline of the apple and its leaf.
+Removing the logo meshes does not leave a clean back — it leaves a **recessed
+black Apple logo**, more conspicuous than the tinted one it replaced. Filling
+the hole means editing geometry by hand, which would break the rule that
+`assets/models/*.glb` can be regenerated from the download by
+`scripts/optimise-handset-model.mjs` alone. The alternatives were a model with
+no island (a full-bleed screen is not an iPhone 16, and would be less
+recognisable than the flat frame it replaces) or recolouring the logo to the
+body colour, which leaves its shape in the geometry anyway.
+
+So the wordmark stayed stripped because it was free to strip — a separate mesh
+on an unbroken back — and the logo stays because removing it costs more than it
+buys. Neither is the point of the rule.
+
+**What does not change.** This is internal tooling, and the rule above stands
+exactly as written: if the tool becomes client-facing in any form, the 3D view
+comes out entirely — now with one more reason, since one of its models carries
+a manufacturer's trademark as well as its design. A stripped wordmark never
+made the S25 lawful to show a client; it only made it tidier. The protection
+was always "this never leaves the login", and that is unchanged.
 
 As things stand, nothing client-facing can show it: the client report and the
 public QA certificates render neither the Devices panel nor the device frame.
