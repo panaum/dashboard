@@ -215,7 +215,10 @@ export function Handset3d({
       if (!screenMesh) throw new Error(`model-has-no-${SCREEN_MATERIAL}-material`);
       const screenBox = new T.Box3().setFromObject(screenMesh).getSize(new T.Vector3());
       const screenAspect = screenBox.x / screenBox.y;
-      const screenMat = new T.MeshBasicMaterial({ color: 0x000000, toneMapped: false });
+      // Double-sided: a model's screen mesh may be authored facing either way,
+      // and a single-sided replacement is culled on the ones facing away — the
+      // handset then renders as a window straight through to its own back.
+      const screenMat = new T.MeshBasicMaterial({ color: 0x000000, toneMapped: false, side: T.DoubleSide });
       const mesh: THREE.Mesh = screenMesh;
       (mesh.material as THREE.Material).dispose();
       mesh.material = screenMat;
