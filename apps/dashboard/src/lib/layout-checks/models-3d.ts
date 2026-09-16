@@ -24,6 +24,9 @@ export type DeviceModel = {
   /** What scripts/optimise-handset-model.mjs removed, so nobody re-imports the
    *  untouched download thinking it is the same file. */
   stripped: string;
+  /** Degrees to turn the model so its screen faces the reader. Models are
+   *  exported facing either way; this is the one thing that differs. */
+  turn?: number;
 };
 
 /** Every model's screen material is renamed to this by the optimiser, so the
@@ -43,6 +46,24 @@ export const DEVICE_MODELS: readonly DeviceModel[] = [
     },
     stripped: "SAMSUNG wordmark mesh; Samsung's wallpaper; glass transmission. "
       + "Screen UVs re-projected; simplified and quantized, 108,208 → 21,574 triangles.",
+  },
+  {
+    device: "iphone-16",
+    file: "iphone-16",
+    credit: {
+      title: "iPhone 16 Teal (Free)",
+      author: "EV_car2013",
+      profile: "https://sketchfab.com/EV_car2013",
+      licence: "CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)",
+      source: "https://sketchfab.com/3d-models/iphone-16-teal-free-c7f900aa7ac547a487f1ba3082dac96a",
+    },
+    // Apple's logo is NOT stripped here, unlike the Galaxy's wordmark: it fills
+    // a logo-shaped hole in the back panel, and removing it leaves a recessed
+    // black logo. ADR-004 records that decision and why the rule is unchanged.
+    stripped: "Apple's wallpaper. Screen UVs projected (the download's are all zero); "
+      + "textures re-encoded and capped at 512px; simplified and quantized, "
+      + "60,986 → 21,789 triangles. The Apple logo stays — see ADR-004.",
+    turn: 180,
   },
 ];
 

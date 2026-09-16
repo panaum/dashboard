@@ -6,7 +6,7 @@
 //
 //   mkdir /tmp/gltf-tool && cd /tmp/gltf-tool && npm init -y
 //   npm i @gltf-transform/core@4.5.0 @gltf-transform/extensions@4.5.0 \
-//         @gltf-transform/functions@4.5.0 meshoptimizer@1.2.0
+//         @gltf-transform/functions@4.5.0 meshoptimizer@1.2.0 sharp@0.35.4
 //   node <repo>/apps/dashboard/scripts/optimise-handset-model.mjs <id> \
 //        ~/Downloads/<download>.glb <repo>/apps/dashboard/assets/models/<id>.glb
 //
@@ -25,6 +25,9 @@
 //     UVs wander by a few pixels and bend straight lines in a capture;
 //   - no glass transmission, which makes three.js render the scene a second
 //     time for a few pixels of lens;
+//   - textures re-encoded (JPEG where there is no alpha, PNG where there is)
+//     and capped at 512px: a handset is drawn a few hundred pixels tall here,
+//     so this is re-encoding rather than throwing detail away;
 //   - geometry simplified and quantized, and the credit kept in asset.extras.
 //
 // Not public/: models are served to signed-in users by
@@ -36,7 +39,8 @@ const req = createRequire(`${process.cwd()}/`);
 const load = (name) => import(req.resolve(name));
 const { NodeIO } = await load("@gltf-transform/core");
 const { ALL_EXTENSIONS } = await load("@gltf-transform/extensions");
-const { prune, weld, simplifyPrimitive, quantize, dedup } = await load("@gltf-transform/functions");
+const { prune, weld, simplifyPrimitive, quantize, dedup, textureCompress } = await load("@gltf-transform/functions");
+const sharp = (await load("sharp")).default;
 const { MeshoptSimplifier } = await load("meshoptimizer");
 
 // Per model: the meshes to remove by material name, the material that becomes
@@ -60,6 +64,18 @@ const MODELS = {
       Screen_Frame: [0.6, 0.0015],
     },
   },
+  "iphone-16": {
+    source: '"iPhone 16 Teal (Free)" by EV_car2013, CC BY 4.0',
+    // Apple's logo STAYS: it fills a logo-shaped hole in the back panel, and
+    // removing it leaves a recessed black logo. See ADR-004.
+    removeMeshes: [],
+    screen: "HdvBvHLgXAUNOwl",
+    // Its screen UVs are all zero, so they are projected from the mesh; the
+    // handset faces away from the viewer, hence "turn" in the registry.
+    uv: { u: "+x", v: "-y" },
+    defaultKeep: [0.22, 0.004],
+    keep: {},
+  },
 };
 
 const [id, input, output] = process.argv.slice(2);
@@ -68,7 +84,11 @@ if (!model || !input || !output) {
   console.error(`usage: node optimise-handset-model.mjs <${Object.keys(MODELS).join("|")}> <download.glb> <out.glb>`);
   process.exit(2);
 }
-const KEEP = model.keep;
+const KEEP = model.keep || {};
+const DEFAULT_KEEP = model.defaultKeep || null;
+// Never simplify a part this small: the saving is nothing and the shape is
+// usually a lens ring or a button that reads as wrong immediately.
+const LEAVE_ALONE = 300;
 
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const doc = await io.read(input);
@@ -101,7 +121,8 @@ for (const name of model.removeMeshes) {
 //    screen is flat, so a straight projection from its vertices is exact.
 //    u runs with -x and v with +y in the mesh's own space, because the model's
 //    node turns it 180° about z (check each model with a test pattern: not
-//    mirrored, top at the top).
+//    mirrored, top at the top). The flat axis is found rather than assumed,
+//    and which way u and v run is per model.
 const screen = material(model.screen);
 screen.setName("Screen")
   .setBaseColorTexture(null).setEmissiveTexture(null)
@@ -111,11 +132,26 @@ for (const mesh of root.listMeshes()) {
     if (prim.getMaterial() !== screen) continue;
     const pos = prim.getAttribute("POSITION");
     const uv = prim.getAttribute("TEXCOORD_0");
-    const [minX, minY] = pos.getMin([]), [maxX, maxY] = pos.getMax([]);
+    const min = pos.getMin([]), max = pos.getMax([]);
+    const span = [0, 1, 2].map((i) => max[i] - min[i]);
+    // The screen is flat: the axis it has no thickness in is the one to drop.
+    const flat = span.indexOf(Math.min(...span));
+    const [a, b] = [0, 1, 2].filter((i) => i !== flat);
+    const want = model.uv || { u: "-x", v: "+y" };
+    const axis = { x: 0, y: 1, z: 2 };
+    const pick = (spec) => ({ i: axis[spec.slice(1)], flip: spec[0] === "-" });
+    const U = pick(want.u), V = pick(want.v);
+    if (![a, b].includes(U.i) || ![a, b].includes(V.i) || U.i === V.i) {
+      throw new Error(`model ${id}: uv ${JSON.stringify(want)} does not match the screen's plane (flat axis ${"xyz"[flat]})`);
+    }
+    const along = (i, flip, p) => {
+      const t = (p[i] - min[i]) / (max[i] - min[i]);
+      return flip ? 1 - t : t;
+    };
     const p = [];
     for (let i = 0; i < pos.getCount(); i++) {
       pos.getElement(i, p);
-      uv.setElement(i, [(maxX - p[0]) / (maxX - minX), (p[1] - minY) / (maxY - minY)]);
+      uv.setElement(i, [along(U.i, U.flip, p), along(V.i, V.flip, p)]);
     }
     const uv1 = prim.getAttribute("TEXCOORD_1");
     if (uv1) { prim.setAttribute("TEXCOORD_1", null); uv1.dispose(); }
@@ -151,12 +187,29 @@ await doc.transform(prune({ keepAttributes: true }), dedup(), weld());
 await MeshoptSimplifier.ready;
 for (const mesh of root.listMeshes()) {
   for (const prim of mesh.listPrimitives()) {
-    const k = KEEP[prim.getMaterial()?.getName()];
+    if (prim.getMaterial() === screen) continue;          // the screen's outline and its island cutout stay exact
+    const tris = (prim.getIndices()?.getCount() ?? prim.getAttribute("POSITION").getCount()) / 3;
+    const k = KEEP[prim.getMaterial()?.getName()] ?? (tris > LEAVE_ALONE ? DEFAULT_KEEP : null);
     if (k) simplifyPrimitive(prim, { simplifier: MeshoptSimplifier, ratio: k[0], error: k[1] });
   }
 }
 
-// 5. Store positions, normals and UVs as small integers (KHR_mesh_quantization;
+// 5. Textures: the same pictures, far fewer bytes. One download's 512px PNG
+//    normal map was 423 KB and is 26 KB as JPEG, with nothing visible lost at
+//    the size a handset is drawn here. Base colour keeps PNG for its alpha.
+//    Each texture is judged on its own: JPEG unless it actually uses alpha,
+//    and the original is kept whenever re-encoding would be bigger.
+for (const texture of root.listTextures()) {
+  const before = texture.getImage();
+  if (!before) continue;
+  const opaque = (await sharp(before).stats()).isOpaque;
+  const pipe = sharp(before).resize(512, 512, { fit: "inside", withoutEnlargement: true });
+  const after = opaque ? await pipe.jpeg({ quality: 88 }).toBuffer() : await pipe.png().toBuffer();
+  if (after.byteLength >= before.byteLength) continue;
+  texture.setImage(after).setMimeType(opaque ? "image/jpeg" : "image/png");
+}
+
+// 6. Store positions, normals and UVs as small integers (KHR_mesh_quantization;
 //    three.js reads it with no decoder).
 await doc.transform(prune({ keepAttributes: true }), quantize());
 

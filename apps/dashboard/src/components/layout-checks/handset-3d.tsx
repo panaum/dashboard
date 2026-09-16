@@ -70,6 +70,7 @@ const MAX_SCREEN_TEXTURE = 2048;
 
 export function Handset3d({
   modelUrl,
+  turn = 0,
   src,
   alt,
   viewport,
@@ -82,6 +83,8 @@ export function Handset3d({
 }: {
   /** The model for this device, from the registry: /api/models/<file>. */
   modelUrl: string;
+  /** Degrees to turn the model so its screen faces the reader (registry). */
+  turn?: number;
   /** The capture the flat frame is showing — the fold, then the full page
       once it arrives. Its first screen is drawn on the handset's screen. */
   src: string;
@@ -217,6 +220,9 @@ export function Handset3d({
       (mesh.material as THREE.Material).dispose();
       mesh.material = screenMat;
 
+      // A model exported facing away is turned once here, inside the pivot, so
+      // "facing front" still means pose zero for every handset.
+      model.rotation.set(0, (turn * Math.PI) / 180, 0, "XYZ");
       const pivot = new T.Group();
       pivot.add(model);
       scene.add(pivot);
@@ -532,7 +538,7 @@ export function Handset3d({
       release();
     };
     // A different handset is a different model: tear the scene down and load it.
-  }, [modelUrl]);
+  }, [modelUrl, turn]);
 
   return (
     <div

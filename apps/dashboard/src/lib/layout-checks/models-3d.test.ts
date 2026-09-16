@@ -8,15 +8,20 @@ test("a device with a model resolves to it; anything else to nothing", () => {
   const s25 = modelFor("galaxy-s25");
   assert.ok(s25);
   assert.equal(modelUrl(s25), "/api/models/galaxy-s25");
-  for (const device of ["iphone-16", "desktop-1440-chrome", "", null, undefined]) {
+  const iphone = modelFor("iphone-16");
+  assert.ok(iphone);
+  assert.equal(modelUrl(iphone), "/api/models/iphone-16");
+  assert.equal(iphone.turn, 180, "this model is exported facing away");
+  for (const device of ["ipad-pro-13", "desktop-1440-chrome", "galaxy-s25-ultra", "", null, undefined]) {
     assert.equal(modelFor(device), null, String(device));
   }
 });
 
 test("the route's allow-list matches whole names only — a request cannot name a path", () => {
   assert.equal(modelFile("galaxy-s25"), "galaxy-s25");
+  assert.equal(modelFile("iphone-16"), "iphone-16");
   for (const bad of ["galaxy-s25.glb", "../galaxy-s25", "../../assets/models/galaxy-s25",
-                     "/etc/passwd", "galaxy-s25/../galaxy-s25", "", "GALAXY-S25"]) {
+                     "/etc/passwd", "galaxy-s25/../galaxy-s25", "", "GALAXY-S25", "iphone-16.glb"]) {
     assert.equal(modelFile(bad), null, bad);
   }
 });
