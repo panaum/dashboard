@@ -1285,14 +1285,20 @@ class LocalBackend(Backend):
                 # need re-learning.
                 sh = int(res.page.get("scrollHeight") or 0)
                 if sh > 0:
-                    h = capture_height(sh, profile.device_scale_factor)
-                    page.screenshot(path=str(full), full_page=True,
+                    h, scale = full_page_capture(sh, profile.device_scale_factor)
+                    page.screenshot(path=str(full), full_page=True, scale=scale,
                                     clip={"x": 0, "y": 0, "width": w, "height": h})
+                    res.page["fullScale"] = scale
+                    if scale == "css":
+                        res.notes.append(
+                            f"the page is {sh}px tall, more than a {profile.device_scale_factor}x capture can "
+                            f"hold ({SHOT_LIMIT_PX}px), so the full page is captured at 1x: all of it is here, "
+                            "softer than the first screen. The fold beside it is still at the device's own "
+                            "density for reading type and tap targets at 1:1")
                     if h < sh:
                         res.notes.append(
-                            f"the page is {sh}px tall and this capture stops at {h}px: at "
-                            f"{profile.device_scale_factor}x that is the most a screenshot can "
-                            f"hold ({SHOT_LIMIT_PX}px). Findings below it were still measured "
+                            f"the page is {sh}px tall and this capture stops at {h}px: not even at 1x can a "
+                            f"screenshot hold more ({SHOT_LIMIT_PX}px). Findings below it were still measured "
                             "from the DOM, but cannot be drawn on the image")
                 else:
                     page.screenshot(path=str(full), full_page=True)
@@ -1459,6 +1465,35 @@ def _rel(path: Path, base: Path) -> str:
 
 # The engines refuse any screenshot dimension over this many DEVICE pixels.
 SHOT_LIMIT_PX = 32767
+
+
+def full_page_capture(scroll_height: int, dpr: float, limit: int = SHOT_LIMIT_PX) -> tuple[int, str]:
+    """How much of the page one full-page capture covers, and at which scale.
+
+    Returns CSS pixels of page, and "device" or "css" for Playwright's `scale`.
+
+    A capture at the device's own density is the sharper picture and the
+    default. But the engines cap an image at `limit` device pixels, so on a 3x
+    phone that runs out at 10,919 CSS px: a 19,588px page — an ordinary long
+    marketing page — came back a little past half, which is not a picture of
+    the page at all. Past that point the whole page at one image pixel per CSS
+    pixel beats half of it at three, so the scale drops rather than the page.
+
+    The page is not re-rendered to do it: the viewport, the density it reports
+    to CSS and JavaScript, and the images it chose are all unchanged, and so is
+    every finding — `scale` is how the picture is taken, not what is in it. The
+    fold capture beside it stays at the device's density, which is what reading
+    11px type and 24px targets at 1:1 needs.
+
+    Only a page over `limit` CSS px is still cut short, and it says so.
+    """
+    at_device = capture_height(scroll_height, dpr, limit)
+    # A 1x profile has nothing to drop: the two scales are the same picture,
+    # and calling it "css" would only put a note on a desktop capture saying
+    # it had been softened, which it had not.
+    if at_device >= int(scroll_height) or float(dpr) <= 1:
+        return at_device, "device"
+    return capture_height(scroll_height, 1.0, limit), "css"
 
 
 def capture_height(scroll_height: int, dpr: float, limit: int = SHOT_LIMIT_PX) -> int:

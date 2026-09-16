@@ -22,7 +22,7 @@ import { pinsFor } from "@/lib/layout-checks/pins";
 import { auditedCount, devicesWith, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
 import { frameNote, type RunProvenance } from "@/lib/layout-checks/provenance";
-import { captureHold, holdNote } from "@/lib/layout-checks/capture-hold";
+import { captureHold, holdNote, softCaptureNote } from "@/lib/layout-checks/capture-hold";
 import { ms } from "@/lib/layout-checks/motion";
 import { LiveSession } from "@/components/layout-checks/live-session";
 import { comparableEngines, engineColumns } from "@/lib/layout-checks/engines-view";
@@ -256,6 +256,9 @@ export function DevicesPanel({
   const hold = !showLive && shownSrc !== null && shownSrc === src.live
     ? captureHold(currentRaw?.page?.scrollHeight ?? null, imageMeta?.cssHeight ?? null)
     : null;
+  const soft = !showLive && shownSrc !== null && shownSrc === src.live
+    ? softCaptureNote(currentRaw?.page?.fullScale, currentRaw?.page?.scrollHeight ?? null)
+    : null;
 
   // ── Picker: the dropdown, the glance strip, and the run line while a run is on ──
   const runState = (d: DeviceView): DeviceRunState | null => running ? progress.devices[d.label] ?? "waiting" : null;
@@ -483,6 +486,9 @@ const picker = views.length ? (
             )}
             {hold && (
               <span className="block text-[11px] leading-4 text-text-secondary">{holdNote(hold)}</span>
+            )}
+            {soft && (
+              <span className="block text-[11px] leading-4 text-text-secondary">{soft}</span>
             )}
             {/* Permanent, and next to the device on purpose. The bezel above
                 is a claim about which handset this is; this is the claim about

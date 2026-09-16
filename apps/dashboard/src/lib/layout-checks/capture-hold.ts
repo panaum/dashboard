@@ -2,11 +2,17 @@
 //
 // One screenshot is one image, and an image cannot be taller than 32,767
 // pixels — a limit in the browsers' own graphics layer, not a setting of ours.
-// At 3x that is 10,919 CSS px of page: a 19,588px page stops a little past
-// halfway, and the frame simply ends there. devicepreview measures every
-// finding from the DOM whatever the image can hold, and says so in the run's
-// notes; this puts the same fact where the reader is looking at the capture,
-// because an image that stops mid-page otherwise reads as a broken page.
+// devicepreview now spends that limit on the whole page rather than on pixel
+// density: a page too tall to fit at 3x is captured at 1x instead, so a hold
+// is left only for a page over 32,767 CSS px, which is rare.
+//
+// Two things still bring the reader here. Runs captured before that change
+// have the truncated image they were taken with, and always will — a run is
+// evidence, not something to re-render. And a page can be taller than any
+// image at any scale. Either way devicepreview measures every finding from
+// the DOM whatever the image holds and says so in the run's notes; this puts
+// the same fact where the reader is looking at the capture, because an image
+// that stops mid-page otherwise reads as a broken page.
 //
 // Pure, so the arithmetic and the wording are tested without a frame.
 
@@ -53,4 +59,16 @@ export function holdNote(hold: Hold): string {
  */
 export function undrawnLabel(hold: Hold | null): string {
   return hold ? "below where the capture stops — measured, not drawn" : "full page not stored for this run";
+}
+
+/**
+ * A page too tall to fit at the device's own pixel density is captured whole
+ * at 1x instead — the run says so, and so does this, because at actual size
+ * the difference is visible and otherwise unexplained. Null when the capture
+ * is at the device's density, which is most of them.
+ */
+export function softCaptureNote(fullScale: string | null | undefined, pageCssHeight: number | null | undefined): string | null {
+  if (fullScale !== "css") return null;
+  const tall = typeof pageCssHeight === "number" && pageCssHeight > 0 ? ` so all ${px(pageCssHeight)}px of it fit` : "";
+  return `Full page captured at 1x${tall} — the first screen is at the device's own density.`;
 }

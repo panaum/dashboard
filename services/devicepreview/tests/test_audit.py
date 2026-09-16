@@ -23,7 +23,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
-from devicepreview import SHOT_LIMIT_PX, capture_height, load_devices  # noqa: E402
+from devicepreview import SHOT_LIMIT_PX, capture_height, full_page_capture, load_devices  # noqa: E402
 FIX = ROOT / "fixtures"
 TOUCH = "iphone-16"            # hasTouch: tap rules apply
 DESKTOP = "desktop-1440-chrome"  # no touch: tap rules must stay silent
@@ -220,6 +220,23 @@ class CaptureHeight(unittest.TestCase):
         self.assertGreaterEqual(capture_height(5000, 0), 1)
         self.assertGreaterEqual(capture_height(0, 3), 1)
         self.assertGreaterEqual(capture_height(-10, 3), 1)
+
+    def test_a_page_too_tall_for_its_density_is_captured_whole_at_1x(self):
+        # The sharper capture while the page fits.
+        for sh, dpr in ((2556, 3), (1200, 3), (9000, 2), (16000, 1)):
+            self.assertEqual(full_page_capture(sh, dpr), (sh, "device"), f"{sh} at {dpr}x")
+        # Past that, the whole page at 1x rather than part of it at 3x. These
+        # are real pages: wbiwarm.com/wbi-mechanical-systems/ on the 3x iPhones.
+        for sh in (19588, 19112, 18960):
+            self.assertEqual(full_page_capture(sh, 3), (sh, "css"), sh)
+        self.assertEqual(full_page_capture(20000, 2), (20000, "css"))
+        # Whatever the scale, the file the engine is asked for stays inside the limit.
+        for sh, dpr in ((19588, 3), (40000, 3), (40000, 2), (99999, 3)):
+            h, scale = full_page_capture(sh, dpr)
+            self.assertLessEqual(h * (1 if scale == "css" else dpr), SHOT_LIMIT_PX, f"{sh} at {dpr}x")
+        # Taller than any image can be, at any scale: cut short, and said so.
+        h, scale = full_page_capture(40000, 3)
+        self.assertLess(h, 40000)
 
 
 class RuleConfig(unittest.TestCase):

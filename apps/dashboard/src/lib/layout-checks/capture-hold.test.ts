@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { captureHold, holdNote, undrawnLabel } from "./capture-hold";
+import { captureHold, holdNote, softCaptureNote, undrawnLabel } from "./capture-hold";
 
 // The numbers are a real run: wbiwarm.com/wbi-mechanical-systems/ on the three
 // 3x iPhone profiles, 2026-09-16. Every one of them stops at the same place,
@@ -47,4 +47,15 @@ test("the note says where it stops, how long the page is, and why", () => {
 test("a finding with no picture says which of the two reasons it is", () => {
   assert.match(undrawnLabel({ shown: 10919, page: 19588 }), /below where the capture stops/);
   assert.match(undrawnLabel(null), /not stored/);
+});
+
+test("a page captured at 1x to fit says so, and nothing is said about the rest", () => {
+  // The same run: 19,588px at 3x does not fit, so the capture drops to 1x.
+  assert.equal(softCaptureNote("css", 19588),
+    "Full page captured at 1x so all 19,588px of it fit — the first screen is at the device's own density.");
+  // The height is a nicety, not a requirement.
+  assert.match(softCaptureNote("css", null) ?? "", /^Full page captured at 1x — /);
+  for (const scale of ["device", null, undefined, ""]) {
+    assert.equal(softCaptureNote(scale, 19588), null, String(scale));
+  }
 });
