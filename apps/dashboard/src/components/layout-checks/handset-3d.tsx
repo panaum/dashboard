@@ -195,6 +195,15 @@ export function Handset3d({
       // Unmounted while the model was on its way: everything else is already
       // released, so this is the only thing left to free.
       if (!alive) { disposeScene(model); return; }
+      // A model exported facing away is turned once here, before anything is
+      // measured: width, height and depth only mean what they say once the
+      // screen faces the reader, and everything below is measured in those
+      // terms — the camera fit, the shadow, and the screen's own proportions.
+      // (The iPhone 17 Pro Max is modelled lying on its side. Measured before
+      // the turn, its "width" is the body's depth and its screen is 0.001
+      // wide: the capture was cropped to a single column of pixels and the
+      // screen rendered blank.)
+      model.rotation.set(0, (turn * Math.PI) / 180, 0, "XYZ");
       const box = new T.Box3().setFromObject(model);
       const size = box.getSize(new T.Vector3());
       model.position.sub(box.getCenter(new T.Vector3()));
@@ -213,6 +222,8 @@ export function Handset3d({
         if (m.isMesh && !Array.isArray(m.material) && m.material.name === SCREEN_MATERIAL) screenMesh = m;
       });
       if (!screenMesh) throw new Error(`model-has-no-${SCREEN_MATERIAL}-material`);
+      // Measured with the model turned, so x is the screen's width and y its
+      // height. models-3d.test.ts holds every registry entry to that.
       const screenBox = new T.Box3().setFromObject(screenMesh).getSize(new T.Vector3());
       const screenAspect = screenBox.x / screenBox.y;
       // Double-sided: a model's screen mesh may be authored facing either way,
@@ -223,9 +234,8 @@ export function Handset3d({
       (mesh.material as THREE.Material).dispose();
       mesh.material = screenMat;
 
-      // A model exported facing away is turned once here, inside the pivot, so
-      // "facing front" still means pose zero for every handset.
-      model.rotation.set(0, (turn * Math.PI) / 180, 0, "XYZ");
+      // The model sits inside the pivot already turned, so "facing front"
+      // still means pose zero for every handset.
       const pivot = new T.Group();
       pivot.add(model);
       scene.add(pivot);
