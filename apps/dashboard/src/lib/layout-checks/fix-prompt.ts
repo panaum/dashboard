@@ -28,6 +28,8 @@ export type PromptFinding = {
   severity?: "error" | "warn" | "info";
   /** "9 of 14 devices", where the run knows. */
   reach?: string | null;
+  /** "new" this run, or "still" there from the last one. */
+  since?: "new" | "still" | null;
 };
 
 export type PromptContext = {
@@ -51,6 +53,8 @@ function block(f: PromptFinding, n: number): string {
   if (f.why) lines.push(`   Why it matters: ${f.why}`);
   if (f.fix) lines.push(`   Usual fix: ${f.fix}`);
   if (f.reach) lines.push(`   Seen on: ${f.reach}`);
+  if (f.since === "new") lines.push("   Since: new this run");
+  else if (f.since === "still") lines.push("   Since: reported on the last run too");
   return lines.join("\n");
 }
 

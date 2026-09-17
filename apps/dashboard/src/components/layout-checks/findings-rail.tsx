@@ -11,6 +11,7 @@ import { pinNumber, pinsFor, type Pin } from "@/lib/layout-checks/pins";
 import { undrawnLabel, type Hold } from "@/lib/layout-checks/capture-hold";
 import { fixPrompt } from "@/lib/layout-checks/fix-prompt";
 import { imagePlan, INK } from "@/lib/layout-checks/finding-image";
+import type { Since } from "@/lib/layout-checks/run-diff";
 import { reachLabel, reachTone, type Reach } from "@/lib/layout-checks/reach";
 import { allFindingsText, findingText, type CopyFinding } from "@/lib/layout-checks/copy-finding";
 import { boxWithin, cropFor, cropStyle, type Box } from "@/lib/layout-checks/crop";
@@ -188,6 +189,7 @@ export function FindingsRail({
   where,
   url,
   reachOf,
+  sinceOf,
   showPins = true,
   thumbs = null,
   alsoOn,
@@ -221,6 +223,8 @@ export function FindingsRail({
   url?: string;
   /** How many audited devices carry this same finding. */
   reachOf?: (item: RailItem) => Reach | null;
+  /** New this run, or reported last run too. Null without a previous run. */
+  sinceOf?: (item: RailItem) => Since | null;
   /** Numbers, matching the pins drawn on the capture. Off where nothing is drawn. */
   showPins?: boolean;
   /** The capture the frame is showing, so a row can carry a crop of its
@@ -260,7 +264,7 @@ export function FindingsRail({
       const help = explain(kind, it.rule);
       return { label: it.label, message: it.detail || it.message, selector: it.selector,
                pageLevel: it.pageLevel, why: help?.why, fix: help?.fix, severity: it.severity,
-               reach: reachLabel(reachOf?.(it) ?? null) };
+               reach: reachLabel(reachOf?.(it) ?? null), since: sinceOf?.(it) ?? null };
     }),
     { url: url ?? "", where: where ?? deviceLabel },
   );
@@ -311,6 +315,7 @@ export function FindingsRail({
           const n = pinNumber(pins, it.id);
           const reach = reachOf?.(it) ?? null;
           const reachWords = reachLabel(reach);
+          const since = sinceOf?.(it) ?? null;
           const wide = reachTone(reach) === "wide";
           // The finding has a measured place on the page; what is missing is
           // the image to draw it on. Say that, and do not offer a click that
@@ -404,6 +409,12 @@ export function FindingsRail({
                 {/* Its own line, so every row has the same shape whatever the
                     label's length — inline, it ran beside a short label and
                     wrapped under a long one. */}
+                {/* "new" is the one word worth a row's attention: a fault
+                    that was not there last run. "still there" is every other
+                    row, and saying it on each would say nothing. */}
+                {since === "new" && (
+                  <span className="rounded-full bg-accent/10 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-accent">new</span>
+                )}
                 {reachWords && (
                   <span className={cn("text-[11px] leading-4 text-text-secondary", wide ? "font-semibold" : "font-medium")}>
                     {reachWords}

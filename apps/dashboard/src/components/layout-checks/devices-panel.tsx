@@ -22,6 +22,7 @@ import { explain } from "@/lib/layout-checks/explain";
 import { fixPrompt, mergePageFindings } from "@/lib/layout-checks/fix-prompt";
 import { pinsFor } from "@/lib/layout-checks/pins";
 import { auditedCount, devicesWith, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
+import { sinceOf, type RunDiff, type Since } from "@/lib/layout-checks/run-diff";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
 import { frameNote, type RunProvenance } from "@/lib/layout-checks/provenance";
 import { runScheme } from "@/lib/layout-checks/scheme";
@@ -62,6 +63,7 @@ export function DevicesPanel({
   verdict,
   runId,
   devices,
+  changes = null,
   storedFolds,
   liveAvailable,
   headerAction,
@@ -73,6 +75,8 @@ export function DevicesPanel({
   verdict: TabVerdict;
   runId: string | null;
   devices: DeviceInput[];
+  /** Which faults moved since the last run, keyed as reach.ts keys them. */
+  changes?: RunDiff | null;
   storedFolds: string[];
   /** The preview service is configured, so full-page images may still be served live. */
   liveAvailable: boolean;
@@ -200,6 +204,9 @@ export function DevicesPanel({
     const n = reach.get(reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined));
     return n ? { devices: n, audited } : null;
   };
+  // New this run, or reported last run too — the row says which.
+  const sinceFor = (it: { rule: string; selector: string | null; pageLevel: boolean }): Since | null =>
+    sinceOf(changes, reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined));
   // The other devices carrying the same finding, by name, for the open row.
   const alsoOn = (it: { rule: string; selector: string | null; pageLevel: boolean }): string[] =>
     devicesWith(devices, reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined)).filter((l) => l !== current?.label);
@@ -645,6 +652,7 @@ const picker = views.length ? (
         where={`${current.label} · ${current.engineLabel} · ${current.viewportLabel}`}
         url={url}
         reachOf={reachOf}
+        sinceOf={sinceFor}
         alsoOn={alsoOn}
         thumbs={showLive ? null : { src: shownSrc, pageWidth: current.viewport.width, pageHeight: imageMeta?.cssHeight ?? null }}
       />

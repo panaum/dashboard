@@ -15,6 +15,9 @@ export type TabVerdict = {
   tone: Tone;
   /** "1 fewer than the last run, 4 hours ago" — null on a first run. */
   compare: string | null;
+  /** "Since the last run: 3 fixed · 1 new · 12 still there" — null on a
+   *  first run, and null when the faults are the same ones (see run-diff.ts). */
+  changes?: string | null;
 };
 
 export type ProblemCounts = { errors: number; warnings: number; checkedAt: string };

@@ -13,6 +13,7 @@ import { devicePreviewConfigured } from "@/lib/devicepreview/client";
 import type { DpReport } from "@/lib/devicepreview/history";
 import { devicesVerdict, viewportsVerdict } from "@/lib/layout-checks/verdict";
 import { runScheme, schemeWords } from "@/lib/layout-checks/scheme";
+import { changesLine, diffDevices, diffViewports } from "@/lib/layout-checks/run-diff";
 import type { ResponsiveFinding } from "@/lib/linkspy/responsive-view";
 import type { ViewportFinding } from "@/lib/layout-checks/viewports-view";
 
@@ -55,7 +56,13 @@ export default async function LayoutSitePage({
   const asViewportsRun = (r: typeof vCur | undefined) => r
     ? { findings: r.findings as unknown as ResponsiveFinding[], widths: r.shots.map((s) => s.width), checkedAt: r.checkedAt.toISOString() }
     : null;
-  const vVerdict = viewportsVerdict(asViewportsRun(vCur), asViewportsRun(vPrev));
+  // Which faults moved since the last run, not only how many: a fix that
+  // landed and a fault that arrived are different news with the same count.
+  const vChanges = diffViewports(
+    (vCur?.findings ?? []) as unknown as ResponsiveFinding[],
+    vPrev ? (vPrev.findings as unknown as ResponsiveFinding[]) : null,
+  );
+  const vVerdict = { ...viewportsVerdict(asViewportsRun(vCur), asViewportsRun(vPrev)), changes: changesLine(vChanges) };
   const widths = vCur?.shots.map((s) => s.width) ?? [];
 
   const viewportsPanel = (
@@ -63,6 +70,7 @@ export default async function LayoutSitePage({
       verdict={vVerdict}
       runId={vCur?.id ?? null}
       findings={(vCur?.findings ?? []) as unknown as ViewportFinding[]}
+      changes={vChanges}
       widths={widths}
       url={site.url}
       trend={site.runs.map((r) => ({ checkedAt: r.checkedAt.toISOString(), errors: r.failCount }))}
@@ -74,7 +82,11 @@ export default async function LayoutSitePage({
   const [dCur, dPrev] = site.devicePreviews;
   const asDevicesRun = (r: typeof dCur | undefined) => r
     ? { report: r.report as unknown as DpReport, checkedAt: r.checkedAt.toISOString() } : null;
-  const dVerdict = devicesVerdict(asDevicesRun(dCur), asDevicesRun(dPrev));
+  const dChanges = diffDevices(
+    ((dCur?.report as unknown as DpReport | undefined)?.devices ?? []).map((d) => ({ status: d.status, findings: d.findings ?? [] })),
+    dPrev ? ((dPrev.report as unknown as DpReport).devices ?? []).map((d) => ({ status: d.status, findings: d.findings ?? [] })) : null,
+  );
+  const dVerdict = { ...devicesVerdict(asDevicesRun(dCur), asDevicesRun(dPrev)), changes: changesLine(dChanges) };
   const dReport = dCur ? (dCur.report as unknown as DpReport) : null;
   const deviceInputs: DeviceInput[] = (dReport?.devices ?? []).map((d) => ({
     ...(d as DeviceInput),
@@ -86,6 +98,7 @@ export default async function LayoutSitePage({
       verdict={dVerdict}
       runId={dCur?.id ?? null}
       devices={deviceInputs}
+      changes={dChanges}
       provenance={{ backend: dReport?.backend ?? null, host: dReport?.host ?? null }}
       storedFolds={dCur?.shots.map((s) => s.profileId) ?? []}
       liveAvailable={devicePreviewConfigured()}

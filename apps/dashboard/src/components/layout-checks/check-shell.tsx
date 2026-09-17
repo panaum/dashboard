@@ -74,11 +74,14 @@ export function VerdictLine({ verdict, chips, trend }: { verdict: TabVerdict; ch
         <span className="flex h-8 shrink-0 items-center"><Icon className="size-6" strokeWidth={2} aria-hidden /></span>
         <span className="min-w-0 text-balance">{verdict.headline}</span>
       </p>
-      {(verdict.compare || chips || hasTrend) && (
+      {(verdict.compare || verdict.changes || chips || hasTrend) && (
         <div className="flex flex-col gap-4 @3xl:flex-row @3xl:items-start @3xl:justify-between">
           {/* Indented to the verdict's text, past the 24px mark and its 8px gap. */}
           <div className="flex min-w-0 flex-col gap-2 pl-8">
             {verdict.compare && <p className="text-[13px] leading-5 text-text-secondary">{verdict.compare}</p>}
+            {/* Which faults moved, not just how many — the count line above
+                cannot tell four fixed and four new from nothing happening. */}
+            {verdict.changes && <p className="text-[13px] leading-5 text-text-primary">{verdict.changes}</p>}
             {/* Counts in words, not pills: the tone is on the number. */}
             {chips && <p className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] leading-5 text-text-secondary">{chips}</p>}
           </div>
