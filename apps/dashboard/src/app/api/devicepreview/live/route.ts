@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
   const runId = p.get("runId") ?? "";
   const profile = p.get("profile") ?? "";
   const kind = p.get("kind") ?? "full";
+  // "dark" names the image a dark run stored; anything else is the default.
+  const scheme = p.get("scheme") === "dark" ? "dark" : "light";
   const width = Math.min(1600, Math.max(300, Number(p.get("w") ?? 900) || 900));
   if (!runId || !/^[A-Za-z0-9_-]+$/.test(profile) || !KINDS.has(kind)) {
     return NextResponse.json({ error: "runId, profile and kind=full|fold required" }, { status: 400 });
@@ -27,7 +29,7 @@ export async function GET(req: NextRequest) {
   if (!run) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (!configured()) return NextResponse.json({ unavailable: true }, { status: 503 });
   const base = (process.env.DEVICEPREVIEW_URL || "").replace(/\/$/, "");
-  const target = `${base}/api/devicepreview/image?run_id=${encodeURIComponent(run.serviceRunId)}&profile=${encodeURIComponent(profile)}&kind=${kind}&max_width=${width}`;
+  const target = `${base}/api/devicepreview/image?run_id=${encodeURIComponent(run.serviceRunId)}&profile=${encodeURIComponent(profile)}&kind=${kind}&max_width=${width}${scheme === "dark" ? "&scheme=dark" : ""}`;
   try {
     const upstream = await fetch(target, {
       headers: { Authorization: `Bearer ${process.env.DEVICEPREVIEW_KEY || ""}` },

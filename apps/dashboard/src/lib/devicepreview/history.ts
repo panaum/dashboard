@@ -20,6 +20,8 @@ export type DpDevice = {
   platform: string;
   status: string;
   error?: string | null;
+  /** "dark" when the page was rendered with prefers-color-scheme: dark (see scheme.ts). */
+  color_scheme?: string | null;
   findings: { severity: string; rule: string; message: string; selector?: string; scope?: string }[];
   diff?: { percent?: number; regressed?: boolean; missing?: boolean } | null;
   images?: Record<string, string>;

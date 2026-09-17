@@ -183,7 +183,7 @@ export async function saveDevicePreviewRun(input: {
     if (!d.images?.fold) continue;
     try {
       const res = await fetch(
-        `${base}/api/devicepreview/image?run_id=${encodeURIComponent(input.serviceRunId)}&profile=${encodeURIComponent(d.profile_id)}&kind=fold&max_width=${FOLD_JPEG_WIDTH}`,
+        `${base}/api/devicepreview/image?run_id=${encodeURIComponent(input.serviceRunId)}&profile=${encodeURIComponent(d.profile_id)}&kind=fold&max_width=${FOLD_JPEG_WIDTH}${d.color_scheme === "dark" ? "&scheme=dark" : ""}`,
         { headers, signal: AbortSignal.timeout(20000), cache: "no-store" },
       );
       if (!res.ok) continue;

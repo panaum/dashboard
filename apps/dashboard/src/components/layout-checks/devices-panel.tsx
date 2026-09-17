@@ -22,6 +22,7 @@ import { pinsFor } from "@/lib/layout-checks/pins";
 import { auditedCount, devicesWith, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
 import { frameNote, type RunProvenance } from "@/lib/layout-checks/provenance";
+import { runScheme } from "@/lib/layout-checks/scheme";
 import { captureHold, holdNote, softCaptureNote } from "@/lib/layout-checks/capture-hold";
 import { ms } from "@/lib/layout-checks/motion";
 import { LiveSession } from "@/components/layout-checks/live-session";
@@ -76,7 +77,7 @@ export function DevicesPanel({
   /** Shown beside the verdict when there is no run control to put there. */
   headerAction?: ReactNode;
   /** Present when the preview service is configured: the panel hosts the runner. */
-  run?: { baselineServiceRunId: string | null; hasRuns: boolean };
+  run?: { baselineServiceRunId: string | null; darkBaselineServiceRunId?: string | null; hasRuns: boolean };
   url: string;
   /** Errors per run, newest first, for the trend beside the verdict. */
   trend?: TrendPoint[];
@@ -244,8 +245,10 @@ export function DevicesPanel({
   // will fail is a blank frame for as long as it takes to fail.
   // The fold is ours and fast; the full page is the service's and slow. Ask
   // for the fold, and let the frame upgrade to the full page behind it.
+  // A dark run's images live under another name on the service (scheme.ts).
+  const scheme = runScheme({ devices });
   const srcFor = (profileId: string) => ({
-    live: runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(profileId)}&kind=full` : null,
+    live: runId && liveAvailable ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(profileId)}&kind=full${scheme === "dark" ? "&scheme=dark" : ""}` : null,
     fold: runId && stored.has(profileId) ? `/api/devicepreview/shot?runId=${runId}&profile=${encodeURIComponent(profileId)}` : null,
   });
   const src = current ? srcFor(current.profileId) : { live: null, fold: null };
@@ -644,7 +647,7 @@ const picker = views.length ? (
       trend={trend}
       matrix={matrix}
       headerAction={run
-        ? <DevicePreviewRunner url={url} baselineServiceRunId={run.baselineServiceRunId} hasRuns={run.hasRuns} onProgress={setProgress} />
+        ? <DevicePreviewRunner url={url} baselineServiceRunId={run.baselineServiceRunId} darkBaselineServiceRunId={run.darkBaselineServiceRunId ?? null} hasRuns={run.hasRuns} onProgress={setProgress} />
         : headerAction}
       picker={picker}
       frame={frame}
