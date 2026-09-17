@@ -30,6 +30,9 @@ export type PromptFinding = {
   reach?: string | null;
   /** "new" this run, or "still" there from the last one. */
   since?: "new" | "still" | null;
+  /** How it has behaved over the last runs (stability.ts) — a fixture is
+   *  pressure, a flap is a warning not to chase it. */
+  history?: string | null;
 };
 
 export type PromptContext = {
@@ -55,6 +58,7 @@ function block(f: PromptFinding, n: number): string {
   if (f.reach) lines.push(`   Seen on: ${f.reach}`);
   if (f.since === "new") lines.push("   Since: new this run");
   else if (f.since === "still") lines.push("   Since: reported on the last run too");
+  if (f.history) lines.push(`   History: ${f.history}`);
   return lines.join("\n");
 }
 

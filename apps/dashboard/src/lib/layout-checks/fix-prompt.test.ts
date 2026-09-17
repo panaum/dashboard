@@ -143,3 +143,9 @@ test("an item says whether it is new or has been waiting since the last run", ()
   // Without a previous run there is no line at all.
   assert.doesNotMatch(fixPrompt([RUN[1]], CTX), /Since:/);
 });
+
+test("an item carries how it has behaved over the last runs", () => {
+  const p = fixPrompt([{ ...RUN[1], history: "In every one of the last 6 runs, since 11 Sept." }], CTX);
+  assert.match(p, /History: In every one of the last 6 runs, since 11 Sept\./);
+  assert.doesNotMatch(fixPrompt([RUN[1]], CTX), /History:/);
+});
