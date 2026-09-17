@@ -18,6 +18,8 @@ import { HealthMatrix } from "@/components/layout-checks/health-matrix";
 import { coverage } from "@/lib/layout-checks/matrix";
 import type { TrendPoint } from "@/lib/layout-checks/sparkline";
 import { railItems } from "@/lib/layout-checks/findings-view";
+import { explain } from "@/lib/layout-checks/explain";
+import { fixPrompt, mergePageFindings } from "@/lib/layout-checks/fix-prompt";
 import { pinsFor } from "@/lib/layout-checks/pins";
 import { auditedCount, devicesWith, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
@@ -183,6 +185,16 @@ export function DevicesPanel({
   // the whole site. Computed from every audited device in this run.
   const reach = useMemo(() => reachMap(devices), [devices]);
   const audited = useMemo(() => auditedCount(devices), [devices]);
+  // One instruction for the whole page rather than one per device: the same
+  // fault is on most of the fourteen, and asking for it fourteen times is
+  // noise. Built here because only the page has every device's findings.
+  const pagePrompt = useMemo(() => fixPrompt(
+    mergePageFindings(
+      devices.filter((d) => d.status === "ok").map((d) => ({ device: d.label, items: railItems(d.findings) })),
+      (rule) => explain("device", rule),
+    ),
+    { url, where: `all ${audited} device profiles` },
+  ), [devices, audited, url]);
   const reachOf = (it: { rule: string; selector: string | null; pageLevel: boolean }): Reach | null => {
     const n = reach.get(reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined));
     return n ? { devices: n, audited } : null;
@@ -626,6 +638,7 @@ const picker = views.length ? (
         drawableHeight={imageMeta?.cssHeight ?? null}
         hold={hold}
         loading={frameLoading}
+        prompt={pagePrompt}
         where={`${current.label} · ${current.engineLabel} · ${current.viewportLabel}`}
         url={url}
         reachOf={reachOf}
