@@ -1,0 +1,92 @@
+// THE WHOLE RUN, AS ONE INSTRUCTION.
+//
+// "Copy all" writes the findings out for a person to read — Slack, a ticket, an
+// email. This writes the same findings out for whoever (or whatever) builds the
+// page to act on in one pass: the page, the measurements, what each one costs a
+// visitor, and the rules a fix has to respect. Most of these pages are built
+// with an assistant, so the shortest path from "the tool found this" to "the
+// page is fixed" is a prompt that can be pasted straight in.
+//
+// It is deliberately not chatty. Every line is either a measurement the tool
+// actually took or a constraint on the fix; nothing is invented to fill it out,
+// and the usual fix is offered as a starting point rather than an instruction,
+// because the tool measures pages and does not know their source.
+//
+// Pure, so the wording is tested without a clipboard.
+
+export type PromptFinding = {
+  /** "Tap target 77 × 14". */
+  label: string;
+  /** The tool's own sentence, with the numbers in it. */
+  message?: string;
+  selector: string | null;
+  pageLevel?: boolean;
+  why?: string;
+  fix?: string;
+  severity?: "error" | "warn" | "info";
+  /** "9 of 14 devices", where the run knows. */
+  reach?: string | null;
+};
+
+export type PromptContext = {
+  /** The page under test. */
+  url: string;
+  /** "Samsung Galaxy S25 · Chromium · 412 × 892", or "470px · Phone". */
+  where: string;
+};
+
+const RULES = [
+  "Change the smallest thing that makes each measurement pass. Copy, content and structure stay as they are unless the finding is about them.",
+  "The same page is checked at other widths and on other devices: a fix at this size must not break another one.",
+  "Each item gives what was measured and why it matters. The usual fix is a starting point, not an instruction — this came from measuring the rendered page, not from reading its source, so if the page needs something else, do that instead.",
+  "If an item is deliberate and right as it is, leave it and say so.",
+];
+
+function block(f: PromptFinding, n: number): string {
+  const lines = [`${n}. ${f.label}`];
+  lines.push(`   Element: ${f.pageLevel ? "the page as a whole" : (f.selector ?? "not recorded")}`);
+  if (f.message && f.message !== f.label) lines.push(`   Measured: ${f.message}`);
+  if (f.why) lines.push(`   Why it matters: ${f.why}`);
+  if (f.fix) lines.push(`   Usual fix: ${f.fix}`);
+  if (f.reach) lines.push(`   Seen on: ${f.reach}`);
+  return lines.join("\n");
+}
+
+/**
+ * The prompt, or "" when there is nothing to say — the button that copies this
+ * is hidden in that case rather than offering an empty clipboard.
+ */
+export function fixPrompt(findings: PromptFinding[], ctx: PromptContext): string {
+  const fix = findings.filter((f) => f.severity !== "info");
+  const notes = findings.filter((f) => f.severity === "info");
+  if (!fix.length && !notes.length) return "";
+
+  const out: string[] = [];
+  out.push(fix.length
+    ? `This page was checked on real device sizes and ${fix.length === 1 ? "one thing needs" : `${fix.length} things need`} fixing.`
+    : "This page was checked on real device sizes and nothing is failing. The notes below are for information.");
+  out.push("");
+  out.push(`Page: ${ctx.url}`);
+  out.push(`Measured on: ${ctx.where}`);
+  out.push("");
+
+  if (fix.length) {
+    out.push("How to fix:");
+    for (const rule of RULES) out.push(`- ${rule}`);
+    out.push("");
+    out.push(fix.length === 1 ? "The finding:" : "The findings:");
+    out.push("");
+    fix.forEach((f, i) => { out.push(block(f, i + 1)); out.push(""); });
+  }
+
+  if (notes.length) {
+    out.push("Also noted, not necessarily to fix:");
+    out.push("");
+    notes.forEach((f, i) => { out.push(block(f, i + 1)); out.push(""); });
+  }
+
+  if (fix.length) {
+    out.push("When you are done, say which of these you changed and which you left, one line each.");
+  }
+  return out.join("\n").trimEnd() + "\n";
+}
