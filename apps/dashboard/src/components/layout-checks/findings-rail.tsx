@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, CheckCircle2, Copy, Wand2 } from "lucide-react";
+import { Check, CheckCircle2, Copy, Image as ImageIcon, Wand2 } from "lucide-react";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { explain } from "@/lib/layout-checks/explain";
@@ -10,9 +10,10 @@ import { SectionHeading } from "@/components/layout-checks/check-shell";
 import { pinNumber, pinsFor, type Pin } from "@/lib/layout-checks/pins";
 import { undrawnLabel, type Hold } from "@/lib/layout-checks/capture-hold";
 import { fixPrompt } from "@/lib/layout-checks/fix-prompt";
+import { imagePlan, INK } from "@/lib/layout-checks/finding-image";
 import { reachLabel, reachTone, type Reach } from "@/lib/layout-checks/reach";
 import { allFindingsText, findingText, type CopyFinding } from "@/lib/layout-checks/copy-finding";
-import { boxWithin, cropFor, cropStyle } from "@/lib/layout-checks/crop";
+import { boxWithin, cropFor, cropStyle, type Box } from "@/lib/layout-checks/crop";
 import { checkFor } from "@/lib/layout-checks/matrix";
 import { viewLink } from "@/lib/layout-checks/deep-link";
 
@@ -95,6 +96,78 @@ function CopyButton({ text, label, className, icon, title }: {
     >
       {state === "done" ? <Check className="size-3.5" aria-hidden /> : (icon ?? <Copy className="size-3.5" aria-hidden />)}
       {state === "done" ? "Copied" : state === "failed" ? "Copy failed" : label}
+    </button>
+  );
+}
+
+// The row's picture, larger, on the clipboard: the element outlined on the
+// page around it with its number, and a line underneath saying what and
+// where — so it explains itself in the chat or the ticket it lands in. Drawn
+// from the same capture the row's thumbnail is cut from, which is our own
+// route, so the canvas is not tainted and can be read back out.
+//
+// The ClipboardItem is created inside the click with a promise for its data:
+// the drawing needs the image to load first, and Safari only honours a write
+// that was started by the gesture.
+function CopyImageButton({ src, box, pageWidth, pageHeight, pin, severity, caption }: {
+  src: string; box: Box; pageWidth: number; pageHeight: number | null;
+  pin: number | null; severity: RailFinding["severity"]; caption: string;
+}) {
+  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
+  const render = async (): Promise<Blob> => {
+    const img = new window.Image();
+    img.decoding = "async";
+    await new Promise<void>((ok, fail) => { img.onload = () => ok(); img.onerror = () => fail(new Error("capture")); img.src = src; });
+    const plan = imagePlan(box, { width: pageWidth, height: pageHeight }, { width: img.naturalWidth, height: img.naturalHeight });
+    if (!plan) throw new Error("below the capture");
+    const BAR = 44;
+    const canvas = document.createElement("canvas");
+    canvas.width = plan.width; canvas.height = plan.height + BAR;
+    const g = canvas.getContext("2d");
+    if (!g) throw new Error("canvas");
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, canvas.width, canvas.height);
+    g.imageSmoothingQuality = "high";
+    g.drawImage(img, plan.source.x, plan.source.y, plan.source.width, plan.source.height, 0, 0, plan.width, plan.height);
+    // The outline: ink over a white halo, so it reads on any page.
+    const o = plan.outline;
+    g.lineWidth = 6; g.strokeStyle = "rgba(255,255,255,0.9)"; g.strokeRect(o.left - 2, o.top - 2, Math.max(8, o.width + 4), Math.max(8, o.height + 4));
+    g.lineWidth = 2.5; g.strokeStyle = INK[severity]; g.strokeRect(o.left - 2, o.top - 2, Math.max(8, o.width + 4), Math.max(8, o.height + 4));
+    if (pin !== null) {
+      const r = 13, cx = Math.max(r + 2, plan.pin.x), cy = Math.max(r + 2, plan.pin.y);
+      g.beginPath(); g.arc(cx, cy, r + 2, 0, Math.PI * 2); g.fillStyle = "#ffffff"; g.fill();
+      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fillStyle = INK[severity]; g.fill();
+      g.fillStyle = "#ffffff"; g.font = "bold 13px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(String(pin), cx, cy + 0.5);
+    }
+    // The line under the picture: what this is and where it was measured.
+    g.fillStyle = "#ffffff"; g.fillRect(0, plan.height, canvas.width, BAR);
+    g.fillStyle = "#e6e6ee"; g.fillRect(0, plan.height, canvas.width, 1);
+    g.fillStyle = "#1c1c2e"; g.font = "600 14px system-ui, sans-serif"; g.textAlign = "left"; g.textBaseline = "middle";
+    g.fillText(caption, 16, plan.height + BAR / 2, canvas.width - 32);
+    return new Promise<Blob>((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error("png"))), "image/png"));
+  };
+  const copy = async () => {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": render() })]);
+      setState("done");
+    } catch {
+      setState("failed");
+    }
+    window.setTimeout(() => setState("idle"), 1800);
+  };
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title="The element outlined on the page around it, as a picture — for Slack or a ticket."
+      className={cn(
+        "inline-flex h-8 items-center gap-2 rounded-full border border-border-soft px-4 text-[11px] font-medium text-text-secondary transition-colors hover:bg-card hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-text-primary",
+        state === "done" && "border-success/40 text-success-strong",
+        state === "failed" && "border-error/40 text-error-strong",
+      )}
+    >
+      {state === "done" ? <Check className="size-3.5" aria-hidden /> : <ImageIcon className="size-3.5" aria-hidden />}
+      {state === "done" ? "Copied" : state === "failed" ? "Copy failed" : "Copy as image"}
     </button>
   );
 }
@@ -372,6 +445,11 @@ export function FindingsRail({
                     {on && url && (
                       <span className="flex flex-wrap gap-2">
                         <CopyButton text={copyOne(it)} label="Copy for the developer" />
+                        {thumbs?.src && it.box && !it.pageLevel && (
+                          <CopyImageButton src={thumbs.src} box={it.box} pageWidth={thumbs.pageWidth} pageHeight={thumbs.pageHeight}
+                                           pin={n} severity={it.severity}
+                                           caption={`${n !== null ? `#${n} · ` : ""}${it.label}${where ? ` · ${where}` : ""}`} />
+                        )}
                         <CopyButton text={viewLink({ finding: it.id }) ?? ""} label="Copy link" />
                       </span>
                     )}
