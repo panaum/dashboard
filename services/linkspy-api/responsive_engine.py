@@ -530,6 +530,52 @@ SHOT_QUALITY = 62            # at SHOT_DPR
 SHOT_QUALITY_CSS = 72        # at CSS scale, unchanged from before
 SHOT_MAX_PX = 32760          # Chromium refuses to encode an image taller than this
 
+# Images finish loading after the layout readings are taken, and a capture shot
+# without them is a page of white boxes. Two separate reasons, both seen on real
+# client pages:
+#
+#   · the big ones are still in flight. wbiwarm.com's 1400x788 diagram is the
+#     largest file on its page, so it is last to arrive and was the one picture
+#     missing from every width of a stored run.
+#   · lazy ones were never asked for. A `loading="lazy"` image below the fold
+#     does not load because a full-page capture does not scroll to it: on
+#     rhinocorentals.com eight of eighteen pictures were never even requested.
+#
+# So the same pass devicepreview has used since two of its runs differed by
+# 1-3% of pixels: walk the page to ask for the lazy ones, then wait for what is
+# in flight. Both halves are capped, because a picture that never arrives must
+# not hold a sweep of eight widths, and the page is put back at the top before
+# the shutter.
+#
+# The layout readings above are deliberately left where they are: this prepares
+# the CAPTURE and changes nothing the run reports.
+SCROLL_BUDGET_MS = 8000
+IMAGE_SETTLE_MS = 5000
+CAPTURE_READY_JS = """async ([scrollMs, imageMs]) => {
+  const doc = document.documentElement;
+  const step = Math.max(200, Math.floor(window.innerHeight * 0.9));
+  const started = Date.now();
+  let y = 0;
+  while (y < doc.scrollHeight && Date.now() - started < scrollMs) {
+    y += step;
+    window.scrollTo(0, y);
+    await new Promise(r => setTimeout(r, 100));
+  }
+  const reached = y >= doc.scrollHeight;
+  const pending = [...document.images].filter(i => !i.complete);
+  const settled = await Promise.race([
+    Promise.all(pending.map(i => new Promise(r => {
+      i.addEventListener('load', r, { once: true });
+      i.addEventListener('error', r, { once: true });
+    }))).then(() => true),
+    new Promise(r => setTimeout(() => r(false), imageMs)),
+  ]);
+  window.scrollTo(0, 0);
+  await new Promise(r => setTimeout(r, 200));
+  return { reached, awaited: pending.length, settled,
+           blank: [...document.images].filter(i => i.naturalWidth === 0).length };
+}"""
+
 
 def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
     """Sweep the eight widths. Returns (report, shots) where shots maps a width
@@ -591,6 +637,13 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
                         # instead: no sharper than before, but whole, which is
                         # the promise that matters more.
                         ph = int((data or {}).get("pageHeight") or 0)
+                        # Walk the page for its lazy pictures and wait for the
+                        # rest, then ask how tall it is (see CAPTURE_READY_JS).
+                        try:
+                            page.evaluate(CAPTURE_READY_JS, [SCROLL_BUDGET_MS, IMAGE_SETTLE_MS])
+                            ph = int(page.evaluate("document.documentElement.scrollHeight") or ph)
+                        except PWError:
+                            pass
                         fits = ph > 0 and ph * SHOT_DPR <= SHOT_MAX_PX
                         scale = "device" if fits else "css"
                         quality = SHOT_QUALITY if fits else SHOT_QUALITY_CSS
