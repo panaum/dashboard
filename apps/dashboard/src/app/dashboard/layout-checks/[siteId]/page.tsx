@@ -12,6 +12,7 @@ import type { DeviceInput } from "@/lib/layout-checks/devices-view";
 import { devicePreviewConfigured } from "@/lib/devicepreview/client";
 import type { DpReport } from "@/lib/devicepreview/history";
 import { devicesVerdict, viewportsVerdict } from "@/lib/layout-checks/verdict";
+import { runScheme, schemeWords } from "@/lib/layout-checks/scheme";
 import type { ResponsiveFinding } from "@/lib/linkspy/responsive-view";
 import type { ViewportFinding } from "@/lib/layout-checks/viewports-view";
 
@@ -91,7 +92,9 @@ export default async function LayoutSitePage({
       url={site.url}
       trend={site.devicePreviews.map((r) => ({ checkedAt: r.checkedAt.toISOString(), errors: r.errorCount + r.regressedCount }))}
       run={devicePreviewConfigured()
-        ? { baselineServiceRunId: dCur?.serviceRunId ?? null, hasRuns: Boolean(dCur) }
+        ? { baselineServiceRunId: dCur?.serviceRunId ?? null, hasRuns: Boolean(dCur),
+            // A dark run diffs against the last dark run, not the last run.
+            darkBaselineServiceRunId: site.devicePreviews.find((r) => runScheme(r.report as unknown as DpReport) === "dark")?.serviceRunId ?? null }
         : undefined}
       headerAction={<p className="text-[12px] text-text-muted">Device preview is not configured on this deployment.</p>}
     />
@@ -110,7 +113,7 @@ export default async function LayoutSitePage({
     })),
     ...site.devicePreviews.map((r, i) => ({
       id: r.id, kind: "Devices" as const, checkedAt: r.checkedAt.toISOString(), worst: r.worst,
-      summary: `${r.deviceCount} devices · ${r.errorCount} error${r.errorCount === 1 ? "" : "s"} · ${r.warnCount} warning${r.warnCount === 1 ? "" : "s"}${r.regressedCount ? ` · ${r.regressedCount} regressed` : ""}`,
+      summary: `${r.deviceCount} devices · ${r.errorCount} error${r.errorCount === 1 ? "" : "s"} · ${r.warnCount} warning${r.warnCount === 1 ? "" : "s"}${r.regressedCount ? ` · ${r.regressedCount} regressed` : ""}${schemeWords(runScheme(r.report as unknown as DpReport)) ? ` · ${schemeWords(runScheme(r.report as unknown as DpReport))}` : ""}`,
       kept: (i < DEVICE_FULL_PAGES_KEPT ? "all" : r.shots.length > 0 ? "folds" : "none") as HistoryRow["kept"],
     })),
   ].sort((a, b) => b.checkedAt.localeCompare(a.checkedAt)).slice(0, 12);

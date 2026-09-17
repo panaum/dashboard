@@ -17,6 +17,8 @@ export type RunProvenance = {
 };
 
 export type DeviceProvenance = {
+  /** "dark" when this device rendered the page with prefers-color-scheme: dark. */
+  color_scheme?: string | null;
   fonts?: {
     appleSystemFontRequested?: boolean;
     appleSystemFontAuthentic?: boolean | null;
@@ -61,7 +63,9 @@ export function appleFonts(device: DeviceProvenance): AppleFonts {
 
 export function frameNote(device: DeviceProvenance, run: RunProvenance): FrameNote {
   const host = hostName(run.host?.platform);
-  const where = host ? `${host} capture` : "Capture host not recorded";
+  // Dark mode is a claim about what rendered, so it travels with the capture's
+  // provenance rather than with the device's name.
+  const where = (host ? `${host} capture` : "Capture host not recorded") + (device.color_scheme === "dark" ? " · dark mode" : "");
   const fonts = appleFonts(device);
 
   if (fonts === "substituted") {

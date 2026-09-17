@@ -22,17 +22,22 @@ type Scope = "primary" | "all";
 export function DevicePreviewRunner({
   url,
   baselineServiceRunId,
+  darkBaselineServiceRunId = null,
   hasRuns,
   onProgress,
 }: {
   url: string;
   baselineServiceRunId?: string | null;
+  /** The last DARK run, for a dark run to diff against — a light baseline
+   *  would report the whole page as changed. */
+  darkBaselineServiceRunId?: string | null;
   hasRuns: boolean;
   /** Hosted mode: the panel draws progress, this control just runs it. */
   onProgress?: (p: RunProgress) => void;
 }) {
   const [progress, setProgress] = useState<RunProgress>(IDLE_PROGRESS);
   const [scope, setScope] = useState<Scope>("primary");
+  const [dark, setDark] = useState(false);
   const router = useRouter();
   const hosted = Boolean(onProgress);
 
@@ -48,7 +53,9 @@ export function DevicePreviewRunner({
       const started = await (await fetch("/api/devicepreview/monitor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, scope, baseline: baselineServiceRunId ?? undefined }),
+        body: JSON.stringify({ url, scope,
+          baseline: (dark ? darkBaselineServiceRunId : baselineServiceRunId) ?? undefined,
+          ...(dark ? { color_scheme: "dark" } : {}) }),
       })).json();
       const id = started?.run_id;
       if (!id) {
@@ -86,7 +93,7 @@ export function DevicePreviewRunner({
     } catch {
       push({ phase: "failed", message: "Could not reach the preview service." });
     }
-  }, [url, scope, baselineServiceRunId, router, onProgress]);
+  }, [url, scope, dark, baselineServiceRunId, darkBaselineServiceRunId, router, onProgress]);
 
   const busy = isBusy(progress);
   const note = progressNote(progress);
@@ -104,11 +111,19 @@ export function DevicePreviewRunner({
           <option value="primary">14 primary devices</option>
           <option value="all">All 15, including the 260px canary</option>
         </select>
+        {/* A page with a dark stylesheet is a different page in the dark: its
+            own contrast, its own images, sometimes its own bugs. Off by
+            default, and a run made with it on is its own run in the history. */}
+        <label className="inline-flex items-center gap-2 text-[13px] text-text-primary">
+          <input type="checkbox" checked={dark} onChange={(e) => setDark(e.target.checked)} disabled={busy}
+                 className="size-4 rounded border-border-soft accent-accent" />
+          Dark mode
+        </label>
         <Button onClick={run} disabled={busy} variant="secondary" size="sm">
           {busy ? (
             <><RefreshCw className="size-4 animate-spin" /> Previewing…</>
           ) : (
-            <><MonitorSmartphone className="size-4" /> {hasRuns ? "Run again" : "Preview on devices"}</>
+            <><MonitorSmartphone className="size-4" /> {hasRuns ? (dark ? "Run again in dark mode" : "Run again") : (dark ? "Preview in dark mode" : "Preview on devices")}</>
           )}
         </Button>
       </div>

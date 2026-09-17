@@ -108,6 +108,21 @@ class Service(unittest.TestCase):
                                 "DEVICEPREVIEW_CONCURRENCY": "1"})
         type(self).client = TestClient(self.mod.app)
 
+    def test_a_dark_run_serves_its_own_images_and_not_a_light_one(self):
+        url = (FIX / "clean.html").resolve().as_uri()
+        r = self.client.post("/api/devicepreview/run", json={"url": url, "devices": ["galaxy-s25"], "color_scheme": "dark"}, headers=self.h)
+        self.assertEqual(r.status_code, 200, r.text); run_id = r.json()["run_id"]
+        s = _wait(self.client, run_id, self.h)
+        self.assertEqual(s["status"], "done", s)
+        rep = self.client.get("/api/devicepreview/report", params={"run_id": run_id}, headers=self.h).json()
+        self.assertEqual(rep["devices"][0].get("color_scheme"), "dark", "the report says which scheme the page was asked for")
+        dark = self.client.get("/api/devicepreview/image", params={"run_id": run_id, "profile": "galaxy-s25", "kind": "fold", "scheme": "dark", "max_width": 600}, headers=self.h)
+        self.assertEqual(dark.status_code, 200, dark.text); self.assertEqual(dark.headers["content-type"], "image/jpeg")
+        # A light image of a dark run does not exist, and must not be the dark one under another name.
+        light = self.client.get("/api/devicepreview/image", params={"run_id": run_id, "profile": "galaxy-s25", "kind": "fold", "max_width": 600}, headers=self.h)
+        self.assertEqual(light.status_code, 404)
+        self.assertEqual(self.client.get("/api/devicepreview/image", params={"run_id": run_id, "profile": "galaxy-s25", "kind": "fold", "scheme": "sepia"}, headers=self.h).status_code, 404)
+
     def test_start_poll_fetch_and_retention(self):
         url = (FIX / "clean.html").resolve().as_uri()
         r = self.client.post("/api/devicepreview/run", json={"url": url, "devices": ["galaxy-s25"]}, headers=self.h)

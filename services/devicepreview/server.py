@@ -163,8 +163,17 @@ def _index_existing() -> None:
 KINDS = ("fold", "full", "thumb", "diff")
 
 
-def _derivative_path(d: Path, profile: str, kind: str, width: int = DERIVATIVE_WIDTH, quality: int = DERIVATIVE_QUALITY) -> Path:
-    return d / profile / f"{kind}.{width}.q{quality}.jpg"
+# A run captured in dark mode writes `fold-dark.png` beside where a light run
+# writes `fold.png` (devicepreview.py's suffix), so the scheme is part of the
+# file's name here as well — asking for a light image of a dark run is a 404,
+# not the wrong picture.
+def _scheme_suffix(scheme: str) -> str:
+    return "-dark" if scheme == "dark" else ""
+
+
+def _derivative_path(d: Path, profile: str, kind: str, width: int = DERIVATIVE_WIDTH, quality: int = DERIVATIVE_QUALITY,
+                     scheme: str = "light") -> Path:
+    return d / profile / f"{kind}{_scheme_suffix(scheme)}.{width}.q{quality}.jpg"
 
 
 def _make_derivative(src: Path, dst: Path, width: int, quality: int) -> bool:
@@ -426,7 +435,7 @@ def file(run_id: str = Query(...), path: str = Query(...), authorization: str | 
 
 
 @app.get("/api/devicepreview/image")
-def image(run_id: str = Query(...), profile: str = Query(...), kind: str = Query("fold"),
+def image(run_id: str = Query(...), profile: str = Query(...), kind: str = Query("fold"), scheme: str = Query("light"),
           max_width: int = Query(1400, ge=200, le=4000), quality: int = Query(82, ge=40, le=95),
           authorization: str | None = Header(default=None), x_api_key: str | None = Header(default=None)):
     """A JPEG variant of a capture, downscaled, for the Dashboard to keep. The
@@ -434,16 +443,16 @@ def image(run_id: str = Query(...), profile: str = Query(...), kind: str = Query
     if (err := _gate(authorization, x_api_key)):
         return err
     e = _entry(run_id)
-    if not e or e["status"] != "done" or not ID_RX.match(profile) or kind not in ("fold", "full", "thumb", "diff"):
+    if not e or e["status"] != "done" or not ID_RX.match(profile) or kind not in ("fold", "full", "thumb", "diff") or scheme not in ("light", "dark"):
         return JSONResponse({"error": "not_found"}, status_code=404)
-    src = e["dir"] / profile / f"{kind}.png"
-    dst = _derivative_path(e["dir"], profile, kind, max_width, quality)
+    src = e["dir"] / profile / f"{kind}{_scheme_suffix(scheme)}.png"
+    dst = _derivative_path(e["dir"], profile, kind, max_width, quality, scheme)
     if not dst.is_file():
         if not src.is_file():
             # The originals are gone (an older run of this site) and no
             # derivative at this size was kept: the standard one is offered
             # instead, so a slightly different width never becomes a 404.
-            std = _derivative_path(e["dir"], profile, kind)
+            std = _derivative_path(e["dir"], profile, kind, scheme=scheme)
             if std.is_file():
                 return FileResponse(std, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400, immutable"})
             return JSONResponse({"error": "not_found"}, status_code=404)

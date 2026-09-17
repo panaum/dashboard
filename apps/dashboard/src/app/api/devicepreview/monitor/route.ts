@@ -47,6 +47,9 @@ export async function POST(req: NextRequest) {
     // "all" is every profile including the 260px edge-tier canary; "primary" is the fourteen real ones.
     ...(scope === "all" ? { devices: "all" } : {}),
     ...(typeof body?.baseline === "string" && body.baseline ? { baseline: body.baseline } : {}),
+    // The service renders the page with prefers-color-scheme: dark and stores
+    // the images under a different name. Anything but "dark" is the default.
+    ...(body?.color_scheme === "dark" ? { color_scheme: "dark" } : {}),
   };
   return forward("/api/devicepreview/run", {
     method: "POST",
