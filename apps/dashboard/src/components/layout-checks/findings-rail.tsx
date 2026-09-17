@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Check, Copy } from "lucide-react";
+import { Check, CheckCircle2, Copy, Wand2 } from "lucide-react";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { explain } from "@/lib/layout-checks/explain";
@@ -9,6 +9,7 @@ import { RAIL_CAP, railSlice, type RailFinding } from "@/lib/layout-checks/findi
 import { SectionHeading } from "@/components/layout-checks/check-shell";
 import { pinNumber, pinsFor, type Pin } from "@/lib/layout-checks/pins";
 import { undrawnLabel, type Hold } from "@/lib/layout-checks/capture-hold";
+import { fixPrompt } from "@/lib/layout-checks/fix-prompt";
 import { reachLabel, reachTone, type Reach } from "@/lib/layout-checks/reach";
 import { allFindingsText, findingText, type CopyFinding } from "@/lib/layout-checks/copy-finding";
 import { boxWithin, cropFor, cropStyle } from "@/lib/layout-checks/crop";
@@ -67,7 +68,9 @@ function Summary({ items }: { items: RailItem[] }) {
 }
 
 /** Writes to the clipboard and says so for a moment. Failure is reported, not swallowed. */
-function CopyButton({ text, label, className }: { text: string; label: string; className?: string }) {
+function CopyButton({ text, label, className, icon, title }: {
+  text: string; label: string; className?: string; icon?: ReactNode; title?: string;
+}) {
   const [state, setState] = useState<"idle" | "done" | "failed">("idle");
   const copy = async () => {
     try {
@@ -82,6 +85,7 @@ function CopyButton({ text, label, className }: { text: string; label: string; c
     <button
       type="button"
       onClick={copy}
+      title={title}
       className={cn(
         "inline-flex h-8 items-center gap-2 rounded-full border border-border-soft px-4 text-[11px] font-medium text-text-secondary transition-colors hover:bg-card hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-text-primary",
         state === "done" && "border-success/40 text-success-strong",
@@ -89,7 +93,7 @@ function CopyButton({ text, label, className }: { text: string; label: string; c
         className,
       )}
     >
-      {state === "done" ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
+      {state === "done" ? <Check className="size-3.5" aria-hidden /> : (icon ?? <Copy className="size-3.5" aria-hidden />)}
       {state === "done" ? "Copied" : state === "failed" ? "Copy failed" : label}
     </button>
   );
@@ -170,12 +174,35 @@ export function FindingsRail({
     url ?? "", where ?? deviceLabel, viewLink({ finding: null }),
   );
 
+  // The same findings again, written for whoever builds the page rather than
+  // for someone to read: most of these pages are built with an assistant, and
+  // this is the shortest path from "the tool found it" to "the page is fixed".
+  const copyPrompt = (): string => fixPrompt(
+    items.map((it) => {
+      const help = explain(kind, it.rule);
+      return { label: it.label, message: it.detail || it.message, selector: it.selector,
+               pageLevel: it.pageLevel, why: help?.why, fix: help?.fix, severity: it.severity,
+               reach: reachLabel(reachOf?.(it) ?? null) };
+    }),
+    { url: url ?? "", where: where ?? deviceLabel },
+  );
+
   // A heading and the space under it group the list; a rule across the card
   // only adds a line.
   const head = heading ?? (
     <SectionHeading label="Findings" subject={deviceLabel}>
       {items.length > 0 && <Summary items={items} />}
-      {items.length > 0 && url && <CopyButton text={copyAll()} label="Copy all" />}
+      {items.length > 0 && url && (
+        // The two buttons stay side by side and wrap together: the rail's
+        // column is not wide enough to hold them beside the counts, and one
+        // button on each line reads as two unrelated controls.
+        <span className="flex flex-wrap items-center gap-2">
+          <CopyButton text={copyPrompt()} label="Copy fix prompt"
+                      icon={<Wand2 className="size-3.5" aria-hidden />}
+                      title="Every finding here as one instruction, for whoever builds the page — the measurements, what each costs a visitor, and the rules a fix has to respect." />
+          <CopyButton text={copyAll()} label="Copy all" title="Every finding here as plain text, to send to a person." />
+        </span>
+      )}
     </SectionHeading>
   );
 
