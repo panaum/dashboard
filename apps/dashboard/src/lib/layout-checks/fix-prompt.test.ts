@@ -143,3 +143,10 @@ test("an item says whether it is new or has been waiting since the last run", ()
   // Without a previous run there is no line at all.
   assert.doesNotMatch(fixPrompt([RUN[1]], CTX), /Since:/);
 });
+
+test("an item carries the element's own numbers and its tag, for the fix", () => {
+  const p = fixPrompt([{ ...RUN[1], now: "font-size 11px · padding 0px · 77×14px", html: '<a class="wm-cta-m" href="/quote">' }], CTX);
+  assert.match(p, /Now: font-size 11px · padding 0px · 77×14px/);
+  assert.match(p, /Tag: <a class="wm-cta-m" href="\/quote">/);
+  assert.doesNotMatch(fixPrompt([RUN[1]], CTX), /Now:|Tag:/);
+});

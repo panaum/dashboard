@@ -22,7 +22,9 @@ export type DpDevice = {
   error?: string | null;
   /** "dark" when the page was rendered with prefers-color-scheme: dark (see scheme.ts). */
   color_scheme?: string | null;
-  findings: { severity: string; rule: string; message: string; selector?: string; scope?: string }[];
+  findings: { severity: string; rule: string; message: string; selector?: string; scope?: string;
+              /** The element's own computed numbers and opening tag (see numbers.ts). */
+              style?: Record<string, string> | null; html?: string | null }[];
   diff?: { percent?: number; regressed?: boolean; missing?: boolean } | null;
   images?: Record<string, string>;
   /** The page as the run measured it, in CSS px. `scrollHeight` is the whole

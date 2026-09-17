@@ -13,6 +13,9 @@ export type RawFinding = {
   selector?: string | null;
   box?: Box | null;
   scope?: string;
+  /** The element's own computed numbers and opening tag, where the audit recorded them. */
+  style?: Record<string, string> | null;
+  html?: string | null;
 };
 
 export type RailFinding = {
@@ -26,6 +29,8 @@ export type RailFinding = {
   box: Box | null;
   /** About the whole page (viewport meta, layout shift, fonts): nothing to draw. */
   pageLevel: boolean;
+  style?: Record<string, string> | null;
+  html?: string | null;
 };
 
 export const RAIL_CAP = 5;
@@ -116,6 +121,8 @@ export function railItems(findings: RawFinding[]): RailFinding[] {
       selector: f.scope === "page" ? null : (f.selector ?? null),
       box: f.scope === "page" ? null : (f.box && f.box.width > 0 && f.box.height > 0 ? f.box : null),
       pageLevel: f.scope === "page",
+      style: f.style ?? null,
+      html: f.html ?? null,
       _i: i,
     }))
     .sort((a, b) =>

@@ -552,6 +552,29 @@ AUDIT_JS = """(cfg) => {
   const box = (r) => ({ x: Math.round(r.left), y: Math.round(r.top + sy),
                         width: Math.round(r.width), height: Math.round(r.height) });
   const snippet = (el) => (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 50);
+  // The element's own numbers, for whoever fixes it: what the tool measured
+  // is the symptom, these are the values in the stylesheet that produced it.
+  // Read once per finding, computed (so a rem or a clamp() arrives as pixels),
+  // and only the handful a layout fix turns: size, line, padding, min-height,
+  // display, box. Plus the opening tag, trimmed — enough to grep the source
+  // for, never the subtree.
+  const numbers = (el) => {
+    try {
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      const px = (v) => (v && v !== 'auto' && v !== 'normal' && v !== 'none') ? v : null;
+      const style = {};
+      for (const [k, v] of Object.entries({
+        fontSize: cs.fontSize, lineHeight: px(cs.lineHeight), fontWeight: cs.fontWeight,
+        padding: px(cs.padding), minHeight: px(cs.minHeight), minWidth: px(cs.minWidth),
+        width: Math.round(r.width) + 'px', height: Math.round(r.height) + 'px',
+        display: cs.display, position: cs.position === 'static' ? null : cs.position,
+        overflow: cs.overflow === 'visible' ? null : cs.overflow,
+      })) if (v) style[k] = v;
+      const tag = (el.cloneNode(false).outerHTML || '').replace(/\\s+/g, ' ');
+      return { style, html: tag.slice(0, 160) + (tag.length > 160 ? '…' : '') };
+    } catch (e) { return null; }
+  };
   // Content inside a container that clips or scrolls cannot move the document.
   const clippedBy = (el) => {
     let n = el.parentElement;
@@ -625,7 +648,7 @@ AUDIT_JS = """(cfg) => {
       if (p && p !== document.body && p.getBoundingClientRect().right > vw + 1) continue; // report the source, not its children
       findings.push({ severity: 'error', rule: 'overflow',
         message: sel(el) + ' extends ' + Math.round(r.right - vw) + 'px past the viewport',
-        selector: sel(el), box: box(r), text: snippet(el) });
+        selector: sel(el), box: box(r), text: snippet(el), ...(numbers(el) || {}) });
       if (++n >= 6) break;
     }
   }
@@ -670,7 +693,7 @@ AUDIT_JS = """(cfg) => {
         message: wider
           ? sel(el) + ' is ' + Math.round(r.width) + 'px wide in a ' + vw + 'px viewport; ' + past + 'px is clipped and cannot be seen'
           : sel(el) + ' extends ' + past + 'px past the ' + (pastR >= pastL ? 'right' : 'left') + ' edge (' + frac + '% of it is clipped and cannot be seen)',
-        selector: sel(el), box: box(r), text: snippet(el) });
+        selector: sel(el), box: box(r), text: snippet(el), ...(numbers(el) || {}) });
       if (++n >= 8) break;
     }
   }
@@ -728,7 +751,7 @@ AUDIT_JS = """(cfg) => {
         findings.push({ severity: 'warn', rule: 'tap-small',
           message: sel(el) + ' is ' + Math.round(r.width) + '×' + Math.round(r.height)
             + 'px — under the 24px WCAG AA minimum',
-          selector: sel(el), box: box(r), text: snippet(el) });
+          selector: sel(el), box: box(r), text: snippet(el), ...(numbers(el) || {}) });
         n++;
       }
       if (unlistedWarn > 0) findings.push({
@@ -803,7 +826,7 @@ AUDIT_JS = """(cfg) => {
               + (inlinePair ? '; both are inline text links (WCAG 2.5.8 Inline exception)'
                  : '; their 24px tap circles overlap (WCAG 2.5.8 Spacing)'),
             selector: sel(a), box: box(ra), related: sel(b), relatedBox: box(rb),
-            text: snippet(a) });
+            text: snippet(a), ...(numbers(a) || {}) });
           if (++n >= 8) break outer;
         }
       }
@@ -837,7 +860,7 @@ AUDIT_JS = """(cfg) => {
       if (n >= 8) { extra++; continue; }
       findings.push({ severity: 'warn', rule: 'clipped-text',
         message: sel(el) + ' hides ' + (outB >= 2 ? Math.round(outB) + 'px of text below its box' : Math.round(outR) + 'px of text past its right edge'),
-        selector: sel(el), box: box(r), text: snippet(el) });
+        selector: sel(el), box: box(r), text: snippet(el), ...(numbers(el) || {}) });
       n++;
     }
     if (extra) rollup('clipped-text', 'warn', extra, 'clipped text block(s)');
@@ -855,7 +878,7 @@ AUDIT_JS = """(cfg) => {
       if (n >= 10) { extra++; continue; }
       findings.push({ severity: 'warn', rule: 'text-small',
         message: sel(el) + ' is set at ' + size.toFixed(1) + 'px; body text under 12px is hard to read on a phone',
-        selector: sel(el), box: box(el.getBoundingClientRect()), text: snippet(el) });
+        selector: sel(el), box: box(el.getBoundingClientRect()), text: snippet(el), ...(numbers(el) || {}) });
       n++;
     }
     if (extra) rollup('text-small', 'warn', extra, 'small-text block(s)');
@@ -916,7 +939,7 @@ AUDIT_JS = """(cfg) => {
       if (p && p !== document.body) { const pr = p.getBoundingClientRect(); if (pr.right <= 0 || pr.left >= vw) continue; }
       findings.push({ severity: 'info', rule: 'offscreen',
         message: sel(el) + ' sits entirely off screen (x ' + Math.round(r.left) + ' to ' + Math.round(r.right) + ') and is not marked hidden',
-        selector: sel(el), box: box(r), text: snippet(el) });
+        selector: sel(el), box: box(r), text: snippet(el), ...(numbers(el) || {}) });
       if (++n >= 6) break;
     }
   }
