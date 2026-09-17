@@ -384,11 +384,23 @@ def _ranges(widths: list[int]) -> str:
 
 def responsive_findings(r: dict) -> list[dict]:
     """Collapse per-width results into one finding per distinct problem."""
-    F_ = F
+    # Every finding also carries `widths`: the widths this statement is about,
+    # sorted. The prose already says it ("at 350–470"), but a reader filtering
+    # to one screen size should not have to parse a sentence to do it. Additive
+    # — the rest of the finding is unchanged, and a consumer that ignores the
+    # key sees exactly what it saw before. A PASS is about every width that
+    # rendered; a SKIP about the widths that produced nothing.
+    def F_(fid, status, title, detail="", evidence=None, widths=()):
+        f = F(fid, status, title, detail, evidence)
+        f["widths"] = sorted({int(w) for w in widths})
+        return f
+
+    seen_widths = [wd["width"] for wd in (r.get("widths") or [])]
     out: list[dict] = []
     if r.get("errors"):
         out.append(F_("responsive-load", "SKIP", "Responsive sweep",
-                      f"{len(r['errors'])} width(s) could not be measured.", r["errors"][:5]))
+                      f"{len(r['errors'])} width(s) could not be measured.", r["errors"][:5],
+                      widths=[w for w in WIDTH_LIST if w not in seen_widths]))
     if not r.get("widths"):
         return out
 
@@ -398,11 +410,12 @@ def responsive_findings(r: dict) -> list[dict]:
         out.append(F_("blocked", "SKIP", "Blocked at some widths",
                       f"A bot challenge was served at {_ranges(blocked_w)}, so those widths "
                       "measured nothing real. Re-run, more slowly, before trusting this page.",
-                      [w for w in why if w][:3]))
+                      [w for w in why if w][:3], widths=blocked_w))
     # Everything below reads only the widths that actually rendered the page.
     r = {**r, "widths": [wd for wd in r["widths"] if not wd.get("challenged")]}
     if not r["widths"]:
         return out
+    rendered = [wd["width"] for wd in r["widths"]]
 
     # 1 · overflow, keyed by culprit element
     by_el: dict[str, dict] = {}
@@ -420,10 +433,10 @@ def responsive_findings(r: dict) -> list[dict]:
         hit = sorted({w for e in by_el.values() for w in e["widths"]})
         out.append(F_("overflow", sev, "Horizontal overflow",
                       f"The page scrolls sideways at {_ranges(hit)} — worst excess "
-                      f"{worst_doc}px past the viewport.", ev))
+                      f"{worst_doc}px past the viewport.", ev, widths=hit))
     else:
         out.append(F_("overflow", "PASS", "Horizontal overflow",
-                      "No sideways scroll at any of the eight widths."))
+                      "No sideways scroll at any of the eight widths.", widths=rendered))
 
     # 1b · content cut at the viewport edge
     by_edge: dict[str, dict] = {}
@@ -438,10 +451,11 @@ def responsive_findings(r: dict) -> list[dict]:
               for s_, g in sorted(by_edge.items(), key=lambda kv: -kv[1]["cut"])[:8]]
         out.append(F_("edge", "WARN", "Content cut off at the edge",
                       f"{len(by_edge)} image(s) or text block(s) run past the viewport and are "
-                      "clipped. Some bleed is deliberate — check the screenshots.", ev))
+                      "clipped. Some bleed is deliberate — check the screenshots.", ev,
+                      widths=[w for g in by_edge.values() for w in g["widths"]]))
     else:
         out.append(F_("edge", "PASS", "Content cut off at the edge",
-                      "Nothing runs past the viewport edge."))
+                      "Nothing runs past the viewport edge.", widths=rendered))
 
     # 2 · clipped text — ambiguous by nature, so it never escalates past WARN
     by_cut: dict[str, dict] = {}
@@ -455,9 +469,11 @@ def responsive_findings(r: dict) -> list[dict]:
               for s, e in list(by_cut.items())[:8]]
         out.append(F_("clipped", "WARN", "Clipped text",
                       f"{len(by_cut)} element(s) hide part of their text behind "
-                      "overflow:hidden. Check the screenshots — some clipping is deliberate.", ev))
+                      "overflow:hidden. Check the screenshots — some clipping is deliberate.", ev,
+                      widths=[w for e in by_cut.values() for w in e["widths"]]))
     else:
-        out.append(F_("clipped", "PASS", "Clipped text", "No text clipped by a hidden overflow."))
+        out.append(F_("clipped", "PASS", "Clipped text", "No text clipped by a hidden overflow.",
+                      widths=rendered))
 
     # 3 · overlapping text
     by_ov: dict[tuple[str, str], dict] = {}
@@ -472,9 +488,39 @@ def responsive_findings(r: dict) -> list[dict]:
               for (a, b), e in sorted(by_ov.items(), key=lambda kv: -kv[1]["pct"])[:6]]
         out.append(F_("overlap", "WARN", "Overlapping text",
                       f"{len(by_ov)} pair(s) of siblings overlap where one carries text. "
-                      "Confirm against the screenshots before reporting.", ev))
+                      "Confirm against the screenshots before reporting.", ev,
+                      widths=[w for e in by_ov.values() for w in e["widths"]]))
     else:
-        out.append(F_("overlap", "PASS", "Overlapping text", "No text-bearing siblings overlap."))
+        out.append(F_("overlap", "PASS", "Overlapping text", "No text-bearing siblings overlap.",
+                      widths=rendered))
+
+    # 3b · pictures that did not load, keyed by source across widths. A blank
+    # where a picture should be is the most visible fault a page can have and
+    # the one this sweep used to be blind to: the capture showed the hole and
+    # the findings said nothing. WARN, never FAIL — the page still works, and a
+    # hotlink that a host refuses to us may be served to a visitor.
+    by_src: dict[str, dict] = {}
+    for wd in r["widths"]:
+        for b in wd.get("brokenImages", []):
+            e = by_src.setdefault(b["src"], {"widths": [], "w": 0, "h": 0, "alt": b.get("alt", ""), "sel": b.get("sel", "img")})
+            e["widths"].append(wd["width"])
+            e["w"] = max(e["w"], b.get("w", 0))
+            e["h"] = max(e["h"], b.get("h", 0))
+    if by_src:
+        def _name(src: str) -> str:
+            return (src.split("?")[0].rstrip("/").split("/")[-1] or src)[:44]
+        ev = [f"{_ranges(e['widths']):18} {_name(src):44} {e['w']}x{e['h']}px  {e['alt'][:24]!r}"
+              for src, e in sorted(by_src.items(), key=lambda kv: -(kv[1]["w"] * kv[1]["h"]))[:8]]
+        hit = sorted({w for e in by_src.values() for w in e["widths"]})
+        n = len(by_src)
+        out.append(F_("images", "WARN", "Pictures that did not load",
+                      f"{n} picture{'s' if n != 1 else ''} did not load at {_ranges(hit)} — a blank where "
+                      "each should be. Usually a wrong path, a hotlink the host refused, or a format the "
+                      "browser cannot decode; the screenshot shows the hole.", ev,
+                      widths=hit))
+    else:
+        out.append(F_("images", "PASS", "Pictures that did not load", "Every picture loaded at every width.",
+                      widths=rendered))
 
     # 4 · CTA position — measured, not judged
     rows, below = [], []
@@ -501,30 +547,21 @@ def responsive_findings(r: dict) -> list[dict]:
         else:
             detail = "Visible without scrolling at every width."
         out.append(F_("cta", "WARN" if below else "PASS", "Is the CTA visible before scrolling?",
-                      detail, rows))
+                      detail, rows, widths=below or seen_w))
 
     if r.get("shots"):
         out.append(F_("shots", "INFO", "Screenshots",
                       f"{len(r['shots'])} full-page screenshots — these are the deliverable.",
-                      [f"{s['width']:>5}px  {s['path']}" for s in r["shots"]]))
+                      [f"{s['width']:>5}px  {s['path']}" for s in r["shots"]],
+                      widths=[s["width"] for s in r["shots"]]))
     return out
 
 
-# Capture resolution. The sweep is looked at, not just parsed, and it was
-# stored at one pixel per CSS pixel — so on any laptop screen, which has two,
-# the browser had to invent the other one and the text went soft.
-#
-# 1.6 rather than 2 because Chromium cannot encode an image taller than
-# ~32767px and these are full-page captures of long pages: at 2x anything over
-# 16000 CSS px would not fit, which is most of the marketing pages this tool is
-# pointed at — including every phone width, where the page is tallest and the
-# softness was most visible. 1.6 covers a page just over 20000 CSS px whole,
-# and is 60% more pixels than before. Anything taller still falls back to CSS
-# scale, at the quality it has always used.
-#
-# More pixels also hide JPEG artefacts, so the 2x-scale quality can come down
-# from 72 and still read better than the 1x capture did. The fallback keeps 72,
-# because there it would be a straight loss.
+
+# ── cross-browser render (Phase 2) ──────────────────────────────────────────
+# One width only. Eight widths times three engines would be twenty-four loads
+# for very little: breakpoint bugs are a CSS problem the responsive sweep
+# already covers, while engine bugs show up at any width.
 SHOT_DPR = 1.6
 SHOT_QUALITY = 62            # at SHOT_DPR
 SHOT_QUALITY_CSS = 72        # at CSS scale, unchanged from before
@@ -576,6 +613,34 @@ CAPTURE_READY_JS = """async ([scrollMs, imageMs]) => {
            blank: [...document.images].filter(i => i.naturalWidth === 0).length };
 }"""
 
+# Which pictures are not there, taken after the walk-and-wait above so a slow one
+# is not mistaken for a broken one. `complete` with no natural size is the
+# browser's own verdict: it asked and got nothing it could draw — a wrong path,
+# a host that refused the hotlink, a format it cannot decode. A picture that is
+# still loading is not complete and is left alone; one under 24px, or an SVG
+# (which has no natural size in Chromium), or one whose request this tool
+# itself refused (the collector list) is not a fault of the page's.
+BROKEN_IMAGES_JS = """() => [...document.images]
+  .filter(i => i.complete && i.naturalWidth === 0)
+  .map(i => {
+    const r = i.getBoundingClientRect();
+    const src = i.currentSrc || i.src || '';
+    const cls = [...i.classList].slice(0, 2).map(c => '.' + c).join('');
+    return { src: src.slice(0, 300), w: Math.round(r.width), h: Math.round(r.height),
+             top: Math.round(r.top + scrollY), alt: (i.alt || '').slice(0, 60),
+             sel: i.id ? '#' + i.id : 'img' + cls };
+  })
+  .filter(x => x.w >= 24 && x.h >= 24 && x.src && !/\\.svg(\\?|$)/i.test(x.src) && !/^data:image\\/svg/i.test(x.src))"""
+
+
+def broken_images(page, collector_rx) -> list[dict]:
+    """The page's own missing pictures — never one this tool refused to fetch."""
+    try:
+        found = page.evaluate(BROKEN_IMAGES_JS) or []
+    except Exception:  # noqa: BLE001 — a picture count must never take a width down
+        return []
+    return [b for b in found if not collector_rx.search(b.get("src", ""))][:20]
+
 
 def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
     """Sweep the eight widths. Returns (report, shots) where shots maps a width
@@ -624,6 +689,7 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
                             break
                         prev = cur
                     data = _settle(prev, cur)
+                    broken: list[dict] = []
                     try:
                         # Viewport WIDTH, full height. A plain full-page capture
                         # widens to the scrollWidth, which hid a 190px overflow
@@ -642,6 +708,7 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
                         try:
                             page.evaluate(CAPTURE_READY_JS, [SCROLL_BUDGET_MS, IMAGE_SETTLE_MS])
                             ph = int(page.evaluate("document.documentElement.scrollHeight") or ph)
+                            broken = broken_images(page, COLLECTOR_RX)
                         except PWError:
                             pass
                         fits = ph > 0 and ph * SHOT_DPR <= SHOT_MAX_PX
@@ -658,7 +725,7 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
                     except PWError as exc:
                         out["errors"].append(f"{w}px screenshot: {str(exc)[:120]}")
                     if data:
-                        data.update({"width": w, "height": h,
+                        data.update({"width": w, "height": h, "brokenImages": broken,
                                      "elapsed": round(time.time() - t0, 1)})
                         out["widths"].append(data)
                     out["blocked"] += len(blocked)

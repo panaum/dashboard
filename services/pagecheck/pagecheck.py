@@ -1244,6 +1244,34 @@ CAPTURE_READY_JS = """async ([scrollMs, imageMs]) => {
            blank: [...document.images].filter(i => i.naturalWidth === 0).length };
 }"""
 
+# Which pictures are not there, taken after the walk-and-wait above so a slow one
+# is not mistaken for a broken one. `complete` with no natural size is the
+# browser's own verdict: it asked and got nothing it could draw — a wrong path,
+# a host that refused the hotlink, a format it cannot decode. A picture that is
+# still loading is not complete and is left alone; one under 24px, or an SVG
+# (which has no natural size in Chromium), or one whose request this tool
+# itself refused (the collector list) is not a fault of the page's.
+BROKEN_IMAGES_JS = """() => [...document.images]
+  .filter(i => i.complete && i.naturalWidth === 0)
+  .map(i => {
+    const r = i.getBoundingClientRect();
+    const src = i.currentSrc || i.src || '';
+    const cls = [...i.classList].slice(0, 2).map(c => '.' + c).join('');
+    return { src: src.slice(0, 300), w: Math.round(r.width), h: Math.round(r.height),
+             top: Math.round(r.top + scrollY), alt: (i.alt || '').slice(0, 60),
+             sel: i.id ? '#' + i.id : 'img' + cls };
+  })
+  .filter(x => x.w >= 24 && x.h >= 24 && x.src && !/\\.svg(\\?|$)/i.test(x.src) && !/^data:image\\/svg/i.test(x.src))"""
+
+
+def broken_images(page, collector_rx) -> list[dict]:
+    """The page's own missing pictures — never one this tool refused to fetch."""
+    try:
+        found = page.evaluate(BROKEN_IMAGES_JS) or []
+    except Exception:  # noqa: BLE001 — a picture count must never take a width down
+        return []
+    return [b for b in found if not collector_rx.search(b.get("src", ""))][:20]
+
 
 def run_responsive(browser, url: str, outdir: Path) -> dict:
     """One fresh context per width. A context each is slower than resizing one
@@ -1290,6 +1318,7 @@ def run_responsive(browser, url: str, outdir: Path) -> dict:
             # and its numbers must never become findings. Keeping the last two
             # readings distinct matters: collapsing them made this a no-op.
             data = _settle(reads[-2], reads[-1]) if len(reads) > 1 else reads[0]
+            broken: list[dict] = []
             shot = outdir / f"w{w:04d}.png"
             try:
                 # Clipped to the viewport WIDTH, full height. A plain full-page
@@ -1303,6 +1332,7 @@ def run_responsive(browser, url: str, outdir: Path) -> dict:
                 try:
                     page.evaluate(CAPTURE_READY_JS, [SCROLL_BUDGET_MS, IMAGE_SETTLE_MS])
                     ph = int(page.evaluate("document.documentElement.scrollHeight") or ph)
+                    broken = broken_images(page, COLLECTOR_RX)
                 except PWError:
                     pass
                 if ph > 0:
@@ -1316,7 +1346,7 @@ def run_responsive(browser, url: str, outdir: Path) -> dict:
             except PWError as exc:
                 out["errors"].append(f"{w}px screenshot failed: {str(exc)[:120]}")
             if data:
-                data.update({"width": w, "height": h, "blocked": len(blocked),
+                data.update({"width": w, "height": h, "blocked": len(blocked), "brokenImages": broken,
                              "elapsed": round(time.time() - t0, 1)})
                 out["widths"].append(data)
         except (PWError, PWTimeout) as exc:
@@ -1440,6 +1470,34 @@ def responsive_findings(r: dict) -> list[dict]:
                       widths=[w for e in by_ov.values() for w in e["widths"]]))
     else:
         out.append(F_("overlap", "PASS", "Overlapping text", "No text-bearing siblings overlap.",
+                      widths=rendered))
+
+    # 3b · pictures that did not load, keyed by source across widths. A blank
+    # where a picture should be is the most visible fault a page can have and
+    # the one this sweep used to be blind to: the capture showed the hole and
+    # the findings said nothing. WARN, never FAIL — the page still works, and a
+    # hotlink that a host refuses to us may be served to a visitor.
+    by_src: dict[str, dict] = {}
+    for wd in r["widths"]:
+        for b in wd.get("brokenImages", []):
+            e = by_src.setdefault(b["src"], {"widths": [], "w": 0, "h": 0, "alt": b.get("alt", ""), "sel": b.get("sel", "img")})
+            e["widths"].append(wd["width"])
+            e["w"] = max(e["w"], b.get("w", 0))
+            e["h"] = max(e["h"], b.get("h", 0))
+    if by_src:
+        def _name(src: str) -> str:
+            return (src.split("?")[0].rstrip("/").split("/")[-1] or src)[:44]
+        ev = [f"{_ranges(e['widths']):18} {_name(src):44} {e['w']}x{e['h']}px  {e['alt'][:24]!r}"
+              for src, e in sorted(by_src.items(), key=lambda kv: -(kv[1]["w"] * kv[1]["h"]))[:8]]
+        hit = sorted({w for e in by_src.values() for w in e["widths"]})
+        n = len(by_src)
+        out.append(F_("images", "WARN", "Pictures that did not load",
+                      f"{n} picture{'s' if n != 1 else ''} did not load at {_ranges(hit)} — a blank where "
+                      "each should be. Usually a wrong path, a hotlink the host refused, or a format the "
+                      "browser cannot decode; the screenshot shows the hole.", ev,
+                      widths=hit))
+    else:
+        out.append(F_("images", "PASS", "Pictures that did not load", "Every picture loaded at every width.",
                       widths=rendered))
 
     # 4 · CTA position — measured, not judged
