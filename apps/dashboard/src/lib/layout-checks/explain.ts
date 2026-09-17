@@ -97,6 +97,11 @@ export const VIEWPORT_FINDINGS: Record<string, Explanation> = {
     why: "Text over text is unreadable where they collide. It usually means one box grew taller than the room left for it at this width.",
     fix: "Confirm against the screenshot: a decorative overlap is fine, and this check cannot tell the two apart.",
   },
+  images: {
+    what: "A picture the browser asked for and could not draw: a blank where it should be.",
+    why: "The most visible fault a page can have, and one a visitor sees before reading a word. Usually a wrong path, a hotlink the host refuses, or a format the browser cannot decode. The screenshot shows the hole.",
+    fix: "Open the source in a browser tab: a 404 is a path or a deleted upload, a 403 is a host refusing the hotlink, and an image that opens but will not draw is a format to convert. Check it at the widths named — a responsive image can be fine at one size and missing at another.",
+  },
   cta: {
     what: "Where the main call to action sits at each width, and whether it is visible without scrolling.",
     why: "Not a fault — a measurement. On a landing page whose job is one action, a button that only appears after two screens of scrolling is worth knowing about.",

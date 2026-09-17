@@ -109,5 +109,34 @@ class Widths(unittest.TestCase):
             self.assertEqual(a, b, f"{name} has drifted between the two copies")
 
 
+class Images(unittest.TestCase):
+    """A picture the browser could not draw is a finding of its own, by source."""
+
+    def test_a_missing_picture_is_a_warning_at_the_widths_it_was_missing(self):
+        s = sweep()
+        s["widths"][0]["brokenImages"] = [{"src": "https://x.test/u/boiler-board.webp", "w": 745, "h": 419, "alt": "Boiler board", "sel": "img.wp-image-9"}]
+        s["widths"][1]["brokenImages"] = [{"src": "https://x.test/u/boiler-board.webp", "w": 340, "h": 191, "alt": "Boiler board", "sel": "img.wp-image-9"}]
+        f = by_id(responsive_findings(s))["images"]
+        self.assertEqual(f["status"], "WARN")
+        self.assertEqual(f["widths"], [350, 375])
+        self.assertIn("1 picture did not load at 350–375", f["detail"])
+        self.assertEqual(len(f["evidence"]), 1, "one source, however many widths")
+        self.assertIn("boiler-board.webp", f["evidence"][0])
+        self.assertIn("745x419px", f["evidence"][0], "the largest size it was seen at")
+
+    def test_every_picture_loading_is_a_pass_about_every_width_that_rendered(self):
+        f = by_id(responsive_findings(sweep()))["images"]
+        self.assertEqual(f["status"], "PASS")
+        self.assertEqual(f["widths"], [350, 375, 1440])
+
+    def test_it_is_never_a_fail(self):
+        s = sweep()
+        s["widths"][2]["brokenImages"] = [{"src": f"https://x.test/{i}.jpg", "w": 300, "h": 200} for i in range(12)]
+        f = by_id(responsive_findings(s))["images"]
+        self.assertEqual(f["status"], "WARN")
+        self.assertIn("12 pictures", f["detail"])
+        self.assertEqual(len(f["evidence"]), 8, "the evidence is capped; the count is not")
+
+
 if __name__ == "__main__":
     unittest.main()
