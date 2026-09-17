@@ -14,6 +14,8 @@
 //
 // Pure, so the wording is tested without a clipboard.
 
+import { reachKey } from "@/lib/layout-checks/reach";
+
 export type PromptFinding = {
   /** "Tap target 77 × 14". */
   label: string;
@@ -37,7 +39,7 @@ export type PromptContext = {
 
 const RULES = [
   "Change the smallest thing that makes each measurement pass. Copy, content and structure stay as they are unless the finding is about them.",
-  "The same page is checked at other widths and on other devices: a fix at this size must not break another one.",
+  "The same page is checked at other widths and on other devices: a fix for one must not break another.",
   "Each item gives what was measured and why it matters. The usual fix is a starting point, not an instruction — this came from measuring the rendered page, not from reading its source, so if the page needs something else, do that instead.",
   "If an item is deliberate and right as it is, leave it and say so.",
 ];
@@ -89,4 +91,78 @@ export function fixPrompt(findings: PromptFinding[], ctx: PromptContext): string
     out.push("When you are done, say which of these you changed and which you left, one line each.");
   }
   return out.join("\n").trimEnd() + "\n";
+}
+
+/** One device's findings, already shaped for the rail. */
+export type DeviceItems = {
+  /** "Samsung Galaxy S25" */
+  device: string;
+  items: {
+    rule: string;
+    label: string;
+    message?: string;
+    selector: string | null;
+    pageLevel?: boolean;
+    severity?: "error" | "warn" | "info";
+  }[];
+};
+
+const RANK: Record<string, number> = { error: 0, warn: 1, info: 2 };
+
+/**
+ * Every device's findings as one list, the same fault counted once.
+ *
+ * A page is checked on fourteen devices and most faults appear on most of them,
+ * so a per-device prompt asks for the same fix fourteen times — and whoever
+ * reads it cannot tell the site-wide fault from the one that is only on an
+ * iPhone. "The same fault" is the rule on the same selector, which is how the
+ * rest of the tool identifies one (see reach.ts); the group keeps its worst
+ * severity and says where it was seen.
+ *
+ * @param devices  the audited devices, in the order the picker shows them
+ * @param help     why it matters and the usual fix, by rule
+ */
+export function mergePageFindings(
+  devices: DeviceItems[],
+  help?: (rule: string) => { why?: string; fix?: string } | null | undefined,
+): PromptFinding[] {
+  const audited = devices.length;
+  const groups = new Map<string, { f: PromptFinding; on: string[] }>();
+  for (const d of devices) {
+    const seen = new Set<string>();
+    for (const it of d.items) {
+      const key = reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined);
+      // A device counts once per fault however many rows it reported for it.
+      const first = !seen.has(key);
+      seen.add(key);
+      const g = groups.get(key);
+      if (!g) {
+        const h = help?.(it.rule);
+        groups.set(key, {
+          f: { label: it.label, message: it.message, selector: it.selector, pageLevel: it.pageLevel,
+               why: h?.why, fix: h?.fix, severity: it.severity },
+          on: [d.device],
+        });
+        continue;
+      }
+      if (first) g.on.push(d.device);
+      // Worst wins: a target that is an error on one device and a note on
+      // another is an error, and it should read as the device that failed.
+      if ((RANK[it.severity ?? "info"] ?? 9) < (RANK[g.f.severity ?? "info"] ?? 9)) {
+        g.f = { ...g.f, label: it.label, message: it.message, severity: it.severity };
+      }
+    }
+  }
+  // Worst first, then the ones on the most devices: a fix that lands
+  // everywhere is worth more than one that lands on a single handset.
+  return [...groups.values()]
+    .sort((a, b) => (RANK[a.f.severity ?? "info"] ?? 9) - (RANK[b.f.severity ?? "info"] ?? 9)
+      || b.on.length - a.on.length
+      || a.f.label.localeCompare(b.f.label))
+    .map(({ f, on }) => ({
+      ...f,
+      reach: audited > 1 && on.length >= audited ? `all ${audited} devices`
+        : on.length === 1 ? `only on ${on[0]}`
+        : `${on.length} of ${audited} devices`,
+    }));
 }

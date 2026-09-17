@@ -48,7 +48,7 @@ test("a note is kept out of the work and said to be a note", () => {
 test("the fix is constrained: smallest change, other sizes, and a way to disagree", () => {
   const p = fixPrompt(RUN, CTX);
   assert.match(p, /Change the smallest thing/);
-  assert.match(p, /must not break another one/);
+  assert.match(p, /a fix for one must not break another/);
   assert.match(p, /starting point, not an instruction/);
   assert.match(p, /If an item is deliberate and right as it is, leave it and say so\./);
   assert.match(p, /say which of these you changed and which you left/);
@@ -69,4 +69,69 @@ test("notes alone do not ask for work", () => {
 
 test("nothing at all copies nothing", () => {
   assert.equal(fixPrompt([], CTX), "");
+});
+
+// ── one page, every device ───────────────────────────────────────────────
+import { mergePageFindings, type DeviceItems } from "./fix-prompt";
+
+const FLEET: DeviceItems[] = [
+  { device: "Samsung Galaxy S25", items: [
+      { rule: "cls", label: "Layout shift 0.389", message: "CLS 0.389", selector: null, pageLevel: true, severity: "error" },
+      { rule: "tap-size", label: "Tap target 77 × 14", message: "77×14px", selector: "a.wm-cta-m:nth-of-type(1)", severity: "warn" },
+      { rule: "tap-size", label: "Tap target 80 × 14", message: "80×14px", selector: "a.wm-cta-m:nth-of-type(1)", severity: "warn" },
+  ]},
+  { device: "iPhone 16", items: [
+      { rule: "tap-size", label: "Tap target 77 × 14", message: "77×14px", selector: "a.wm-cta-m:nth-of-type(1)", severity: "warn" },
+      { rule: "text-size", label: "Text 11.0px on a phone", message: "11.0px", selector: "span.wm-m", severity: "warn" },
+  ]},
+  { device: "iPad Air 11\"", items: [
+      { rule: "text-size", label: "Text 11.0px on a tablet", message: "11.0px", selector: "span.wm-m", severity: "info" },
+  ]},
+];
+
+test("the same fault on many devices is one item, counted", () => {
+  const merged = mergePageFindings(FLEET);
+  const tap = merged.find((f) => f.selector === "a.wm-cta-m:nth-of-type(1)");
+  assert.ok(tap);
+  assert.equal(tap.reach, "2 of 3 devices");
+  // Two rows on the S25 for the same element is still one device.
+  assert.equal(merged.filter((f) => f.selector === "a.wm-cta-m:nth-of-type(1)").length, 1);
+});
+
+test("a fault on one device says which one", () => {
+  const cls = mergePageFindings(FLEET).find((f) => f.pageLevel);
+  assert.equal(cls?.reach, "only on Samsung Galaxy S25");
+});
+
+test("the worst severity wins, and the item reads as the device that failed", () => {
+  const merged = mergePageFindings(FLEET);
+  const text = merged.find((f) => f.selector === "span.wm-m");
+  assert.equal(text?.severity, "warn", "a warning on the phone outranks a note on the tablet");
+  assert.equal(text?.label, "Text 11.0px on a phone");
+});
+
+test("errors first, then whatever lands on the most devices", () => {
+  const merged = mergePageFindings(FLEET);
+  assert.deepEqual(merged.map((f) => f.severity), ["error", "warn", "warn"]);
+  assert.equal(merged[1].selector, "a.wm-cta-m:nth-of-type(1)", "2 devices before 2 devices, ties on label");
+});
+
+test("everywhere is said as everywhere", () => {
+  const everywhere: DeviceItems[] = FLEET.map((d) => ({ ...d, items: [
+    { rule: "cls", label: "Layout shift", selector: null, pageLevel: true, severity: "error" }] }));
+  assert.equal(mergePageFindings(everywhere)[0].reach, "all 3 devices");
+});
+
+test("why it matters and the usual fix are looked up once per fault", () => {
+  const calls: string[] = [];
+  const merged = mergePageFindings(FLEET, (rule) => { calls.push(rule); return { why: `why ${rule}`, fix: `fix ${rule}` }; });
+  assert.equal(merged.find((f) => f.pageLevel)?.why, "why cls");
+  assert.deepEqual(calls.sort(), ["cls", "tap-size", "text-size"]);
+});
+
+test("the merged list goes into the same prompt", () => {
+  const p = fixPrompt(mergePageFindings(FLEET), { url: "https://x.test/p", where: "all 3 device profiles" });
+  assert.match(p, /3 things need fixing/);
+  assert.match(p, /Measured on: all 3 device profiles/);
+  assert.match(p, /Seen on: only on Samsung Galaxy S25/);
 });

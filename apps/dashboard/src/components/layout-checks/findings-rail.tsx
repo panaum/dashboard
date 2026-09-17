@@ -111,6 +111,7 @@ export function FindingsRail({
   drawableHeight,
   hold = null,
   loading = false,
+  prompt,
   where,
   url,
   reachOf,
@@ -137,6 +138,10 @@ export function FindingsRail({
   /** True while the frame is still fetching the capture these pictures are cut
       from. A full page is several megabytes, so this is seconds, not a flash. */
   loading?: boolean;
+  /** The page's own fix prompt — every device's findings, the same fault
+      counted once. The rail only knows the device it is showing, so where the
+      page can build the better instruction, it passes it in. */
+  prompt?: string;
   /** "Samsung Galaxy S25 · Chromium · 412 × 892" — the "where" a copied finding carries. */
   where?: string;
   /** The page under test; a copied finding is useless without it. */
@@ -197,9 +202,12 @@ export function FindingsRail({
         // column is not wide enough to hold them beside the counts, and one
         // button on each line reads as two unrelated controls.
         <span className="flex flex-wrap items-center gap-2">
-          <CopyButton text={copyPrompt()} label="Copy fix prompt"
+          <CopyButton text={prompt || copyPrompt()} label="Copy fix prompt"
                       icon={<Wand2 className="size-3.5" aria-hidden />}
-                      title="Every finding here as one instruction, for whoever builds the page — the measurements, what each costs a visitor, and the rules a fix has to respect." />
+                      title={(prompt
+                        ? "Every finding on this page, from every device, as one instruction for whoever builds it"
+                        : "Every finding here as one instruction, for whoever builds the page")
+                        + " — the measurements, what each costs a visitor, and the rules a fix has to respect."} />
           <CopyButton text={copyAll()} label="Copy all" title="Every finding here as plain text, to send to a person." />
         </span>
       )}
