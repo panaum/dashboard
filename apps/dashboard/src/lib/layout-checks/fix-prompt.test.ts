@@ -135,3 +135,11 @@ test("the merged list goes into the same prompt", () => {
   assert.match(p, /Measured on: all 3 device profiles/);
   assert.match(p, /Seen on: only on Samsung Galaxy S25/);
 });
+
+test("an item says whether it is new or has been waiting since the last run", () => {
+  const p = fixPrompt([{ ...RUN[1], since: "still" }, { ...RUN[0], since: "new" }], CTX);
+  assert.match(p, /Tap target 77 × 14[\s\S]*Since: reported on the last run too/);
+  assert.match(p, /Layout shift 0\.389[\s\S]*Since: new this run/);
+  // Without a previous run there is no line at all.
+  assert.doesNotMatch(fixPrompt([RUN[1]], CTX), /Since:/);
+});

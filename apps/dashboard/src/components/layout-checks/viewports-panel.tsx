@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { readWidthView, syncQuery } from "@/lib/layout-checks/deep-link";
+import { sinceOf, type RunDiff } from "@/lib/layout-checks/run-diff";
 import { ExternalLink } from "lucide-react";
 import { BarLabel, CheckShell, ON_STAGE, revealStage, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame } from "@/components/layout-checks/device-frame";
@@ -31,6 +32,7 @@ export function ViewportsPanel({
   verdict,
   runId,
   findings,
+  changes = null,
   widths,
   headerAction,
   url,
@@ -39,6 +41,8 @@ export function ViewportsPanel({
   verdict: TabVerdict;
   runId: string | null;
   findings: ViewportFinding[];
+  /** Which rules crossed into or out of FAIL/WARN since the last run. */
+  changes?: RunDiff | null;
   /** Widths with a stored screenshot, ascending. */
   widths: number[];
   headerAction?: ReactNode;
@@ -150,6 +154,7 @@ export function ViewportsPanel({
       showPins={false}
       where={perWidth ? `${current}px · ${SHAPE_WORD[widthShape(current)]}` : `all ${asc.length} widths`}
       url={url}
+      sinceOf={(it) => sinceOf(changes, it.rule)}
     />
   );
 
