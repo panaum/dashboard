@@ -61,3 +61,9 @@ test("a selected row past the cap is shown anyway, in its own place", () => {
   // expanded still means all of them
   assert.equal(railSlice(items, true, 5, 7).shown.length, 9);
 });
+
+test("a layout-shift culprit is labelled by how far it moved", () => {
+  const f = (message: string) => ({ severity: "info", rule: "cls-source", message, selector: "img.hero" });
+  assert.equal(shortLabel(f("img.hero moved 420px down while the page loaded")), "Moved 420px down while loading");
+  assert.equal(shortLabel(f("img.hero moved in place while the page loaded")), "Moved in place while loading");
+});
