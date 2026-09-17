@@ -5,7 +5,7 @@ import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox
 import { useSearchParams } from "next/navigation";
 import { readDeviceView, syncQuery } from "@/lib/layout-checks/deep-link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ChevronDown, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, Rotate3d, RotateCcw, ShieldAlert } from "lucide-react";
+import { ChevronDown, Columns2, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, Rotate3d, RotateCcw, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
@@ -26,6 +26,7 @@ import { sinceOf, type RunDiff, type Since } from "@/lib/layout-checks/run-diff"
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
 import { frameNote, type RunProvenance } from "@/lib/layout-checks/provenance";
 import { runScheme } from "@/lib/layout-checks/scheme";
+import { beforeAfterLine, deviceChanges, whenWords } from "@/lib/layout-checks/before-after";
 import { captureHold, holdNote, softCaptureNote } from "@/lib/layout-checks/capture-hold";
 import { ms } from "@/lib/layout-checks/motion";
 import { LiveSession } from "@/components/layout-checks/live-session";
@@ -65,6 +66,7 @@ export function DevicesPanel({
   devices,
   changes = null,
   storedFolds,
+  previous = null,
   liveAvailable,
   headerAction,
   run,
@@ -78,6 +80,14 @@ export function DevicesPanel({
   /** Which faults moved since the last run, keyed as reach.ts keys them. */
   changes?: RunDiff | null;
   storedFolds: string[];
+  /** The run before this one: the Dashboard keeps its folds, so a device can
+   *  be shown then and now side by side (before-after.ts). */
+  previous?: {
+    runId: string;
+    checkedAt: string;
+    folds: string[];
+    devices: { profile_id: string; status: string; findings: { rule: string; selector?: string | null; scope?: string }[] }[];
+  } | null;
   /** The preview service is configured, so full-page images may still be served live. */
   liveAvailable: boolean;
   /** Shown beside the verdict when there is no run control to put there. */
@@ -113,6 +123,9 @@ export function DevicesPanel({
   // No WebGL, or the model or three.js could not be fetched: the flat frame
   // stays, without a word. Switching 3D off and on tries again.
   const [model3dFailed, setModel3dFailed] = useState(false);
+  // Then and now, side by side. Only where the last run still has this
+  // device's fold — the Dashboard keeps two runs' worth, which is exactly this.
+  const [history, setHistory] = useState(false);
   // Once the model has drawn it covers the flat frame, and from then the
   // frame's pins, scroll area and ruler must not take focus: nothing under an
   // overlay may be reachable by keyboard. Reported by the model itself, so
@@ -256,6 +269,9 @@ export function DevicesPanel({
   };
   const showLive = live && !showCompare;
   const showStream = streaming && !showCompare && Boolean(current);
+  const canHistory = Boolean(previous && current && previous.folds.includes(current.profileId));
+  const showHistory = history && canHistory && !showCompare && !showStream && !showLive;
+  const previousRaw = previous?.devices.find((d) => d.profile_id === current?.profileId) ?? null;
   // "Desktop 1440 (Firefox)" names one device; a compared frame is the viewport
   // plus its own engine, so the device's engine must not leak into every caption.
   const viewportName = current ? current.label.replace(/\s*\([^)]*\)\s*$/, "") : "";
@@ -388,7 +404,7 @@ const picker = views.length ? (
   ) : null;
 
   // ── Stage ──────────────────────────────────────────────────────────────────
-  const mode = !current ? "none" : showStream ? "stream" : showCompare ? "compare" : "single";
+  const mode = !current ? "none" : showStream ? "stream" : showCompare ? "compare" : showHistory ? "history" : "single";
   const swap = {
     initial: reduce ? false as const : { opacity: 0, scale: 0.985 },
     animate: { opacity: 1, scale: 1 },
@@ -410,6 +426,35 @@ const picker = views.length ? (
             />
           </div>
           <StageCaption title={current.label}>{" · "}{current.engineLabel}{" · "}{current.viewportLabel}{" · "}live</StageCaption>
+        </motion.div>
+      ) : mode === "history" && previous && current ? (
+        <motion.div key="history" {...swap} className="flex w-full flex-col items-center gap-2">
+          <div className="grid w-full gap-4 md:grid-cols-2">
+            {[
+              { key: "then", title: "Last run", when: previous.checkedAt,
+                src: `/api/devicepreview/shot?runId=${previous.runId}&profile=${encodeURIComponent(current.profileId)}` },
+              { key: "now", title: "This run", when: null, src: src.fold ?? src.live },
+            ].map((side) => (
+              <div key={side.key} className="flex min-w-0 flex-col items-center gap-2">
+                <DeviceFrame
+                  shape={current.shape}
+                  deviceId={`${current.profileId}:${side.key}`}
+                  viewport={current.viewport}
+                  src={side.src}
+                  fallbackSrc={null}
+                  upgradeSrc={null}
+                  alt={`${current.label}, ${side.title.toLowerCase()}`}
+                  title={url.replace(/^https?:\/\//, "")}
+                  maxHeight={520}
+                  highlight={null}
+                  frameClassName={ON_STAGE}
+                />
+                <StageCaption title={side.title}>{side.when ? <>{" · "}{whenWords(side.when)}</> : null}</StageCaption>
+              </div>
+            ))}
+          </div>
+          {/* Two identical pictures need the tool to say it looked. */}
+          <p className="text-[13px] leading-5 text-text-primary">{beforeAfterLine(deviceChanges(currentRaw, previousRaw))}</p>
         </motion.div>
       ) : mode === "compare" ? (
         <motion.div key="compare" {...swap} className="flex w-full flex-col items-center gap-2">
@@ -527,7 +572,7 @@ const picker = views.length ? (
 
   // The bar under the device. "Open in a window" is your browser, not the
   // device's: the tooltip says so.
-  const show3dToggle = Boolean(model3dSpec) && !showCompare && !showStream && !showLive;
+  const show3dToggle = Boolean(model3dSpec) && !showCompare && !showStream && !showLive && !showHistory;
   const showing3d = frame3d && zoom === "fit";
   const bar = current ? (
     <StageBar note={embed?.reason}>
@@ -559,7 +604,16 @@ const picker = views.length ? (
           <RotateCcw className="size-4" aria-hidden /> Face front
         </StageButton>
       )}
-      {canCompare && (
+      {canHistory && !showCompare && !showStream && !showLive && (
+        <StageButton
+          on={showHistory}
+          onClick={() => { setHistory((h) => !h); setFinding(null); }}
+          title="This device then and now: the last run's capture beside this one, and what changed between them."
+        >
+          <Columns2 className="size-4" aria-hidden /> Before / after
+        </StageButton>
+      )}
+      {canCompare && !showHistory && (
         <StageButton
           on={showCompare}
           onClick={() => { setCompare((c) => !c); setFinding(null); }}
@@ -568,7 +622,7 @@ const picker = views.length ? (
           <Columns3 className="size-4" aria-hidden /> Compare engines
         </StageButton>
       )}
-      {!showCompare && !showStream && !showLive && (
+      {!showCompare && !showStream && !showLive && !showHistory && (
         <StageButton
           on={zoom === "actual"}
           onClick={() => setZoom((z) => (z === "actual" ? "fit" : "actual"))}
