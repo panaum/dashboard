@@ -367,6 +367,7 @@ Auth is a shared team password + signed cookie — **not** NextAuth.
 | `PRESENCE_CHIPS` | Gates the **client presence chips** on client detail + list (`lib/linkspy/client-presence-chips-shape.ts` `presenceChipsEnabled()`) and the "Link to LinkSpy" action. Only the literal `1` enables it | flag | *(same name, set separately, on Railway)* | No — unset ⇒ client pages are byte-identical to pre-chips |
 | `DEVICEPREVIEW_URL` | Base URL of the devicepreview Railway service (§1.5) for the Device preview section on Layout checks pages (`lib/devicepreview/client.ts`, `api/devicepreview/*`) | url | — | No — section shows "not configured" |
 | `DEVICEPREVIEW_KEY` | Bearer key for that service; **server-only, never reaches the browser** | secret | Railway devicepreview (`DEVICEPREVIEW_KEY`) | No — as above |
+| `NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA` | **Set by Vercel itself, nothing to configure.** The Device health panel prints it beside the commit the preview service reports (`lib/layout-checks/service-line.ts`), so "is the service running what I merged" is read there rather than inferred | build var | *(Vercel, automatic)* | No — unset (local builds) ⇒ the line names the service's build only |
 | `ANTHROPIC_API_KEY` | Enables Claude judgment in the AI QA agent (`lib/ai/anthropic.ts:5`) | secret | — | No — deterministic checks still run |
 | `E2E_PASSWORD` | Playwright login; must equal the server's `APP_PASSWORD` (`e2e/auth.setup.ts:15`) | secret | — | Test-only |
 | `NODE_ENV` | Cookie `secure` flag, Prisma client caching | platform | — | Injected |

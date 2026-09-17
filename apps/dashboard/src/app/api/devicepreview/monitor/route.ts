@@ -16,6 +16,14 @@ export async function GET(req: NextRequest) {
   if (denied) return denied;
   if (!configured()) return NextResponse.json({ unavailable: true });
   const p = req.nextUrl.searchParams;
+  if (p.get("view") === "health") {
+    // "Is the deployed service running the code I merged?" — three sessions
+    // have been spent guessing at that, and /health answers it. Passed through
+    // here so the Device health panel can say so where it is already being
+    // read, rather than from a terminal. Nothing secret in it: a commit sha,
+    // a branch and the device ids the service loaded.
+    return forward("/health");
+  }
   if (p.get("view") === "runs") {
     const url = p.get("url");
     if (!url) return NextResponse.json({ error: "url required" }, { status: 400 });
