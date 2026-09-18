@@ -23,6 +23,7 @@ import { fixPrompt, mergePageFindings } from "@/lib/layout-checks/fix-prompt";
 import { pinsFor } from "@/lib/layout-checks/pins";
 import { auditedCount, devicesWith, reachKey, reachMap, type Reach } from "@/lib/layout-checks/reach";
 import { sinceOf, type RunDiff, type Since } from "@/lib/layout-checks/run-diff";
+import { stabilityOf, type RunKeys, type Stability } from "@/lib/layout-checks/stability";
 import { LIVE_CAVEAT, qaUrl } from "@/lib/layout-checks/embed";
 import { frameNote, type RunProvenance } from "@/lib/layout-checks/provenance";
 import { runScheme } from "@/lib/layout-checks/scheme";
@@ -65,6 +66,7 @@ export function DevicesPanel({
   runId,
   devices,
   changes = null,
+  history = [],
   storedFolds,
   previous = null,
   liveAvailable,
@@ -79,6 +81,8 @@ export function DevicesPanel({
   devices: DeviceInput[];
   /** Which faults moved since the last run, keyed as reach.ts keys them. */
   changes?: RunDiff | null;
+  /** Every run the page keeps, as the faults it reported, newest first (stability.ts). */
+  history?: RunKeys[];
   storedFolds: string[];
   /** The run before this one: the Dashboard keeps its folds, so a device can
    *  be shown then and now side by side (before-after.ts). */
@@ -220,6 +224,9 @@ export function DevicesPanel({
   // New this run, or reported last run too — the row says which.
   const sinceFor = (it: { rule: string; selector: string | null; pageLevel: boolean }): Since | null =>
     sinceOf(changes, reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined));
+  // A fixture or a flap: how this fault has behaved over the last runs.
+  const stabilityFor = (it: { rule: string; selector: string | null; pageLevel: boolean }): Stability | null =>
+    stabilityOf(reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined), history);
   // The other devices carrying the same finding, by name, for the open row.
   const alsoOn = (it: { rule: string; selector: string | null; pageLevel: boolean }): string[] =>
     devicesWith(devices, reachKey(it.rule, it.selector, it.pageLevel ? "page" : undefined)).filter((l) => l !== current?.label);
@@ -707,6 +714,7 @@ const picker = views.length ? (
         url={url}
         reachOf={reachOf}
         sinceOf={sinceFor}
+        stabilityOf={stabilityFor}
         alsoOn={alsoOn}
         thumbs={showLive ? null : { src: shownSrc, pageWidth: current.viewport.width, pageHeight: imageMeta?.cssHeight ?? null }}
       />
