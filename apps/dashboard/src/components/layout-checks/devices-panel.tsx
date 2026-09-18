@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { readDeviceView, syncQuery } from "@/lib/layout-checks/deep-link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ChevronDown, Columns2, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, Rotate3d, RotateCcw, ShieldAlert } from "lucide-react";
+import { ChevronDown, Columns3, Diff, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, Rotate3d, RotateCcw, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
@@ -130,6 +131,11 @@ export function DevicesPanel({
   // Then and now, side by side. Only where the last run still has this
   // device's fold — the Dashboard keeps two runs' worth, which is exactly this.
   const [beforeAfter, setBeforeAfter] = useState(false);
+  // What changed against the baseline run, drawn by the service when this run
+  // was made: the changed pixels marked on the page. Offered wherever the run
+  // was diffed and something differed — a regression is the loud case, but a
+  // 0.4% that is not a regression is still worth a look when the reader asks.
+  const [showDiff, setShowDiff] = useState(false);
   // Once the model has drawn it covers the flat frame, and from then the
   // frame's pins, scroll area and ruler must not take focus: nothing under an
   // overlay may be reachable by keyboard. Reported by the model itself, so
@@ -279,6 +285,9 @@ export function DevicesPanel({
   const canHistory = Boolean(previous && current && previous.folds.includes(current.profileId));
   const showHistory = beforeAfter && canHistory && !showCompare && !showStream && !showLive;
   const previousRaw = previous?.devices.find((d) => d.profile_id === current?.profileId) ?? null;
+  const diffPct = typeof currentRaw?.diff?.percent === "number" ? currentRaw.diff.percent : null;
+  const canDiff = Boolean(runId && liveAvailable && current && diffPct !== null && diffPct > 0 && !currentRaw?.diff?.missing);
+  const showingDiff = showDiff && canDiff && !showCompare && !showStream && !showLive && !showHistory;
   // "Desktop 1440 (Firefox)" names one device; a compared frame is the viewport
   // plus its own engine, so the device's engine must not leak into every caption.
   const viewportName = current ? current.label.replace(/\s*\([^)]*\)\s*$/, "") : "";
@@ -501,9 +510,11 @@ const picker = views.length ? (
             shape={current.shape}
             deviceId={current.profileId}
             viewport={current.viewport}
-            src={src.fold ?? src.live}
-            fallbackSrc={src.fold ? src.live : null}
-            upgradeSrc={src.fold ? src.live : null}
+            src={showingDiff && current
+              ? `/api/devicepreview/live?runId=${runId}&profile=${encodeURIComponent(current.profileId)}&kind=diff`
+              : (src.fold ?? src.live)}
+            fallbackSrc={showingDiff ? null : (src.fold ? src.live : null)}
+            upgradeSrc={showingDiff ? null : (src.fold ? src.live : null)}
             liveSrc={showLive ? qaUrl(url) : null}
             alt={showLive ? `${current.label}, the live page` : `${current.label}, rendered page`}
             title={url.replace(/^https?:\/\//, "")}
@@ -551,6 +562,11 @@ const picker = views.length ? (
           <StageCaption title={current.label}>
             {" · "}{showLive ? current.viewportLabel : `${current.engineLabel} · ${current.viewportLabel}`}
             {showLive && <span className="block text-[11px] leading-4">{LIVE_CAVEAT}</span>}
+            {showingDiff && diffPct !== null && (
+              <span className={cn("block text-[11px] leading-4", currentRaw?.diff?.regressed ? "text-error-strong" : "text-text-secondary")}>
+                {diffPct.toFixed(2)}% of pixels differ from the baseline run, marked on the page.{currentRaw?.diff?.regressed ? " That is over the regression threshold." : ""}
+              </span>
+            )}
             {!showLive && partial && (
               // The stage is near-white again, so the darkened hue: warning
               // itself is ~2:1 on white and fails as text.
@@ -579,7 +595,7 @@ const picker = views.length ? (
 
   // The bar under the device. "Open in a window" is your browser, not the
   // device's: the tooltip says so.
-  const show3dToggle = Boolean(model3dSpec) && !showCompare && !showStream && !showLive && !showHistory;
+  const show3dToggle = Boolean(model3dSpec) && !showCompare && !showStream && !showLive && !showHistory && !showingDiff;
   const showing3d = frame3d && zoom === "fit";
   const bar = current ? (
     <StageBar note={embed?.reason}>
@@ -611,7 +627,7 @@ const picker = views.length ? (
           <RotateCcw className="size-4" aria-hidden /> Face front
         </StageButton>
       )}
-      {canHistory && !showCompare && !showStream && !showLive && (
+      {canHistory && !showCompare && !showStream && !showLive && !showingDiff && (
         <StageButton
           on={showHistory}
           onClick={() => { setBeforeAfter((h) => !h); setFinding(null); }}
@@ -620,7 +636,16 @@ const picker = views.length ? (
           <Columns2 className="size-4" aria-hidden /> Before / after
         </StageButton>
       )}
-      {canCompare && !showHistory && (
+      {canDiff && !showCompare && !showStream && !showLive && !showHistory && (
+        <StageButton
+          on={showingDiff}
+          onClick={() => setShowDiff((d) => !d)}
+          title={`${(diffPct ?? 0).toFixed(2)}% of pixels differ from the baseline run. Show which, marked on the page.`}
+        >
+          <Diff className="size-4" aria-hidden /> What changed
+        </StageButton>
+      )}
+      {canCompare && !showHistory && !showingDiff && (
         <StageButton
           on={showCompare}
           onClick={() => { setCompare((c) => !c); setFinding(null); }}
