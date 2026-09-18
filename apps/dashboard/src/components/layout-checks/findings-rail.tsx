@@ -12,6 +12,8 @@ import { undrawnLabel, type Hold } from "@/lib/layout-checks/capture-hold";
 import { fixPrompt } from "@/lib/layout-checks/fix-prompt";
 import { imagePlan, INK } from "@/lib/layout-checks/finding-image";
 import type { Since } from "@/lib/layout-checks/run-diff";
+import { stabilitySentence, stabilityWords, type Stability } from "@/lib/layout-checks/stability";
+import { numbersLine } from "@/lib/layout-checks/numbers";
 import { reachLabel, reachTone, type Reach } from "@/lib/layout-checks/reach";
 import { allFindingsText, findingText, type CopyFinding } from "@/lib/layout-checks/copy-finding";
 import { boxWithin, cropFor, cropStyle, type Box } from "@/lib/layout-checks/crop";
@@ -190,6 +192,7 @@ export function FindingsRail({
   url,
   reachOf,
   sinceOf,
+  stabilityOf,
   showPins = true,
   thumbs = null,
   alsoOn,
@@ -225,6 +228,8 @@ export function FindingsRail({
   reachOf?: (item: RailItem) => Reach | null;
   /** New this run, or reported last run too. Null without a previous run. */
   sinceOf?: (item: RailItem) => Since | null;
+  /** How this fault has behaved over the last runs: a fixture, a flap, or nothing worth saying. */
+  stabilityOf?: (item: RailItem) => Stability | null;
   /** Numbers, matching the pins drawn on the capture. Off where nothing is drawn. */
   showPins?: boolean;
   /** The capture the frame is showing, so a row can carry a crop of its
@@ -264,7 +269,7 @@ export function FindingsRail({
       const help = explain(kind, it.rule);
       return { label: it.label, message: it.detail || it.message, selector: it.selector,
                pageLevel: it.pageLevel, why: help?.why, fix: help?.fix, severity: it.severity,
-               reach: reachLabel(reachOf?.(it) ?? null), since: sinceOf?.(it) ?? null };
+               reach: reachLabel(reachOf?.(it) ?? null), since: sinceOf?.(it) ?? null, history: stabilitySentence(stabilityOf?.(it) ?? null), now: numbersLine(it.style), html: it.html ?? null };
     }),
     { url: url ?? "", where: where ?? deviceLabel },
   );
@@ -316,6 +321,8 @@ export function FindingsRail({
           const reach = reachOf?.(it) ?? null;
           const reachWords = reachLabel(reach);
           const since = sinceOf?.(it) ?? null;
+          const stable = stabilityOf?.(it) ?? null;
+          const stableWords = stabilityWords(stable);
           const wide = reachTone(reach) === "wide";
           // The finding has a measured place on the page; what is missing is
           // the image to draw it on. Say that, and do not offer a click that
@@ -420,6 +427,13 @@ export function FindingsRail({
                     {reachWords}
                   </span>
                 )}
+                {/* A flap is the one thing worth colour: it is the row most
+                    likely to waste an afternoon. A fixture is said plainly. */}
+                {stableWords && (
+                  <span className={cn("text-[11px] leading-4", stable?.flapping ? "font-semibold text-warning-strong" : "text-text-secondary")}>
+                    {stableWords}
+                  </span>
+                )}
                 <span className="font-mono text-[11px] leading-4 text-text-secondary">
                   {it.pageLevel ? "whole page" : (it.selector ?? "—")}
                 </span>
@@ -443,6 +457,14 @@ export function FindingsRail({
                       <p className="text-text-primary">{it.detail || it.message}</p>
                     )}
                     {help && <p className="text-text-secondary">{help.why}</p>}
+                    {/* The element's own numbers: what the stylesheet did to
+                        produce the measurement above, and the tag to grep for. */}
+                    {numbersLine(it.style) && (
+                      <p className="text-[12px] leading-5 text-text-primary"><span className="font-semibold">Now:</span> {numbersLine(it.style)}</p>
+                    )}
+                    {it.html && (
+                      <p className="break-all font-mono text-[11px] leading-4 text-text-secondary">{it.html}</p>
+                    )}
                     {help?.fix && <p className="text-text-secondary">{help.fix}</p>}
                     {!help && !it.detail && !it.message && (
                       <p className="text-text-secondary">No further detail was recorded for this finding.</p>

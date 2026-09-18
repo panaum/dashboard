@@ -143,3 +143,35 @@ test("an item says whether it is new or has been waiting since the last run", ()
   // Without a previous run there is no line at all.
   assert.doesNotMatch(fixPrompt([RUN[1]], CTX), /Since:/);
 });
+
+test("an item carries how it has behaved over the last runs", () => {
+  const p = fixPrompt([{ ...RUN[1], history: "In every one of the last 6 runs, since 11 Sept." }], CTX);
+  assert.match(p, /History: In every one of the last 6 runs, since 11 Sept\./);
+  assert.doesNotMatch(fixPrompt([RUN[1]], CTX), /History:/);
+});
+
+test("an item carries the element's own numbers and its tag, for the fix", () => {
+  const p = fixPrompt([{ ...RUN[1], now: "font-size 11px · padding 0px · 77×14px", html: '<a class="wm-cta-m" href="/quote">' }], CTX);
+  assert.match(p, /Now: font-size 11px · padding 0px · 77×14px/);
+  assert.match(p, /Tag: <a class="wm-cta-m" href="\/quote">/);
+  assert.doesNotMatch(fixPrompt([RUN[1]], CTX), /Now:|Tag:/);
+});
+
+test("the merged item carries the failing device's numbers and tag, and what the page knows", () => {
+  const fleet: DeviceItems[] = [
+    { device: "iPad", items: [{ rule: "text-size", label: "Text 11.0px on a tablet", selector: "span.wm-m", severity: "info",
+                                style: { fontSize: "11px" }, html: '<span class="wm-m">' }] },
+    { device: "iPhone 16", items: [{ rule: "text-size", label: "Text 11.0px on a phone", selector: "span.wm-m", severity: "warn",
+                                     style: { fontSize: "11px", padding: "0px" }, html: '<span class="wm-m" data-phone>' }] },
+  ];
+  const [m] = mergePageFindings(fleet, undefined, (it) => ({ since: it.rule === "text-size" ? "still" : null, history: "In every one of the last 6 runs, since 9 Sept." }));
+  assert.equal(m.now, "font-size 11px · padding 0px", "the phone failed harder, so its numbers win");
+  assert.equal(m.html, '<span class="wm-m" data-phone>');
+  assert.equal(m.since, "still");
+  assert.match(m.history ?? "", /since 9 Sept/);
+  const p = fixPrompt([m], { url: "https://x.test/p", where: "all 2 device profiles" });
+  assert.match(p, /Now: font-size 11px · padding 0px/);
+  assert.match(p, /Tag: <span class="wm-m" data-phone>/);
+  assert.match(p, /Since: reported on the last run too/);
+  assert.match(p, /History: In every one of the last 6 runs/);
+});

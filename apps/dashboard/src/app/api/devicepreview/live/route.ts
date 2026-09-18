@@ -10,7 +10,10 @@ import { db } from "@/lib/db";
 // Helper below the handler (isolation test: auth precedes env/db use).
 
 const TIMEOUT_MS = 30000;
-const KINDS = new Set(["full", "fold"]);
+// "diff" is the service's own render of what changed against the baseline
+// run — the changed pixels marked on the page — made when the run was, and
+// kept for as long as the run is.
+const KINDS = new Set(["full", "fold", "diff"]);
 
 export async function GET(req: NextRequest) {
   const denied = await requireApiAuth();
@@ -23,7 +26,7 @@ export async function GET(req: NextRequest) {
   const scheme = p.get("scheme") === "dark" ? "dark" : "light";
   const width = Math.min(1600, Math.max(300, Number(p.get("w") ?? 900) || 900));
   if (!runId || !/^[A-Za-z0-9_-]+$/.test(profile) || !KINDS.has(kind)) {
-    return NextResponse.json({ error: "runId, profile and kind=full|fold required" }, { status: 400 });
+    return NextResponse.json({ error: "runId, profile and kind=full|fold|diff required" }, { status: 400 });
   }
   const run = await db.devicePreviewRun.findUnique({ where: { id: runId }, select: { serviceRunId: true } });
   if (!run) return NextResponse.json({ error: "not_found" }, { status: 404 });

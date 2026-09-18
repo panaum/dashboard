@@ -13,6 +13,9 @@ export type RawFinding = {
   selector?: string | null;
   box?: Box | null;
   scope?: string;
+  /** The element's own computed numbers and opening tag, where the audit recorded them. */
+  style?: Record<string, string> | null;
+  html?: string | null;
 };
 
 export type RailFinding = {
@@ -26,6 +29,8 @@ export type RailFinding = {
   box: Box | null;
   /** About the whole page (viewport meta, layout shift, fonts): nothing to draw. */
   pageLevel: boolean;
+  style?: Record<string, string> | null;
+  html?: string | null;
 };
 
 export const RAIL_CAP = 5;
@@ -67,6 +72,11 @@ export function shortLabel(f: RawFinding): string {
     case "text-small": {
       const s = num(m.match(/set at ([\d.]+)px/));
       return s ? `Text ${s}px on a phone` : "Text too small";
+    }
+    case "cls-source": {
+      // "p:nth-of-type(1) moved 420px down while the page loaded"
+      const mv = f.message.match(/moved (\d+px (?:down|up|left|right)|in place)/);
+      return mv ? `Moved ${mv[1]} while loading` : "Moved while loading";
     }
     case "fixed-chrome": {
       const p = num(m.match(/take (\d+)% of the viewport/));
@@ -116,6 +126,8 @@ export function railItems(findings: RawFinding[]): RailFinding[] {
       selector: f.scope === "page" ? null : (f.selector ?? null),
       box: f.scope === "page" ? null : (f.box && f.box.width > 0 && f.box.height > 0 ? f.box : null),
       pageLevel: f.scope === "page",
+      style: f.style ?? null,
+      html: f.html ?? null,
       _i: i,
     }))
     .sort((a, b) =>

@@ -76,6 +76,11 @@ export const DEVICE_RULES: Record<string, Explanation> = {
     why: "Too small looks soft on a phone, which reads as a cheap page. Too large spends the visitor's data and slows the load for nothing they can see.",
     fix: "Export at roughly two to three times the slot width for phones, and no more than that.",
   },
+  "cls-source": {
+    what: "One of the things that moved while the page loaded, and how far — the layout shift score's explanation, pinned where the element ended up.",
+    why: "A score says the page moved; this says what pushed it. The element named is the one that jumped, and the distance is how far a reader's eye — or thumb — had to follow it.",
+    fix: "Reserve the space before it arrives: width and height on the image, a min-height on the embed or the ad slot, a font that swaps to the same size. Fix the one that moved furthest first; the ones below it usually moved because of it.",
+  },
   cls: {
     what: "How much the page moved under the reader while it loaded — Cumulative Layout Shift, one of Google's Core Web Vitals.",
     why: "Movement means losing your place mid-sentence, or tapping a button that slides away. Good is 0.1 or under; above 0.25 is poor and counts against the page in search.",

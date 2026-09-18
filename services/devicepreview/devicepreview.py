@@ -486,7 +486,7 @@ FIXED_CHROME_JS = """() => {
 DEFAULT_RULES: dict[str, bool] = {
     "overflow": True, "element-wider": True, "tap-small": True, "tap-close": True,
     "clipped-text": True, "text-small": True, "fixed-chrome": True, "viewport-meta": True,
-    "webfont": True, "offscreen": True, "image-size": True, "cls": True,
+    "webfont": True, "offscreen": True, "image-size": True, "cls": True, "cls-source": True,
 }
 
 # Registered before any page script runs. Only Chromium implements the
@@ -509,8 +509,35 @@ CLS_INIT_JS = """(() => {
       // "recent input" (desktop and has_touch-only contexts do not). Honouring
       // it discarded every load-time shift on every phone and tablet profile —
       // the font swaps and unsized images the rule exists to catch.
+      // The sum says how much the page moved; the sources say what moved,
+      // and by how far — the sentence a designer can act on. Kept per node,
+      // merged across entries (a hero that shifts twice is one culprit),
+      // and read by the audit after the page has settled.
+      window.__dpCLSSources = new Map();
+      const name = (el) => {
+        try {
+          if (!el || !el.tagName) return null;
+          if (el.id) return el.tagName.toLowerCase() + '#' + el.id;
+          const cls = (typeof el.className === 'string' && el.className.trim()) ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '';
+          return (el.tagName.toLowerCase() + cls).slice(0, 90);
+        } catch (e) { return null; }
+      };
       new PerformanceObserver((list) => {
-        for (const e of list.getEntries()) window.__dpCLS += e.value;
+        for (const e of list.getEntries()) {
+          window.__dpCLS += e.value;
+          for (const src of (e.sources || [])) {
+            const el = src.node;
+            if (!el || el.nodeType !== 1) continue;
+            const got = window.__dpCLSSources.get(el) || { el: el, value: 0, dy: 0, dx: 0, from: src.previousRect, to: src.currentRect };
+            // An entry's score is shared by its sources; splitting it evenly is
+            // the only honest arithmetic, and it is used to order, never quoted.
+            got.value += e.value / Math.max(1, e.sources.length);
+            got.dy += (src.currentRect.y - src.previousRect.y);
+            got.dx += (src.currentRect.x - src.previousRect.x);
+            got.to = src.currentRect;
+            window.__dpCLSSources.set(el, got);
+          }
+        }
       }).observe({ type: 'layout-shift', buffered: true });
     }
   } catch (e) { window.__dpCLS = null; }
@@ -552,6 +579,29 @@ AUDIT_JS = """(cfg) => {
   const box = (r) => ({ x: Math.round(r.left), y: Math.round(r.top + sy),
                         width: Math.round(r.width), height: Math.round(r.height) });
   const snippet = (el) => (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 50);
+  // The element's own numbers, for whoever fixes it: what the tool measured
+  // is the symptom, these are the values in the stylesheet that produced it.
+  // Read once per finding, computed (so a rem or a clamp() arrives as pixels),
+  // and only the handful a layout fix turns: size, line, padding, min-height,
+  // display, box. Plus the opening tag, trimmed — enough to grep the source
+  // for, never the subtree.
+  const numbers = (el) => {
+    try {
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      const px = (v) => (v && v !== 'auto' && v !== 'normal' && v !== 'none') ? v : null;
+      const style = {};
+      for (const [k, v] of Object.entries({
+        fontSize: cs.fontSize, lineHeight: px(cs.lineHeight), fontWeight: cs.fontWeight,
+        padding: px(cs.padding), minHeight: px(cs.minHeight), minWidth: px(cs.minWidth),
+        width: Math.round(r.width) + 'px', height: Math.round(r.height) + 'px',
+        display: cs.display, position: cs.position === 'static' ? null : cs.position,
+        overflow: cs.overflow === 'visible' ? null : cs.overflow,
+      })) if (v) style[k] = v;
+      const tag = (el.cloneNode(false).outerHTML || '').replace(/\\s+/g, ' ');
+      return { style, html: tag.slice(0, 160) + (tag.length > 160 ? '…' : '') };
+    } catch (e) { return null; }
+  };
   // Content inside a container that clips or scrolls cannot move the document.
   const clippedBy = (el) => {
     let n = el.parentElement;
@@ -625,7 +675,7 @@ AUDIT_JS = """(cfg) => {
       if (p && p !== document.body && p.getBoundingClientRect().right > vw + 1) continue; // report the source, not its children
       findings.push({ severity: 'error', rule: 'overflow',
         message: sel(el) + ' extends ' + Math.round(r.right - vw) + 'px past the viewport',
-        selector: sel(el), box: box(r), text: snippet(el) });
+        selector: sel(el), box: box(r), text: snippet(el), ...(numbers(el) || {}) });
       if (++n >= 6) break;
     }
   }
@@ -670,7 +720,7 @@ AUDIT_JS = """(cfg) => {
         message: wider
           ? sel(el) + ' is ' + Math.round(r.width) + 'px wide in a ' + vw + 'px viewport; ' + past + 'px is clipped and cannot be seen'
           : sel(el) + ' extends ' + past + 'px past the ' + (pastR >= pastL ? 'right' : 'left') + ' edge (' + frac + '% of it is clipped and cannot be seen)',
-        selector: sel(el), box: box(r), text: snippet(el) });
+        selector: sel(el), box: box(r), text: snippet(el), ...(numbers(el) || {}) });
       if (++n >= 8) break;
     }
   }
@@ -728,7 +778,7 @@ AUDIT_JS = """(cfg) => {
         findings.push({ severity: 'warn', rule: 'tap-small',
           message: sel(el) + ' is ' + Math.round(r.width) + '×' + Math.round(r.height)
             + 'px — under the 24px WCAG AA minimum',
-          selector: sel(el), box: box(r), text: snippet(el) });
+          selector: sel(el), box: box(r), text: snippet(el), ...(numbers(el) || {}) });
         n++;
       }
       if (unlistedWarn > 0) findings.push({
@@ -803,7 +853,7 @@ AUDIT_JS = """(cfg) => {
               + (inlinePair ? '; both are inline text links (WCAG 2.5.8 Inline exception)'
                  : '; their 24px tap circles overlap (WCAG 2.5.8 Spacing)'),
             selector: sel(a), box: box(ra), related: sel(b), relatedBox: box(rb),
-            text: snippet(a) });
+            text: snippet(a), ...(numbers(a) || {}) });
           if (++n >= 8) break outer;
         }
       }
@@ -837,7 +887,7 @@ AUDIT_JS = """(cfg) => {
       if (n >= 8) { extra++; continue; }
       findings.push({ severity: 'warn', rule: 'clipped-text',
         message: sel(el) + ' hides ' + (outB >= 2 ? Math.round(outB) + 'px of text below its box' : Math.round(outR) + 'px of text past its right edge'),
-        selector: sel(el), box: box(r), text: snippet(el) });
+        selector: sel(el), box: box(r), text: snippet(el), ...(numbers(el) || {}) });
       n++;
     }
     if (extra) rollup('clipped-text', 'warn', extra, 'clipped text block(s)');
@@ -855,7 +905,7 @@ AUDIT_JS = """(cfg) => {
       if (n >= 10) { extra++; continue; }
       findings.push({ severity: 'warn', rule: 'text-small',
         message: sel(el) + ' is set at ' + size.toFixed(1) + 'px; body text under 12px is hard to read on a phone',
-        selector: sel(el), box: box(el.getBoundingClientRect()), text: snippet(el) });
+        selector: sel(el), box: box(el.getBoundingClientRect()), text: snippet(el), ...(numbers(el) || {}) });
       n++;
     }
     if (extra) rollup('text-small', 'warn', extra, 'small-text block(s)');
@@ -916,7 +966,7 @@ AUDIT_JS = """(cfg) => {
       if (p && p !== document.body) { const pr = p.getBoundingClientRect(); if (pr.right <= 0 || pr.left >= vw) continue; }
       findings.push({ severity: 'info', rule: 'offscreen',
         message: sel(el) + ' sits entirely off screen (x ' + Math.round(r.left) + ' to ' + Math.round(r.right) + ') and is not marked hidden',
-        selector: sel(el), box: box(r), text: snippet(el) });
+        selector: sel(el), box: box(r), text: snippet(el), ...(numbers(el) || {}) });
       if (++n >= 6) break;
     }
   }
@@ -968,6 +1018,23 @@ AUDIT_JS = """(cfg) => {
       findings.push({ severity: 'warn', rule: 'cls', message: 'Cumulative layout shift ' + cls + ' — some content moves while loading (good is 0.1 or under)', selector: 'html', box: { x: 0, y: 0, width: vw, height: vh } });
     } else {
       findings.push({ severity: 'info', rule: 'cls', message: 'Cumulative layout shift ' + cls + ' — stable while loading', selector: 'html', box: { x: 0, y: 0, width: vw, height: vh } });
+    }
+  }
+
+  // ── cls-source: what moved, and how far ───────────────────────────────
+  // One note per culprit, worst first, with its box so it can be pinned on
+  // the capture. Notes, not warnings: the score is already the finding; these
+  // are its explanation. A shift under 0.01 is noise and is not named.
+  if (rules.cls && rules['cls-source'] && cls !== null && window.__dpCLSSources && window.__dpCLSSources.size) {
+    const got = [...window.__dpCLSSources.values()].filter(g => g.value >= 0.01).sort((a, b) => b.value - a.value).slice(0, 6);
+    for (const g of got) {
+      const r = g.to || g.el.getBoundingClientRect();
+      const moved = Math.abs(g.dy) >= 1 ? Math.round(Math.abs(g.dy)) + 'px ' + (g.dy > 0 ? 'down' : 'up')
+                  : Math.abs(g.dx) >= 1 ? Math.round(Math.abs(g.dx)) + 'px ' + (g.dx > 0 ? 'right' : 'left') : 'in place';
+      findings.push({ severity: 'info', rule: 'cls-source',
+        message: sel(g.el) + ' moved ' + moved + ' while the page loaded',
+        selector: sel(g.el), box: { x: Math.round(r.x), y: Math.round(r.y + sy), width: Math.round(r.width), height: Math.round(r.height) },
+        text: snippet(g.el) });
     }
   }
 

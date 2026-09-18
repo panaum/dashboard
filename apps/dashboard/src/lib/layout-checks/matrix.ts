@@ -23,7 +23,7 @@ export type Check = {
 // Layout shift is a Chromium-only measurement: WebKit and Gecko report
 // nothing, which the cell must show as "cannot say" rather than "clean".
 export const CHECKS: Check[] = [
-  { id: "shift", label: "Shift", rules: ["cls"], engines: ["chromium"] },
+  { id: "shift", label: "Shift", rules: ["cls", "cls-source"], engines: ["chromium"] },
   { id: "tap", label: "Tap targets", rules: ["tap-small", "tap-close"] },
   { id: "text", label: "Text", rules: ["text-small"] },
   { id: "images", label: "Images", rules: ["image-size"] },

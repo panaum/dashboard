@@ -14,6 +14,7 @@ import type { DpReport } from "@/lib/devicepreview/history";
 import { devicesVerdict, viewportsVerdict } from "@/lib/layout-checks/verdict";
 import { runScheme, schemeWords } from "@/lib/layout-checks/scheme";
 import { changesLine, diffDevices, diffViewports } from "@/lib/layout-checks/run-diff";
+import { deviceRunKeys, viewportRunKeys } from "@/lib/layout-checks/stability";
 import type { ResponsiveFinding } from "@/lib/linkspy/responsive-view";
 import type { ViewportFinding } from "@/lib/layout-checks/viewports-view";
 
@@ -63,6 +64,9 @@ export default async function LayoutSitePage({
     vPrev ? (vPrev.findings as unknown as ResponsiveFinding[]) : null,
   );
   const vVerdict = { ...viewportsVerdict(asViewportsRun(vCur), asViewportsRun(vPrev)), changes: changesLine(vChanges) };
+  // Every run the page loads, as the set of faults it reported, newest first:
+  // enough to tell a fixture from a flap (stability.ts).
+  const vHistory = site.runs.map((r) => viewportRunKeys(r.checkedAt.toISOString(), r.findings as unknown as ResponsiveFinding[]));
   const widths = vCur?.shots.map((s) => s.width) ?? [];
 
   const viewportsPanel = (
@@ -71,6 +75,7 @@ export default async function LayoutSitePage({
       runId={vCur?.id ?? null}
       findings={(vCur?.findings ?? []) as unknown as ViewportFinding[]}
       changes={vChanges}
+      history={vHistory}
       widths={widths}
       url={site.url}
       trend={site.runs.map((r) => ({ checkedAt: r.checkedAt.toISOString(), errors: r.failCount }))}
@@ -87,6 +92,8 @@ export default async function LayoutSitePage({
     dPrev ? ((dPrev.report as unknown as DpReport).devices ?? []).map((d) => ({ status: d.status, findings: d.findings ?? [] })) : null,
   );
   const dVerdict = { ...devicesVerdict(asDevicesRun(dCur), asDevicesRun(dPrev)), changes: changesLine(dChanges) };
+  const dHistory = site.devicePreviews.map((r) => deviceRunKeys(r.checkedAt.toISOString(),
+    ((r.report as unknown as DpReport).devices ?? []).map((d) => ({ status: d.status, findings: d.findings ?? [] }))));
   const dReport = dCur ? (dCur.report as unknown as DpReport) : null;
   const deviceInputs: DeviceInput[] = (dReport?.devices ?? []).map((d) => ({
     ...(d as DeviceInput),
@@ -105,6 +112,7 @@ export default async function LayoutSitePage({
         folds: dPrev.shots.map((s) => s.profileId),
         devices: ((dPrev.report as unknown as DpReport).devices ?? []).map((d) => ({ profile_id: d.profile_id, status: d.status, findings: d.findings ?? [] })),
       } : null}
+      history={dHistory}
       provenance={{ backend: dReport?.backend ?? null, host: dReport?.host ?? null }}
       storedFolds={dCur?.shots.map((s) => s.profileId) ?? []}
       liveAvailable={devicePreviewConfigured()}
