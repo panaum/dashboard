@@ -15,6 +15,7 @@
 // Pure, so the wording is tested without a clipboard.
 
 import { reachKey } from "@/lib/layout-checks/reach";
+import { numbersLine } from "@/lib/layout-checks/numbers";
 
 export type PromptFinding = {
   /** "Tap target 77 × 14". */
@@ -117,8 +118,15 @@ export type DeviceItems = {
     selector: string | null;
     pageLevel?: boolean;
     severity?: "error" | "warn" | "info";
+    /** The element's own numbers and tag, where the audit recorded them. */
+    style?: Record<string, string> | null;
+    html?: string | null;
   }[];
 };
+
+/** What the page knows about a fault beyond the run — new since last time, a
+ *  fixture, a flap — keyed the same way, so the merged item can carry it. */
+export type Annotate = (item: { rule: string; selector: string | null; pageLevel: boolean }) => Partial<Pick<PromptFinding, "since" | "history">>;
 
 const RANK: Record<string, number> = { error: 0, warn: 1, info: 2 };
 
@@ -138,6 +146,7 @@ const RANK: Record<string, number> = { error: 0, warn: 1, info: 2 };
 export function mergePageFindings(
   devices: DeviceItems[],
   help?: (rule: string) => { why?: string; fix?: string } | null | undefined,
+  annotate?: Annotate,
 ): PromptFinding[] {
   const audited = devices.length;
   const groups = new Map<string, { f: PromptFinding; on: string[] }>();
@@ -153,7 +162,9 @@ export function mergePageFindings(
         const h = help?.(it.rule);
         groups.set(key, {
           f: { label: it.label, message: it.message, selector: it.selector, pageLevel: it.pageLevel,
-               why: h?.why, fix: h?.fix, severity: it.severity },
+               why: h?.why, fix: h?.fix, severity: it.severity,
+               now: numbersLine(it.style), html: it.html ?? null,
+               ...(annotate?.({ rule: it.rule, selector: it.selector, pageLevel: Boolean(it.pageLevel) }) ?? {}) },
           on: [d.device],
         });
         continue;
@@ -162,7 +173,9 @@ export function mergePageFindings(
       // Worst wins: a target that is an error on one device and a note on
       // another is an error, and it should read as the device that failed.
       if ((RANK[it.severity ?? "info"] ?? 9) < (RANK[g.f.severity ?? "info"] ?? 9)) {
-        g.f = { ...g.f, label: it.label, message: it.message, severity: it.severity };
+        // The item reads as the device that failed — its numbers too.
+        g.f = { ...g.f, label: it.label, message: it.message, severity: it.severity,
+                now: numbersLine(it.style) ?? g.f.now, html: it.html ?? g.f.html };
       }
     }
   }
