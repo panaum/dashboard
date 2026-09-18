@@ -99,6 +99,12 @@ export default async function LayoutSitePage({
       runId={dCur?.id ?? null}
       devices={deviceInputs}
       changes={dChanges}
+      previous={dPrev ? {
+        runId: dPrev.id,
+        checkedAt: dPrev.checkedAt.toISOString(),
+        folds: dPrev.shots.map((s) => s.profileId),
+        devices: ((dPrev.report as unknown as DpReport).devices ?? []).map((d) => ({ profile_id: d.profile_id, status: d.status, findings: d.findings ?? [] })),
+      } : null}
       provenance={{ backend: dReport?.backend ?? null, host: dReport?.host ?? null }}
       storedFolds={dCur?.shots.map((s) => s.profileId) ?? []}
       liveAvailable={devicePreviewConfigured()}
