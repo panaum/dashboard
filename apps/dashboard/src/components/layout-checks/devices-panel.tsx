@@ -129,7 +129,7 @@ export function DevicesPanel({
   const [model3dFailed, setModel3dFailed] = useState(false);
   // Then and now, side by side. Only where the last run still has this
   // device's fold — the Dashboard keeps two runs' worth, which is exactly this.
-  const [history, setHistory] = useState(false);
+  const [beforeAfter, setBeforeAfter] = useState(false);
   // Once the model has drawn it covers the flat frame, and from then the
   // frame's pins, scroll area and ruler must not take focus: nothing under an
   // overlay may be reachable by keyboard. Reported by the model itself, so
@@ -277,7 +277,7 @@ export function DevicesPanel({
   const showLive = live && !showCompare;
   const showStream = streaming && !showCompare && Boolean(current);
   const canHistory = Boolean(previous && current && previous.folds.includes(current.profileId));
-  const showHistory = history && canHistory && !showCompare && !showStream && !showLive;
+  const showHistory = beforeAfter && canHistory && !showCompare && !showStream && !showLive;
   const previousRaw = previous?.devices.find((d) => d.profile_id === current?.profileId) ?? null;
   // "Desktop 1440 (Firefox)" names one device; a compared frame is the viewport
   // plus its own engine, so the device's engine must not leak into every caption.
@@ -614,7 +614,7 @@ const picker = views.length ? (
       {canHistory && !showCompare && !showStream && !showLive && (
         <StageButton
           on={showHistory}
-          onClick={() => { setHistory((h) => !h); setFinding(null); }}
+          onClick={() => { setBeforeAfter((h) => !h); setFinding(null); }}
           title="This device then and now: the last run's capture beside this one, and what changed between them."
         >
           <Columns2 className="size-4" aria-hidden /> Before / after
