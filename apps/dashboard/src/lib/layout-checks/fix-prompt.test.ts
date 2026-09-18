@@ -149,3 +149,10 @@ test("an item carries how it has behaved over the last runs", () => {
   assert.match(p, /History: In every one of the last 6 runs, since 11 Sept\./);
   assert.doesNotMatch(fixPrompt([RUN[1]], CTX), /History:/);
 });
+
+test("an item carries the element's own numbers and its tag, for the fix", () => {
+  const p = fixPrompt([{ ...RUN[1], now: "font-size 11px · padding 0px · 77×14px", html: '<a class="wm-cta-m" href="/quote">' }], CTX);
+  assert.match(p, /Now: font-size 11px · padding 0px · 77×14px/);
+  assert.match(p, /Tag: <a class="wm-cta-m" href="\/quote">/);
+  assert.doesNotMatch(fixPrompt([RUN[1]], CTX), /Now:|Tag:/);
+});

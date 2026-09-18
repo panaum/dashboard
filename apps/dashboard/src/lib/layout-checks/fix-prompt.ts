@@ -33,6 +33,9 @@ export type PromptFinding = {
   /** How it has behaved over the last runs (stability.ts) — a fixture is
    *  pressure, a flap is a warning not to chase it. */
   history?: string | null;
+  /** The element's computed numbers as one line (numbers.ts), and its opening tag. */
+  now?: string | null;
+  html?: string | null;
 };
 
 export type PromptContext = {
@@ -53,6 +56,8 @@ function block(f: PromptFinding, n: number): string {
   const lines = [`${n}. ${f.label}`];
   lines.push(`   Element: ${f.pageLevel ? "the page as a whole" : (f.selector ?? "not recorded")}`);
   if (f.message && f.message !== f.label) lines.push(`   Measured: ${f.message}`);
+  if (f.now) lines.push(`   Now: ${f.now}`);
+  if (f.html) lines.push(`   Tag: ${f.html}`);
   if (f.why) lines.push(`   Why it matters: ${f.why}`);
   if (f.fix) lines.push(`   Usual fix: ${f.fix}`);
   if (f.reach) lines.push(`   Seen on: ${f.reach}`);
