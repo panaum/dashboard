@@ -41,6 +41,9 @@ const SESSION_GUARDED = [
 
 // Service-to-service: a shared secret compared timing-safely, or an HMAC envelope.
 const SERVICE_GUARDED: Record<string, RegExp> = {
+  // A shared report's pictures: the share token is an HMAC envelope over the
+  // run id, verified against SPINE_SECRET before anything is read.
+  "src/app/api/r/[token]/shot/route.ts": /SPINE_SECRET/,
   "src/app/api/registry-bridge/delivery/route.ts": /DASHBOARD_BRIDGE_KEY/,
   "src/app/api/spine/inbox/route.ts": /SPINE_SECRET/,
   "src/app/api/spine/drain/route.ts": /CRON_SECRET/,

@@ -1,12 +1,11 @@
 "use client";
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
+import { ChevronDown, Columns2, Columns3, Diff, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, Rotate3d, RotateCcw, ShieldAlert } from "lucide-react";
 import { Listbox, type ListOption, type ListTone } from "@/components/ui/listbox";
 import { useSearchParams } from "next/navigation";
 import { readDeviceView, syncQuery } from "@/lib/layout-checks/deep-link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ChevronDown, Columns2, Columns3, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, Rotate3d, RotateCcw, ShieldAlert } from "lucide-react";
-import { ChevronDown, Columns3, Diff, ExternalLink, Globe, LayoutGrid, Loader2, Maximize2, Rotate3d, RotateCcw, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CheckShell, ON_STAGE, revealStage, SectionHeading, StageBar, StageButton, StageCaption } from "@/components/layout-checks/check-shell";
 import { DeviceFrame, type PinMarker } from "@/components/layout-checks/device-frame";
