@@ -73,6 +73,11 @@ export function shortLabel(f: RawFinding): string {
       const s = num(m.match(/set at ([\d.]+)px/));
       return s ? `Text ${s}px on a phone` : "Text too small";
     }
+    case "cls-source": {
+      // "p:nth-of-type(1) moved 420px down while the page loaded"
+      const mv = f.message.match(/moved (\d+px (?:down|up|left|right)|in place)/);
+      return mv ? `Moved ${mv[1]} while loading` : "Moved while loading";
+    }
     case "fixed-chrome": {
       const p = num(m.match(/take (\d+)% of the viewport/));
       return p ? `Fixed bars take ${p}% of screen` : "Fixed bars too tall";

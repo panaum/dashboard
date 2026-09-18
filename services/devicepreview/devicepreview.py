@@ -486,7 +486,7 @@ FIXED_CHROME_JS = """() => {
 DEFAULT_RULES: dict[str, bool] = {
     "overflow": True, "element-wider": True, "tap-small": True, "tap-close": True,
     "clipped-text": True, "text-small": True, "fixed-chrome": True, "viewport-meta": True,
-    "webfont": True, "offscreen": True, "image-size": True, "cls": True,
+    "webfont": True, "offscreen": True, "image-size": True, "cls": True, "cls-source": True,
 }
 
 # Registered before any page script runs. Only Chromium implements the
@@ -509,8 +509,35 @@ CLS_INIT_JS = """(() => {
       // "recent input" (desktop and has_touch-only contexts do not). Honouring
       // it discarded every load-time shift on every phone and tablet profile —
       // the font swaps and unsized images the rule exists to catch.
+      // The sum says how much the page moved; the sources say what moved,
+      // and by how far — the sentence a designer can act on. Kept per node,
+      // merged across entries (a hero that shifts twice is one culprit),
+      // and read by the audit after the page has settled.
+      window.__dpCLSSources = new Map();
+      const name = (el) => {
+        try {
+          if (!el || !el.tagName) return null;
+          if (el.id) return el.tagName.toLowerCase() + '#' + el.id;
+          const cls = (typeof el.className === 'string' && el.className.trim()) ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '';
+          return (el.tagName.toLowerCase() + cls).slice(0, 90);
+        } catch (e) { return null; }
+      };
       new PerformanceObserver((list) => {
-        for (const e of list.getEntries()) window.__dpCLS += e.value;
+        for (const e of list.getEntries()) {
+          window.__dpCLS += e.value;
+          for (const src of (e.sources || [])) {
+            const el = src.node;
+            if (!el || el.nodeType !== 1) continue;
+            const got = window.__dpCLSSources.get(el) || { el: el, value: 0, dy: 0, dx: 0, from: src.previousRect, to: src.currentRect };
+            // An entry's score is shared by its sources; splitting it evenly is
+            // the only honest arithmetic, and it is used to order, never quoted.
+            got.value += e.value / Math.max(1, e.sources.length);
+            got.dy += (src.currentRect.y - src.previousRect.y);
+            got.dx += (src.currentRect.x - src.previousRect.x);
+            got.to = src.currentRect;
+            window.__dpCLSSources.set(el, got);
+          }
+        }
       }).observe({ type: 'layout-shift', buffered: true });
     }
   } catch (e) { window.__dpCLS = null; }
@@ -991,6 +1018,23 @@ AUDIT_JS = """(cfg) => {
       findings.push({ severity: 'warn', rule: 'cls', message: 'Cumulative layout shift ' + cls + ' — some content moves while loading (good is 0.1 or under)', selector: 'html', box: { x: 0, y: 0, width: vw, height: vh } });
     } else {
       findings.push({ severity: 'info', rule: 'cls', message: 'Cumulative layout shift ' + cls + ' — stable while loading', selector: 'html', box: { x: 0, y: 0, width: vw, height: vh } });
+    }
+  }
+
+  // ── cls-source: what moved, and how far ───────────────────────────────
+  // One note per culprit, worst first, with its box so it can be pinned on
+  // the capture. Notes, not warnings: the score is already the finding; these
+  // are its explanation. A shift under 0.01 is noise and is not named.
+  if (rules.cls && rules['cls-source'] && cls !== null && window.__dpCLSSources && window.__dpCLSSources.size) {
+    const got = [...window.__dpCLSSources.values()].filter(g => g.value >= 0.01).sort((a, b) => b.value - a.value).slice(0, 6);
+    for (const g of got) {
+      const r = g.to || g.el.getBoundingClientRect();
+      const moved = Math.abs(g.dy) >= 1 ? Math.round(Math.abs(g.dy)) + 'px ' + (g.dy > 0 ? 'down' : 'up')
+                  : Math.abs(g.dx) >= 1 ? Math.round(Math.abs(g.dx)) + 'px ' + (g.dx > 0 ? 'right' : 'left') : 'in place';
+      findings.push({ severity: 'info', rule: 'cls-source',
+        message: sel(g.el) + ' moved ' + moved + ' while the page loaded',
+        selector: sel(g.el), box: { x: Math.round(r.x), y: Math.round(r.y + sy), width: Math.round(r.width), height: Math.round(r.height) },
+        text: snippet(g.el) });
     }
   }
 
