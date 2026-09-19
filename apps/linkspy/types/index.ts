@@ -293,3 +293,37 @@ export interface SharedReport {
   scanned_at: string
   results_json: LinkResult[]
 }
+
+/** One site-wide tracking statement (tracking_consistency.py, F() shape). */
+export interface TrackingFinding {
+  id: string
+  status: "PASS" | "WARN" | "INFO" | "SKIP" | "FAIL"
+  title: string
+  detail: string
+  evidence: string[]
+}
+
+/** Per-vendor coverage across the pages a crawl actually read. */
+export interface TrackingCoverage {
+  vendor: string
+  vendor_label: string
+  /** null when the vendor's script is visible but its account id is not. */
+  id: string | null
+  pages_with: string[]
+  pages_without: string[]
+  share: number
+}
+
+/**
+ * Site-wide tracking consistency. `pages_read` counts only pages the scan
+ * could read — `pages_unreadable` are excluded from every denominator, so a
+ * failed render is never reported as a missing tag.
+ */
+export interface TrackingConsistency {
+  enabled: boolean
+  pages_read: number
+  pages_unreadable?: string[]
+  established?: boolean
+  coverage: TrackingCoverage[]
+  findings: TrackingFinding[]
+}

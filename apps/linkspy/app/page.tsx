@@ -3,13 +3,14 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { AnimatePresence } from "framer-motion";
-import { LinkResult, FilterType, SortOption, ScanMeta, ScanDiff, DiffFilter, ResourceType, HostCount, RedirectSummary } from "@/types";
+import { LinkResult, FilterType, SortOption, ScanMeta, ScanDiff, DiffFilter, ResourceType, HostCount, RedirectSummary, TrackingConsistency } from "@/types";
 import UrlInput from "@/components/UrlInput";
 import ScanProgress from "@/components/ScanProgress";
 import StatsBar from "@/components/StatsBar";
 import ReportHeader from "@/components/ReportHeader";
 import IssueSections from "@/components/IssueSections";
 import ResourcePanels from "@/components/ResourcePanels";
+import TrackingConsistencyPanel from "@/components/TrackingConsistencyPanel";
 import FilterBar from "@/components/FilterBar";
 import ResultsTable from "@/components/ResultsTable";
 import WhatChangedCard, { WhatChangedHandle } from "@/components/WhatChangedCard";
@@ -67,6 +68,8 @@ export default function HomePage() {
   const [topHosts, setTopHosts] = useState<HostCount[]>([]);
   const [schemes, setSchemes] = useState<Record<string, number>>({});
   const [redirects, setRedirects] = useState<RedirectSummary | null>(null);
+  const [trackingConsistency, setTrackingConsistency] =
+    useState<TrackingConsistency | null>(null);
   const [siteId, setSiteId] = useState<string | null>(null);
   const [diffFilter, setDiffFilter] = useState<DiffFilter>("all");
   const [filter, setFilter] = useState<FilterType>("all");
@@ -156,6 +159,7 @@ export default function HomePage() {
       setTopHosts([]);
       setSchemes({});
       setRedirects(null);
+      setTrackingConsistency(null);
       setSiteId(null);
       setShowXray(false);
       setScanComplete(false);
@@ -220,6 +224,9 @@ export default function HomePage() {
             setTopHosts((data.top_hosts as HostCount[]) ?? []);
             setSchemes((data.schemes as Record<string, number>) ?? {});
             setRedirects((data.redirects as RedirectSummary) ?? null);
+            setTrackingConsistency(
+              (data.tracking_consistency as TrackingConsistency) ?? null,
+            );
             setSiteId((data.site_id as string) ?? null);
             setScanId((data.scan_id as string) ?? null);
             setScanComplete(true);
@@ -555,6 +562,7 @@ export default function HomePage() {
           {showBreakdown && (
             <section className="relative z-10">
               <ResourcePanels linkTypes={linkTypes} topHosts={topHosts} schemes={schemes} redirects={redirects} />
+              <TrackingConsistencyPanel data={trackingConsistency} />
             </section>
           )}
 

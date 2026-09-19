@@ -51,6 +51,7 @@ from correlation import enrich_reasons
 from form_audit import audit_forms, probe_action_methods
 from tracking_audit import audit_tracking
 from integration_audit import collect_integrations, unchecked_resource_urls, status_to_health
+from tracking_consistency import tracking_consistency
 from database import save_integrations, update_integration_health, get_integrations
 from watchdog import (
     inventory_hosts, demote_third_party_failures, aggregate_outages, run_watchdog,
@@ -1049,6 +1050,11 @@ async def scan_site(
             completed_pages = 0
             all_results = []
             site_integrations = {}   # page_url -> [integration records], persisted after save
+            # page_url -> that page's tracking inventory, or None when the page
+            # could not be read. The worker below swallows per-page errors, so a
+            # page missing from this map would otherwise be indistinguishable
+            # from a page that genuinely carries no tags.
+            site_tracking = {}
             # Builders seen anywhere on the site, in first-seen order.
             site_builders: list[str] = []
 
@@ -1064,6 +1070,7 @@ async def scan_site(
                     })
                     try:
                         links, page_builders, page_signals = await scrape_links(page_url)
+                        site_tracking[page_url] = page_signals.get("tracking")
                         for b in page_builders:
                             if b not in site_builders:
                                 site_builders.append(b)
@@ -1118,6 +1125,7 @@ async def scan_site(
                         await queue.put({"type": "data", "results": serialized})
                     except Exception as page_err:
                         print(f"[ScanSite] Error scanning page {page_url}: {page_err}")
+                        site_tracking.setdefault(page_url, None)
                         completed_pages += 1
                         pct = 15 + int((completed_pages / total_pages) * 75)
                         await queue.put({
@@ -1125,6 +1133,12 @@ async def scan_site(
                             "message": f"Failed page {completed_pages}/{total_pages}: {path_to_show}",
                             "percent": pct
                         })
+
+            # Every discovered page starts unread. A page whose worker never
+            # ran is not a page without tracking, and the consistency view
+            # must not count it as one.
+            for p in discovered_pages:
+                site_tracking.setdefault(p, None)
 
             # Launch all workers
             tasks = [asyncio.create_task(scan_page_worker(p)) for p in discovered_pages]
@@ -1226,7 +1240,7 @@ async def scan_site(
             # Yield final result event
             total_placements = sum(r.get("occurrences", 1) or 1 for r in final_results)
 
-            yield f"data: {json.dumps({'type': 'result', 'data': final_results, 'health_score': health_score, 'pages_scanned': total_pages, 'detected_builders': site_builders, 'total_links': len(final_results), 'total_placements': total_placements, 'diff': diff_payload, 'site_id': effective_site_id, 'scan_id': saved.get('scan_id'), 'scanned_url': url, **_breakdowns(final_results, url)})}\n\n"
+            yield f"data: {json.dumps({'type': 'result', 'data': final_results, 'health_score': health_score, 'pages_scanned': total_pages, 'detected_builders': site_builders, 'total_links': len(final_results), 'total_placements': total_placements, 'diff': diff_payload, 'site_id': effective_site_id, 'scan_id': saved.get('scan_id'), 'scanned_url': url, 'tracking_consistency': tracking_consistency(site_tracking), **_breakdowns(final_results, url)})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
