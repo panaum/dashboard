@@ -93,22 +93,51 @@ from contextlib import asynccontextmanager
 # Monitoring wiring. The scheduler holds no scan logic; it calls these adapters,
 # each of which is the existing pipeline, not a reimplementation of it.
 # ─────────────────────────────────────────────────────────────────────────────
-async def _watchdog_slack(text: str, outage: dict = None) -> None:
-    """Post one third-party outage alert to Slack. Reuses the same webhook the
-    scan notifier uses; a distinct header so it is not mistaken for a scan."""
+# Every sentinel alert used to post under "third-party outage", so a domain
+# expiry arrived describing something else. The header now follows the message.
+def _alert_header(text: str) -> str:
+    low = (text or "").lower()
+    if "expires in" in low or "expired" in low or "certificate" in low:
+        return "⏳ LinkSpy Sentinel — expiry"
+    if "search visibility" in low:
+        return "🔎 LinkSpy Sentinel — search visibility"
+    if "site down" in low or "back up" in low:
+        return "📡 LinkSpy Sentinel — uptime"
+    if "changed" in low or "got worse" in low:
+        return "🛡️ LinkSpy Sentinel — site guard"
+    return "🐕 LinkSpy Watchdog — third-party outage"
+
+
+async def _watchdog_slack(text: str, outage: dict = None) -> bool:
+    """Post one alert to Slack. Returns True only on confirmed delivery.
+
+    D17: this used to return silently when the webhook was unset, ignore the
+    response status, and swallow every exception — three ways to look delivered
+    while reaching nobody. The caller now advances its notified-state only on a
+    True, so an unconfirmed send is retried on the next pass instead of being
+    lost. Saying "I could not deliver this" is the whole job.
+    """
     webhook_url = os.getenv("SLACK_WEBHOOK_URL")
     if not webhook_url:
-        return
+        print(f"[Alert] UNDELIVERABLE — SLACK_WEBHOOK_URL is not set. Message was: {text}")
+        return False
     blocks = [
-        {"type": "header", "text": {"type": "plain_text",
-                                    "text": "🐕 LinkSpy Watchdog — third-party outage"}},
+        {"type": "header", "text": {"type": "plain_text", "text": _alert_header(text)}},
         {"type": "section", "text": {"type": "mrkdwn", "text": text}},
     ]
     try:
         async with httpx.AsyncClient() as client:
-            await client.post(webhook_url, json={"blocks": blocks}, timeout=5.0)
+            r = await client.post(webhook_url, json={"blocks": blocks}, timeout=8.0)
     except Exception as e:
-        print(f"[Watchdog] Slack failed: {e}")
+        print(f"[Alert] UNDELIVERED ({type(e).__name__}: {e}). Message was: {text}")
+        return False
+    if r.status_code >= 300:
+        # A revoked or renamed webhook answers 404/410 without raising, which
+        # is how a broken alerting path stays quiet for months.
+        print(f"[Alert] UNDELIVERED — Slack answered {r.status_code} "
+              f"{r.text[:120]!r}. Message was: {text}")
+        return False
+    return True
 
 
 async def _persist_and_check_integrations(scan_id, page_url: str, integrations: list) -> None:
