@@ -745,6 +745,14 @@ class _FakeRoute:
     def continue_(self):
         self.action = "continue"
 
+    def fallback(self):
+        # A page route takes priority over the context's, so this handler hands
+        # anything it does not abort DOWN to outbound.guarded_context's
+        # collector route rather than answering it. "fallback" is therefore the
+        # allow outcome here — the request still loads, after the guard has had
+        # its say. See scraper._block_non_get.
+        self.action = "fallback"
+
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE", "post"])
 def test_every_non_get_request_is_aborted_during_reveal(method):
@@ -764,14 +772,14 @@ def test_a_top_level_navigation_is_aborted_during_reveal():
 def test_an_ordinary_get_still_loads():
     route = _FakeRoute(_FakeRequest())
     scraper._block_non_get(route)
-    assert route.action == "continue"
+    assert route.action == "fallback"
 
 
 def test_a_subframe_get_navigation_still_loads():
     """A modal that renders in an iframe must be allowed to load."""
     route = _FakeRoute(_FakeRequest(navigation=True, top_level=False))
     scraper._block_non_get(route)
-    assert route.action == "continue"
+    assert route.action == "fallback"
 
 
 class _FakeEl:
@@ -989,7 +997,7 @@ def test_the_assets_a_modal_needs_still_load(url):
     """Blocking analytics must not block the form we are trying to reveal."""
     route = _FakeRoute(_FakeRequest(url=url))
     scraper._block_non_get(route)
-    assert route.action == "continue", url
+    assert route.action == "fallback", url
 
 
 def test_analytics_matching_is_case_insensitive():

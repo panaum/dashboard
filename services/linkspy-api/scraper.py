@@ -15,6 +15,7 @@ from dead_cta_detector import (
 from form_audit import form_action_links
 from tracking_audit import extract_tracking
 from resources import collect_resources, resources_from_stylesheets
+from outbound import guarded_context
 
 # Priority mapping based on page zone
 ZONE_PRIORITY = {
@@ -489,7 +490,12 @@ def _block_non_get(route) -> None:
     except Exception:
         route.abort()
         return
-    route.continue_()
+    # fallback(), not continue_(). A page route takes priority over the
+    # context's, so continuing here would wave a request past the collector
+    # guard that outbound.guarded_context installed — which is exactly what it
+    # did: heapanalytics.com/h was blocked before the reveal phase and served
+    # during it. fallback() hands the request down instead of answering it.
+    route.fallback()
 
 
 _NEVER_CLICK_TYPES = frozenset({"submit", "image", "reset"})
@@ -709,12 +715,18 @@ def _scrape_sync(url: str) -> tuple[list[RawLink], list[str], dict]:
     stylesheets = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
+        # _block_non_get below is armed only while clicking things open. The
+        # page LOAD had no guard at all, so every scan fired the client's whole
+        # tag stack — the thing D15 was about, in the place it was supposed to
+        # have been handled all along.
+        context, _guard = guarded_context(
+            browser,
+            purpose="scan render",
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
-            )
+            ),
         )
         page = context.new_page()
         # Stamp elements that attach runtime click listeners so genuinely

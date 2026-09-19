@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, field as dc_field, asdict
 from typing import Any, Callable, Iterable
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
+from outbound import guarded_context
 
 # ── Probe parameters ────────────────────────────────────────────────────────
 TEST_PARAMS: dict[str, str] = {
@@ -465,7 +466,10 @@ def _one_pass(browser, url: str, accept_consent: bool, timeout_ms: int,
     from playwright.sync_api import Error as PWError, TimeoutError as PWTimeout
 
     res = PassResult()
-    context = browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
+    # Loaded with utm_* and click ids (build_test_url). See attribution.py.
+    context, _guard = guarded_context(
+        browser, purpose="pagecheck render",
+        user_agent=UA, viewport={"width": 1280, "height": 900})
     page = context.new_page()
 
     page.on("request", lambda r: res.requests.append(r.url[:300])
