@@ -171,3 +171,78 @@ export function remedyFor(text: string): string | null {
 export function passingSummary(cards: VitalCard[]): Array<{ label: string; fact: string }> {
   return cards.map((c) => ({ label: c.label, fact: c.fact }));
 }
+
+
+// ─── The findings list ──────────────────────────────────────────────────────
+//
+// The page used to show our taxonomy of checkers, one box each, and left the
+// reader to assemble the verdict from nine tiles. What someone actually wants
+// is the work: one list, worst first, in plain words, with what to do about it.
+//
+// The card is where a finding CAME from, not what it is. It survives as a
+// quiet label on the row, because "SPF: none" means more next to the word
+// Email than on its own.
+
+export type Finding = {
+  /** Stable within a render — the card key plus the check key. */
+  id: string;
+  cardKey: string;
+  cardLabel: string;
+  status: VitalEscalation;
+  text: string;
+  remedy: string | null;
+};
+
+/** Every finding on the site, worst first, flattened out of the cards. */
+export function findingsOf(cards: VitalCard[]): Finding[] {
+  const out: Finding[] = [];
+  for (const card of sortBySeverity(cards)) {
+    for (const check of badChecks(card)) {
+      out.push({
+        id: `${card.key}:${check.key ?? check.text}`,
+        cardKey: card.key,
+        cardLabel: card.label,
+        status: check.status,
+        text: check.text,
+        remedy: remedyFor(check.text),
+      });
+    }
+  }
+  return out.sort(
+    (a, b) => (SEVERITY_RANK[a.status] ?? 9) - (SEVERITY_RANK[b.status] ?? 9),
+  );
+}
+
+/**
+ * The header number: a count of work, not a count of checks.
+ *
+ * "1 critical · 2 warnings across 9 checks" is an audit statistic. "11 to fix"
+ * is a fact about somebody's afternoon, and it is the one the reader wants.
+ */
+export function workCount(cards: VitalCard[]): number {
+  return findingsOf(cards).length;
+}
+
+/** Cards we could not read. Never folded in with the passing ones. */
+export function unknownCards(cards: VitalCard[]): VitalCard[] {
+  return cards.filter((c) => c.escalation === "unknown");
+}
+
+/** "SSL, domain, uptime and DNS all fine" — one reassuring line, not a row. */
+export function passingLine(cards: VitalCard[]): string | null {
+  // lower() keeps acronyms: "SSL, domain, search visibility, uptime and DNS",
+  // never "Ssl ... dns". Same rule as the verdict line.
+  const names = cards
+    .filter((c) => c.escalation === "ok")
+    .map((c) => lower(c.label));
+  if (!names.length) return null;
+  const listed =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const verb = names.length === 1 ? "is" : "are";
+  // Only sentence-case the opening word when it is not an acronym.
+  const opening = /^[A-Z]{2}/.test(listed) ? listed
+    : `${listed[0].toUpperCase()}${listed.slice(1)}`;
+  return `${opening} ${verb} all fine`;
+}

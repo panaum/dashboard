@@ -104,3 +104,48 @@ test("an empty payload never claims everything passes", () => {
   assert.notEqual(v.tone, "success");
   assert.match(v.headline, /No checks/);
 });
+
+// ── the findings list ───────────────────────────────────────────────────────
+
+test("every finding across every card, worst first", () => {
+  const { findingsOf } = require("./vitals-view");
+  const list = findingsOf(NINE);
+  assert.deepEqual(list.map((f: { status: string }) => f.status),
+    ["critical", "warn", "warn", "warn", "notice", "notice"]);
+  assert.equal(list[0].text, "SPF: none");
+  assert.equal(list[0].cardLabel, "Email", "the card it came from survives as context");
+  assert.match(list[0].remedy, /Publish an SPF record/);
+});
+
+test("the header counts work, not checks", () => {
+  const { workCount } = require("./vitals-view");
+  assert.equal(workCount(NINE), 6, "six findings across nine checks");
+  assert.equal(workCount(NINE.filter((c) => c.escalation === "ok")), 0);
+});
+
+test("findings have ids stable enough to key a list", () => {
+  const { findingsOf } = require("./vitals-view");
+  const ids = findingsOf(NINE).map((f: { id: string }) => f.id);
+  assert.equal(new Set(ids).size, ids.length, "no duplicates");
+  assert.ok(ids.every((id: string) => id.includes(":")));
+});
+
+test("the passing line reads as a sentence, however many there are", () => {
+  const { passingLine } = require("./vitals-view");
+  const named = (labels: string[]) =>
+    labels.map((l, i) => card({ key: `k${i}`, label: l, fact: "fine" }));
+  assert.equal(passingLine(named(["SSL", "Domain", "Uptime", "DNS"])),
+    "SSL, domain, uptime and DNS are all fine", "acronyms keep their case");
+  assert.equal(passingLine(named(["Domain"])), "Domain is all fine");
+  assert.equal(passingLine(named(["SSL"])), "SSL is all fine");
+  assert.equal(passingLine([]), null, "nothing passing means no line at all");
+});
+
+test("unknown is never folded in with passing", () => {
+  const { passingLine, unknownCards, findingsOf } = require("./vitals-view");
+  const cards = [card({ key: "ssl", fact: "31 days" }),
+                 card({ key: "tracking", label: "Tracking", escalation: "unknown", fact: "unavailable" })];
+  assert.equal(unknownCards(cards).length, 1);
+  assert.ok(!(passingLine(cards) ?? "").includes("tracking"));
+  assert.equal(findingsOf(cards).length, 0, "and it is not work either — it is unproven");
+});
