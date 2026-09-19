@@ -543,7 +543,7 @@ sentinel that does not.
 
 ---
 
-### D17 — A domain-expiry alert has six ways to reach nobody, all silent ⚠️ OPEN
+### D17 — A domain-expiry alert had six ways to reach nobody, all silent ✅ MOSTLY RESOLVED
 
 **Found 2026-09-19, after apexure.com's 27-day alert reached a human only
 because a forced pass collected alerts instead of sending them.**
@@ -567,6 +567,55 @@ expiry would have arrived under a title describing something else.
 Each rung fires exactly once per site per cycle. For a 30/14/3 ladder that is
 three chances in the last month of a domain's life, each a single unverified
 HTTP POST, with no record that it happened.
+
+#### Fixed 2026-09-19
+
+Items 1-3 and 7 are done; 4-6 remain.
+
+**The ordering.** The pass now decides what to say, says it, finds out whether
+it landed, and only then records what was said. Observing and telling are
+separate: the columns always take the fresh observation, so the cards stay
+current, while `guards.notified` holds what was actually delivered and moves
+only on confirmation.
+
+**Confirmation is required, not assumed.** `deliver_alerts` treats a truthy
+return as delivery. `None`, `False` and any exception are unconfirmed, and each
+one prints the message it could not deliver. `_watchdog_slack` now returns a
+boolean, checks the HTTP status — a revoked webhook answers 404 without raising,
+which is how a broken path stays quiet for months — and logs loudly when
+`SLACK_WEBHOOK_URL` is unset instead of returning silently.
+
+**The subtle half.** On a failure the OLD baseline is written back, not left
+absent. `notified_baseline` falls back to the observed columns when nothing has
+been recorded, and those advance every pass, so leaving the key absent would let
+the baseline drift along behind the observation and lose the rung a second time.
+Writing it back pins it. A test walks four consecutive failed passes and asserts
+the rung fires on every one, then goes quiet only after a delivery succeeds.
+
+**When only some alerts land**, none of the state advances, so the delivered
+ones repeat next pass. A duplicate alert is a nuisance; a dropped one is a
+monitoring system that reliably tells you nothing.
+
+**Headers follow the message** (item 7), so an expiry no longer arrives titled
+"third-party outage".
+
+**`run_sentinel_all` reports what it managed**: sites given, completed, failed
+with their errors, and alerts undelivered. It still refuses to let one site end
+the sweep, but a run that completed 5 of 8 no longer returns the same shape of
+good news as one that completed 8 of 8.
+
+**DNS drift now retries like everything else.** It was the one alert type left
+on the old behaviour: drift is detected inside `run_guards` by comparing against
+a previous snapshot, and it was handed the STORED snapshot, which advances with
+the observation — so a drift alert that failed to deliver was never re-detected.
+It is now handed the snapshot from `guards.notified`, so the comparison is
+against what we last told them. The snapshot that gets STORED is still the fresh
+one, so the DNS card stays current. One exception is how a fixed class of bug
+comes back.
+
+**Still open**: no alert is persisted with its delivery outcome (item 4), there
+is no heartbeat (item 5), and there is no second channel for the bottom rungs
+(item 6).
 
 #### What it takes to make one reach a human
 
@@ -597,6 +646,40 @@ In the order that removes the most risk per line changed:
 emitters, and whether it is actually set on Railway **cannot be established
 from outside the deployment** — which is itself the point of item 3. Until 1-4
 exist, the honest description of this path is: best effort, unverified, once.
+
+---
+
+### D18 — "Search visibility at risk" was read off pages that were not the client's ✅ RESOLVED
+
+**Found and fixed 2026-09-19**, from two critical alerts raised in the same
+sentinel pass. Neither response came from the site it described.
+
+| Site | What we fetched | What we reported |
+|---|---|---|
+| `shopping-protection.com` | **HTTP 403** with a *"Just a moment…"* bot challenge, and the challenge page carries `noindex, nofollow` | "Homepage carries a noindex directive" — right by accident; the live page does carry one, but we had not seen the live page |
+| `elitepractice.clickfunnels.com` | **HTTP 200** landing on ClickFunnels' `nopage_error.html`, because the funnel no longer exists | the same sentence, describing ClickFunnels' error page as the client's homepage |
+
+`check_indexability` read `<meta name=robots>` and `X-Robots-Tag` from whatever
+came back, with no test that it was the page asked for. A challenge page and an
+error page both carry `noindex` of their own, so both produce a **critical**
+verdict — the one severity the house rule reserves for a provable fault.
+
+It now declines to read directives when the response cannot answer for the
+client's page: a status at or above 400, a body matching the crawler's existing
+`_BOT_BLOCK_PHRASES`, or a landing path that looks like an error page. The
+directives become `None`, which the verdict already renders as **Unknown**
+rather than **At risk**, and the reason is logged. A genuine `noindex` on a page
+we actually read is still critical.
+
+Both sites were then investigated by hand, and both turned out to have a real
+problem that the false alert had been standing in front of: the funnel at
+`elitepractice.clickfunnels.com` is **gone** (issue #161), and
+`shopping-protection.com` really does carry `noindex, nofollow`, confirmed in a
+browser (issue #160).
+
+Related gap, not built: a 200 that serves an error page is invisible to every
+check we run. Uptime sees a status under 500, the link checker sees 200, and
+indexability now correctly declines to judge it. #161 has the detail.
 
 ---
 
@@ -853,6 +936,56 @@ Remember D8: the spine/jobs flags accept **only the literal string `1`**.
 Sequencing note: the flywheel only produces visible effect with
 `JOBS_SHADOW=1` **and** `SPINE_SECRET` set on Railway, plus `SPINE_EMIT=1` on the
 Dashboard for the reverse direction.
+
+---
+
+## 3b. Reaching the LinkSpy database
+
+**Use the session pooler on 5432. The direct host is IPv6-only and does not
+resolve over IPv4**, which is twenty minutes of "the hostname is wrong" before
+anyone thinks to check the address family. This cost that once on 2026-09-19.
+
+| | |
+|---|---|
+| Host | `aws-1-ap-southeast-1.pooler.supabase.com` |
+| Port | **5432** (session mode) |
+| Database | `postgres` |
+| User | `postgres.uyvjqaggkqotqcqjwxgm` — the project ref is the part after the dot |
+| Server | PostgreSQL 17.6 |
+| Env var | `LINKSPY_DIRECT_URL`, **Railway only** |
+
+Three ports, three behaviours, and only one of them works for a dump:
+
+- **5432 session pooler** — what to use. Holds a real session, so `pg_dump`,
+  `psql -f` and transactions all behave.
+- **6543 transaction pooler** — pgbouncer in transaction mode. **Breaks
+  `pg_dump`**, and prepared statements with it.
+- **`db.<ref>.supabase.co` direct** — IPv6-only. It resolves to a AAAA record
+  and nothing else, so on an IPv4-only network it looks like a dead hostname
+  rather than an unreachable one.
+
+`PGSSLMODE=require`. The `pg_dump` client major version must be at or above the
+server's 17.
+
+**`npm run db:deploy` has nothing to do with this database.** That is
+`prisma migrate deploy` against the *Dashboard* project. LinkSpy's migrations
+are plain SQL run by hand; see `services/linkspy-api/migrations/README.md`.
+
+**Getting the URL to a tool that is not your interactive shell.** An `export`
+in a terminal does not reach a subprocess started from elsewhere. Write it to a
+file that gets deleted afterwards, rather than pasting it anywhere that keeps a
+transcript:
+
+```bash
+printf 'LINKSPY_DIRECT_URL=%s\n' "$LINKSPY_DIRECT_URL" > ~/.linkspy-dump.env
+chmod 600 ~/.linkspy-dump.env
+# … do the work …
+shred -u ~/.linkspy-dump.env
+```
+
+Dump before any DDL — free tier, no point-in-time recovery, on both projects.
+`docs/runbooks/backup.md` has the commands; verify with `pg_restore --list`
+before believing the file.
 
 ---
 
