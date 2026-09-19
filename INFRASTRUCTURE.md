@@ -306,6 +306,100 @@ redirecting, and that the `proxy.ts` matcher still does not claim to cover
 
 ---
 
+### D15 — The analytics guard covered the browser, not the checker; every scan fired the client's tracking ⚠️ PARTLY RESOLVED
+
+**Found 2026-09-19. Checker fixed (#151); the render paths are still open.**
+
+`scraper._block_non_get` aborts analytics requests *inside Playwright*, because
+firing a pixel while auditing logs a visitor who does not exist. That guard was
+never wrong; it was never complete. `collect_resources` hands every URL it finds
+to `checker.check_single`, which issues its own `httpx` GET with a browser
+user-agent and the client's own page as `Referer` — a second outbound path, with
+no guard on it at all.
+
+A Meta Pixel's `<noscript>` fallback is an `<img>` pointing at a collection
+endpoint. So is a GTM `<noscript>` iframe, and a Google Ads conversion pixel.
+The scan fetched all of them and recorded each as a healthy link (`ok`/`ok`).
+
+**Root cause, stated generally: whenever there are two places that make
+requests, a guard on one is a guard on neither.** The guard belongs at every
+outbound path, or behind a choke point they all share.
+
+#### Measured contamination
+
+Counted from `scans.results_json` in LinkSpy Supabase, across every scan since
+resource checking shipped (`77ef699`, 2026-07-09). Not sampled — every row.
+
+apexure.com — 1,635 scans, 2026-07-10 → 2026-09-19 (~23/day, hourly under
+monitoring):
+
+| Endpoint | Requests | What the fetch does |
+|---|---|---|
+| `facebook.com/tr?id=1105630533445518&ev=PageView` | **1,635** | records a PageView on the pixel |
+| `googleads.g.doubleclick.net/pagead/viewthroughconversion/700482601/` | **3,173** | records a view-through conversion impression |
+| `googletagmanager.com/ns.html?id=GTM-P593C44` | **1,635** | loads the container's noscript tags |
+| `connect.facebook.net/signals/config/1105630533445518` | 1,635 | pixel config JS — records nothing; refused as a precaution |
+| **Hit-recording total** | **6,443** | |
+
+fautons.com — 1,666 scans, same window:
+
+| Endpoint | Requests | What the fetch does |
+|---|---|---|
+| `googletagmanager.com/ns.html?id=GTM-PDMPQLJH` | **1,666** | loads the container's noscript tags |
+
+No other site is affected: of 8 site rows only these two are monitored, and the
+most recent scan of every other site contains no tracking endpoint. The phantom
+requests all originate from the Railway egress IP with a browser user-agent, so
+in the client's reporting they are not distinguishable from real visits.
+
+**The real-traffic denominator is not held anywhere in our data** —
+`consent_sessions`, `tracer_runs` and `ad_destinations` are empty for both
+sites. It has to be read from Meta Events Manager (pixel `1105630533445518`),
+Google Ads (conversion `700482601`) and the two GTM containers, over
+2026-07-10 → 2026-09-19.
+
+Separately, `uptime_pings` holds 19,767 rows for apexure and 19,790 for fautons
+over the same window. Those are plain `httpx` GETs of the homepage with no
+JavaScript, so they fire no tags — but they do appear in server logs and in any
+server-side or edge analytics.
+
+#### Fix (#151)
+
+`beacons.py` refuses collector endpoints at `check_single`'s GET, the single
+place the checker makes an outbound request. Refused URLs report as
+`not_requested` / `unverifiable` — distinct from `blocked` (their host refused
+us) and from `ok` (we looked and it was fine). It is deliberately narrower than
+the render-time list, which matches the whole URL loosely; the checker also sees
+`<a href>`, so a client's own Facebook page link must still be checked. Tag
+*scripts* stay checked, because fetching `.js` records nothing and a container
+that 404s means their analytics is not running at all. `collect_resources` also
+stops collecting `<img>` inside `<noscript>` and 1×1 pixels.
+
+#### Audit: every other path that fetches a client URL
+
+| Path | Kind | Guard | Risk |
+|---|---|---|---|
+| `checker.check_single` | httpx GET | **`beacons.py`** (#151) | resolved |
+| `ads_guard`, `fix_verify` | httpx via `check_single` | inherits #151 | resolved |
+| `scraper._scrape_sync` | render | `_block_non_get` | covered |
+| `responsive_engine` | render | `COLLECTOR_RX` route abort | covered |
+| `consent_render` | render | **none — by design** | it exists to record third-party requests under each consent state; blocking them defeats the measurement. Inherent, and should stay documented rather than fixed |
+| `pagecheck_engine`, `attribution` | render | **none** | **highest** — renders landing pages *with UTM and click-id parameters*, so a fired tag creates a campaign-attributed session, not merely a pageview |
+| `active_submission_exec` | render | **none** | submits a real form; the render fires the full tag stack first |
+| `lead_contracts` | render | **none** | hydrated render of a form page |
+| `xray` | render | **none** | on-demand screenshot capture |
+| `sentinel` (uptime) | httpx GET | n/a | fetches the homepage only; no JS, so no tags fire |
+| `form_audit`, `suggester`, `sitemap` | httpx GET | n/a | fetch form actions / candidates / `sitemap.xml`, not collectors |
+
+Six render paths execute the page's JavaScript with no analytics guard, which
+fires *everything* — GA4, Meta, Ads — not only the no-script fallbacks the
+checker hit. They are on-demand rather than scheduled, so the volume is far
+below the scan's, but the per-run pollution is worse. `_block_non_get` is
+importable and takes a Playwright route; adopting it in each is the fix, with
+`consent_render` documented as the deliberate exception.
+
+---
+
 ## 1. Per-surface variable tables
 
 **Type** legend: `secret` (credential — rotate), `url` (endpoint), `flag`
