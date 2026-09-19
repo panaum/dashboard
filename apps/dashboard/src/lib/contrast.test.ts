@@ -27,9 +27,16 @@ const LIGHT_SURFACES = ["page", "card", "card-soft"] as const;
  *  against them too — a tint is still a surface, and an unguarded one is how
  *  the next contrast failure gets in. */
 const TINTED_SURFACES: Record<string, string> = {
-  "card+error/8": "#fdf2f2",
-  "card+warning/8": "#fef8ed",
-  "card+success/8": "#f1f9f5",
+  // The DARKEST composite of each hue — the hover state, where contrast is
+  // tightest. Dark text clearing these clears every lighter state of the same
+  // hue, so four entries cover all eight surfaces.
+  //
+  // Each level was chosen as the point where no token that passes on white
+  // would start failing on the tint, so the tints add no debt of their own.
+  "card+error/14": "#fbe8e8",
+  "card+warning/24": "#fdeaca",
+  "card+info/16": "#e5edfc",
+  "card+success/18": "#dff1e8",
 };
 
 /** A token painted only on one particular surface says so here. Each entry is
@@ -70,22 +77,26 @@ const KNOWN: Array<{ token: string; surface: string; issue: string }> = [
   { token: "success", surface: "page", issue: "#168" },
   { token: "success", surface: "card", issue: "#168" },
   { token: "success", surface: "card-soft", issue: "#168" },
-  // The same four tokens against the tinted row surfaces. None is used on a
-  // tinted row today — the findings rows carry text-secondary and the -strong
-  // severity variants, which read 4.97 to 5.99 there. These entries say what
-  // WOULD happen if one were, and they clear with the same fix as the rest.
-  { token: "text-muted", surface: "card+error/8", issue: "#168" },
-  { token: "text-muted", surface: "card+warning/8", issue: "#168" },
-  { token: "text-muted", surface: "card+success/8", issue: "#168" },
-  { token: "info", surface: "card+error/8", issue: "#168" },
-  { token: "info", surface: "card+warning/8", issue: "#168" },
-  { token: "info", surface: "card+success/8", issue: "#168" },
-  { token: "warning", surface: "card+error/8", issue: "#168" },
-  { token: "warning", surface: "card+warning/8", issue: "#168" },
-  { token: "warning", surface: "card+success/8", issue: "#168" },
-  { token: "success", surface: "card+error/8", issue: "#168" },
-  { token: "success", surface: "card+warning/8", issue: "#168" },
-  { token: "success", surface: "card+success/8", issue: "#168" },
+  { token: "text-muted", surface: "card+error/14", issue: "#168" },
+  { token: "text-muted", surface: "card+warning/24", issue: "#168" },
+  { token: "text-muted", surface: "card+info/16", issue: "#168" },
+  { token: "text-muted", surface: "card+success/18", issue: "#168" },
+  { token: "info", surface: "card+error/14", issue: "#168" },
+  { token: "info", surface: "card+warning/24", issue: "#168" },
+  { token: "info", surface: "card+info/16", issue: "#168" },
+  { token: "info", surface: "card+success/18", issue: "#168" },
+  { token: "warning", surface: "card+error/14", issue: "#168" },
+  { token: "warning", surface: "card+warning/24", issue: "#168" },
+  { token: "warning", surface: "card+info/16", issue: "#168" },
+  { token: "warning", surface: "card+success/18", issue: "#168" },
+  { token: "success", surface: "card+error/14", issue: "#168" },
+  { token: "success", surface: "card+warning/24", issue: "#168" },
+  { token: "success", surface: "card+info/16", issue: "#168" },
+  { token: "success", surface: "card+success/18", issue: "#168" },
+  // The same four failing tokens against the tinted row surfaces. None is
+  // used on a tinted row — those carry text-secondary and the -strong
+  // severity variants, which read 4.54 to 5.49 there. These say what WOULD
+  // happen, and clear with the same fix as the rest of #168.
 ];
 
 function sourceText(): string {

@@ -29,20 +29,34 @@ const SEVERITY_TEXT: Record<VitalEscalation, string> = {
   ok: "text-success-strong",
 };
 
-// A wash of the severity colour behind the row, at 8%. Colour here is not
-// decoration: it is the same signal as the edge bar, given more surface so the
-// page reads at a glance instead of as a grey list.
+// A wash of the severity colour behind the row. Colour here is not
+// decoration: it is the same signal as the edge bar, given the whole row so
+// the page reads in colour at a glance instead of as a grey list.
 //
-// Measured, not eyeballed. On white the composites are #fdf2f2, #fef8ed and
-// #f1f9f5, and the severity text still reads 5.96, 5.99 and 4.97 against them
-// — all over the 4.5 AA needs. `notice` stays untinted on purpose: a grey wash
-// on a grey page is mud, and leaving it plain is what lets the other two pop.
+// The level is a measured ceiling, not a taste call. Each hue is taken as far
+// as it can go before a token that passes contrast on white would stop passing
+// on the tint — so the colour can be as bright as it likes and breaks nothing.
+// Hover sits AT that ceiling and rest just under it.
+//
+//   critical  rest 0.11   hover 0.14  #fbe8e8
+//   warning   rest 0.20   hover 0.24  #fdeaca
+//   notice    rest 0.13   hover 0.16  #e5edfc
+//   all clear      0.18               #dff1e8
+//
+// The binding token is success-strong, which lands at 4.51–4.53 on every
+// ceiling. Amber tolerates three times the alpha of pink because it is a far
+// lighter hue — matching the numbers rather than the percentages is what makes
+// the four read as the same strength.
+//
+// Notice uses the existing `info` token: an informational blue for "worth a
+// look", a fourth pastel that does not compete with red and amber. It is a
+// SURFACE here, never text — as text it fails, and #168 owns that.
 const SEVERITY_TINT: Record<VitalEscalation, string> = {
-  critical: "bg-error/[0.08] hover:bg-error/[0.14]",
-  warn: "bg-warning/[0.08] hover:bg-warning/[0.14]",
-  notice: "hover:bg-card-soft",
+  critical: "bg-error/[0.11] hover:bg-error/[0.14]",
+  warn: "bg-warning/[0.20] hover:bg-warning/[0.24]",
+  notice: "bg-info/[0.13] hover:bg-info/[0.16]",
   unknown: "hover:bg-card-soft",
-  ok: "bg-success/[0.08] hover:bg-success/[0.14]",
+  ok: "bg-success/[0.18] hover:bg-success/[0.18]",
 };
 
 const SEVERITY_EDGE: Record<VitalEscalation, string> = {
@@ -121,7 +135,7 @@ export function SiteVitals({ cards }: { cards: VitalCard[] }) {
       ))}
 
       {unknown.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-xl bg-card px-5 py-4">
+        <div className="flex flex-col gap-2 rounded-xl bg-card-soft px-5 py-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
             Not established
           </p>
@@ -142,7 +156,7 @@ export function SiteVitals({ cards }: { cards: VitalCard[] }) {
       )}
 
       {passing && (
-        <p className="flex items-center gap-2 rounded-xl bg-success/[0.08] px-4 py-3 text-[13px] text-text-secondary">
+        <p className="flex items-center gap-2 rounded-xl bg-success/[0.18] px-4 py-3 text-[13px] text-text-secondary">
           <Check className="size-4 shrink-0 text-success-strong" strokeWidth={2.5} aria-hidden />
           {passing}
         </p>
@@ -197,7 +211,16 @@ function FindingsList({
         return (
           <li key={f.id} className={cn("relative transition-colors", SEVERITY_TINT[f.status])}>
             <span
-              className={cn("absolute inset-y-0 left-0 w-[3px]", SEVERITY_EDGE[f.status])}
+              className={cn(
+                "absolute inset-y-0 left-0",
+                // All four tints sit within 0.004 of the same luminance, so
+                // they weigh the same — but pink reads softer than amber at
+                // that lightness, and pink is already at its contrast ceiling
+                // and cannot go darker. The critical row gets a heavier edge
+                // instead, so the most urgent finding is never the quietest.
+                f.status === "critical" ? "w-[5px]" : "w-[3px]",
+                SEVERITY_EDGE[f.status],
+              )}
               aria-hidden
             />
             <button
