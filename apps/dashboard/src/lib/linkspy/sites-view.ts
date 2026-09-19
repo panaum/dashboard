@@ -218,12 +218,24 @@ export function summarizeSitesHealth(items: Pick<SiteListItem, "worst">[]): Site
 
 export type VitalEscalation = "critical" | "warn" | "notice" | "unknown" | "ok";
 
+/** One sub-finding inside a card. The endpoint has always sent these; the
+ *  type never declared them, so the Overview was reading a joined display
+ *  string where it could have read the findings themselves. */
+export type VitalCheck = {
+  key?: string | null;
+  label?: string | null;
+  status: VitalEscalation;
+  text: string;
+};
+
 export type VitalCard = {
   key: string;
   label: string;
   escalation: VitalEscalation;
   fact: string;
   detail?: string | null;
+  days?: number | null;
+  checks?: VitalCheck[] | null;
 };
 
 export type VitalsPayload = {

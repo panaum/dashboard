@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink } from "lucide-rea
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/shared/page-header";
 import { SiteTabs } from "@/components/linkspy/site-tabs";
+import { SiteVitals } from "@/components/linkspy/site-vitals";
 import { ResponsivePanel } from "@/components/linkspy/responsive-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,6 @@ import {
   collapseHistory,
   linkRange,
   healthTone,
-  ESCALATION_TONE,
 } from "@/lib/linkspy/sites-view";
 import { hostOf } from "@/lib/linkspy/link-match";
 
@@ -104,64 +104,14 @@ export default async function SiteDetailPage({
         layout={<ResponsivePanel url={site?.url ?? u ?? null} watched={watched} />}
         overview={
           <>
-        {/* Vitals — LinkSpy's own guard cards (SSL / domain / indexability /
-            uptime), most urgent first, exactly as its site view sorts them. */}
-        {vitals.state === "cards" && (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {vitals.cards.map((c) => (
-              <Card key={c.key} className="px-4 py-3.5">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-                    {c.label}
-                  </span>
-                  <Badge tone={ESCALATION_TONE[c.escalation] ?? "neutral"}>
-                    {c.escalation === "ok" ? "ok" : c.escalation}
-                  </Badge>
-                </div>
-                <p className="text-lg font-semibold text-text-primary">{c.fact}</p>
-                {c.detail && (
-                  <p className="truncate text-[12px] text-text-muted" title={c.detail}>
-                    {c.detail}
-                  </p>
-                )}
-              </Card>
-            ))}
-          </div>
+        {/* The nine checks. Severity decides the order, the size, and whether
+            a card is shown at all — see components/linkspy/site-vitals.tsx. */}
+        {vitals.state === "cards" && <SiteVitals cards={vitals.cards} />}
+        {vitals.state === "unavailable" && (
+          <p className="text-[13px] text-text-secondary">
+            LinkSpy did not answer — the site checks are unavailable right now.
+          </p>
         )}
-
-        {/* Needs attention — live problems only; empty when nothing is wrong. */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Needs attention</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!presence ? (
-              <p className="text-[13px] text-text-secondary">
-                LinkSpy did not answer — this check is unavailable right now.
-              </p>
-            ) : presence.signals.length === 0 ? (
-              <p className="flex items-center gap-2 text-[13px] text-text-secondary">
-                <CheckCircle2 className="size-4 text-success" strokeWidth={1.75} />
-                Nothing needs attention
-                {presence.last_checked && ` · last checked ${presence.last_checked.slice(0, 10)}`}
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {presence.signals.map((sig) => (
-                  <li key={sig.key} className="flex items-center gap-2.5 text-sm text-text-primary">
-                    <Badge tone={sig.severity === "critical" ? "error" : "warning"}>
-                      {sig.severity === "critical" ? "Critical" : "Warning"}
-                    </Badge>
-                    <span>{sig.text}</span>
-                    {sig.qualifier && (
-                      <span className="text-[13px] text-text-muted">{sig.qualifier}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
 
         {presence && presence.open_incidents > 0 && (
           <p className="flex items-center gap-2 text-[13px] text-text-secondary">
