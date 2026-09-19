@@ -5,6 +5,7 @@
 // cannot do that, so severity decides three separate things here: the order,
 // the size, and whether a card is shown at all.
 
+import { roleOf, type CheckRole } from "./check-roles";
 import type { VitalCard, VitalCheck, VitalEscalation } from "./sites-view";
 
 export const SEVERITY_RANK: Record<VitalEscalation, number> = {
@@ -188,9 +189,12 @@ export type Finding = {
   id: string;
   cardKey: string;
   cardLabel: string;
+  checkKey: string | null;
   status: VitalEscalation;
   text: string;
   remedy: string | null;
+  /** Null when this build has no agreed arrangement for the check key. */
+  role: CheckRole | null;
 };
 
 /** Every finding on the site, worst first, flattened out of the cards. */
@@ -202,9 +206,11 @@ export function findingsOf(cards: VitalCard[]): Finding[] {
         id: `${card.key}:${check.key ?? check.text}`,
         cardKey: card.key,
         cardLabel: card.label,
+        checkKey: check.key ?? null,
         status: check.status,
         text: check.text,
         remedy: remedyFor(check.text),
+        role: roleOf(check.key),
       });
     }
   }
@@ -245,4 +251,25 @@ export function passingLine(cards: VitalCard[]): string | null {
   const opening = /^[A-Z]{2}/.test(listed) ? listed
     : `${listed[0].toUpperCase()}${listed.slice(1)}`;
   return `${opening} ${verb} all fine`;
+}
+
+
+/**
+ * Findings split by where the fix lives.
+ *
+ * `page` means the fault is in the page's own markup or copy — NOT that we
+ * know where on the page. No sentinel check records a selector (#170), so the
+ * heading claims nothing more than that. A finding whose check key this build
+ * has no arrangement for is kept separate rather than guessed into a group.
+ */
+export function bySurface(findings: Finding[]): {
+  page: Finding[];
+  infrastructure: Finding[];
+  unclassified: Finding[];
+} {
+  return {
+    page: findings.filter((f) => f.role?.surface === "page"),
+    infrastructure: findings.filter((f) => f.role?.surface === "infrastructure"),
+    unclassified: findings.filter((f) => !f.role),
+  };
 }

@@ -149,3 +149,22 @@ test("unknown is never folded in with passing", () => {
   assert.ok(!(passingLine(cards) ?? "").includes("tracking"));
   assert.equal(findingsOf(cards).length, 0, "and it is not work either — it is unproven");
 });
+
+test("grouping must not bury a critical below a warning", () => {
+  const { findingsOf, bySurface } = require("./vitals-view");
+  const { SEVERITY_RANK } = require("./vitals-view");
+  const cards = [
+    card({ key: "email", label: "Email", escalation: "critical", fact: "1 to fix",
+           checks: [{ key: "spf", status: "critical", text: "SPF: none" }] }),
+    card({ key: "a11y", label: "Accessibility", escalation: "warn", fact: "1 to fix",
+           checks: [{ key: "labels", status: "warn", text: "Form fields: 1 of 5 without a label" }] }),
+  ];
+  const split = bySurface(findingsOf(cards));
+  // The critical one is infrastructure and the warning is page work, so the
+  // infrastructure group has to lead however the groups are declared.
+  const order = [["page", split.page], ["infrastructure", split.infrastructure]]
+    .filter(([, r]: any) => r.length)
+    .sort(([, a]: any, [, b]: any) => SEVERITY_RANK[a[0].status] - SEVERITY_RANK[b[0].status]);
+  assert.equal(order[0][0], "infrastructure");
+  assert.equal((order[0][1] as any)[0].text, "SPF: none");
+});

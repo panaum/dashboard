@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, ChevronDown, HelpCircle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { VitalCard, VitalEscalation } from "@/lib/linkspy/sites-view";
+import { OWNER_LABEL, SURFACE_LABEL, type Surface } from "@/lib/linkspy/check-roles";
 import {
-  findingsOf, passingLine, unknownCards, workCount, type Finding,
+  SEVERITY_RANK, bySurface, findingsOf, passingLine, unknownCards, type Finding,
 } from "@/lib/linkspy/vitals-view";
 
 // The site Overview: one prioritised list of work.
@@ -64,6 +65,19 @@ function useCountUp(target: number, ms = 400): number {
 
 export function SiteVitals({ cards }: { cards: VitalCard[] }) {
   const findings = findingsOf(cards);
+  const split = bySurface(findings);
+  // Severity stays primary; the grouping is secondary. Ordering the groups by
+  // where the fix lives would bury a critical under two warnings, which is the
+  // one thing this page exists to prevent — so the group holding the worst
+  // finding leads, and `findingsOf` has already sorted within each.
+  const groups: Array<[Surface | null, Finding[]]> = (
+    [["page", split.page],
+     ["infrastructure", split.infrastructure],
+     [null, split.unclassified]] as Array<[Surface | null, Finding[]]>
+  )
+    .filter(([, rows]) => rows.length > 0)
+    .sort(([, a], [, b]) => SEVERITY_RANK[a[0].status] - SEVERITY_RANK[b[0].status]);
+  const groupCount = groups.length;
   const unknown = unknownCards(cards);
   const passing = passingLine(cards);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -73,13 +87,22 @@ export function SiteVitals({ cards }: { cards: VitalCard[] }) {
     <section className="flex flex-col gap-6">
       <Header count={findings.length} shown={shown} />
 
-      {findings.length > 0 && (
-        <FindingsList
-          findings={findings}
-          openId={openId}
-          onToggle={(id) => setOpenId((cur) => (cur === id ? null : id))}
-        />
-      )}
+      {groups.map(([surface, rows]) => (
+        <div key={surface ?? "unclassified"} className="flex flex-col gap-2">
+          {/* The heading names where the FIX lives, never where the fault is
+              on the page — nothing here records a selector (#170). */}
+          {surface && groupCount > 1 && (
+            <h3 className="px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
+              {SURFACE_LABEL[surface]}
+            </h3>
+          )}
+          <FindingsList
+            findings={rows}
+            openId={openId}
+            onToggle={(id) => setOpenId((cur) => (cur === id ? null : id))}
+          />
+        </div>
+      ))}
 
       {unknown.length > 0 && (
         <div className="flex flex-col gap-2 rounded-xl bg-card px-5 py-4">
@@ -176,8 +199,14 @@ function FindingsList({
                 <span className={cn("text-[14px] font-medium leading-snug", SEVERITY_TEXT[f.status])}>
                   {f.text}
                 </span>
-                {f.remedy && (
-                  <span className="text-[12px] leading-snug text-text-secondary">{f.remedy}</span>
+                {(f.role || f.remedy) && (
+                  <span className="text-[12px] leading-snug text-text-secondary">
+                    {f.role && (
+                      <span className="font-medium">{OWNER_LABEL[f.role.owner]}</span>
+                    )}
+                    {f.role && f.remedy && " · "}
+                    {f.remedy}
+                  </span>
                 )}
               </span>
               <ChevronDown
