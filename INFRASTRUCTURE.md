@@ -450,10 +450,32 @@ unifying them cannot become a quiet downgrade.
 
 ---
 
-### D16 — Five migrations are unapplied, and every one of them fails silently ⚠️ OPEN
+### D16 — Five migrations were unapplied, and every one failed silently ✅ RESOLVED
 
-**Found 2026-09-19. Needs the operator: applying these requires a Postgres
-connection to the LinkSpy project, which exists only in Railway.**
+**Found and applied 2026-09-19.** Verified `pg_dump` first (29 MB custom-format,
+727 TOC entries, 79 `TABLE DATA` entries, `pg_restore --list` clean), kept at
+`~/linkspy-backups/linkspy-20260919-195130.dump`. Applied through the session
+pooler on 5432 against project `uyvjqaggkqotqcqjwxgm`, one transaction per file,
+ordered by what was being discarded: `004` first because the watchdog throws a
+result away after every scan, then `026` because five cards were computed and
+dropped every pass, then `003`, `005`, `009`, `027`.
+
+All seven objects confirmed present afterwards from `pg_class` and
+`information_schema`. A forced sentinel pass over all eight sites completed
+8 of 8, and every Overview card now carries data — no site reports
+"unavailable" on any of the nine.
+
+What the guards had been computing and discarding, visible on the first pass:
+
+| Site | Was being thrown away |
+|---|---|
+| apexure.com | HSTS missing, CSP missing, three more header notices, a 200-character meta description, one skipped heading level |
+| fautons.com | SPF **none**, DMARC `p=none`, 2 of 5 form fields without a label |
+| dev.apexure.org | 2 email faults, 1 security, 1 accessibility, search visibility at risk |
+
+`scans.pages_scanned` is null on every existing row, so the tenth card reads
+"unavailable" until the next scan writes one. That is the column doing its job,
+not a fault.
 
 `sentinel_status.guards` was known to be missing. Checking the rest of the
 LinkSpy schema against `migrations/*.sql` found four more, verified live:
