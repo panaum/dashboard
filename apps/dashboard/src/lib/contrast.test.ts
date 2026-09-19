@@ -22,6 +22,16 @@ const CSS = readFileSync(join(ROOT, "app", "globals.css"), "utf8");
  *  cross-product over every token would compare white text with white. */
 const LIGHT_SURFACES = ["page", "card", "card-soft"] as const;
 
+/** Surfaces that are not tokens: a severity colour washed over `card` at 8%,
+ *  behind the findings rows. They are declared here so the guard measures text
+ *  against them too — a tint is still a surface, and an unguarded one is how
+ *  the next contrast failure gets in. */
+const TINTED_SURFACES: Record<string, string> = {
+  "card+error/8": "#fdf2f2",
+  "card+warning/8": "#fef8ed",
+  "card+success/8": "#f1f9f5",
+};
+
 /** A token painted only on one particular surface says so here. Each entry is
  *  a claim that the token never appears on a light surface — the portal header
  *  is `bg-brand-primary`, and its icons and text are measured against that. */
@@ -60,6 +70,22 @@ const KNOWN: Array<{ token: string; surface: string; issue: string }> = [
   { token: "success", surface: "page", issue: "#168" },
   { token: "success", surface: "card", issue: "#168" },
   { token: "success", surface: "card-soft", issue: "#168" },
+  // The same four tokens against the tinted row surfaces. None is used on a
+  // tinted row today — the findings rows carry text-secondary and the -strong
+  // severity variants, which read 4.97 to 5.99 there. These entries say what
+  // WOULD happen if one were, and they clear with the same fix as the rest.
+  { token: "text-muted", surface: "card+error/8", issue: "#168" },
+  { token: "text-muted", surface: "card+warning/8", issue: "#168" },
+  { token: "text-muted", surface: "card+success/8", issue: "#168" },
+  { token: "info", surface: "card+error/8", issue: "#168" },
+  { token: "info", surface: "card+warning/8", issue: "#168" },
+  { token: "info", surface: "card+success/8", issue: "#168" },
+  { token: "warning", surface: "card+error/8", issue: "#168" },
+  { token: "warning", surface: "card+warning/8", issue: "#168" },
+  { token: "warning", surface: "card+success/8", issue: "#168" },
+  { token: "success", surface: "card+error/8", issue: "#168" },
+  { token: "success", surface: "card+warning/8", issue: "#168" },
+  { token: "success", surface: "card+success/8", issue: "#168" },
 ];
 
 function sourceText(): string {
@@ -86,8 +112,12 @@ function violations() {
   for (const token of [...asText].sort()) {
     if (DECORATIVE.has(token)) continue;
     const need = NON_TEXT.has(token) ? AA_NON_TEXT : AA_TEXT;
-    for (const surface of SURFACE_OVERRIDE[token] ?? LIGHT_SURFACES) {
-      const ratio = contrastRatio(tokens[token], tokens[surface]);
+    const surfaces = SURFACE_OVERRIDE[token]
+      ? SURFACE_OVERRIDE[token].map((s) => [s, tokens[s]] as const)
+      : [...LIGHT_SURFACES.map((s) => [s, tokens[s]] as const),
+         ...Object.entries(TINTED_SURFACES)];
+    for (const [surface, hex] of surfaces) {
+      const ratio = contrastRatio(tokens[token], hex);
       if (ratio < need) out.push({ token, surface, ratio, need });
     }
   }
