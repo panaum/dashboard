@@ -34,6 +34,11 @@ Verified against the live project, in the order to run them:
 | `026_sentinel_guards.sql` | `sentinel_status.guards` | five Overview cards: DNS, Email, Security, SEO, Accessibility |
 | `027_scans_pages_scanned.sql` | `scans.pages_scanned` | the per-scan page count |
 
+`RUN_THIS_IN_SUPABASE_2026-09-19.sql` is all six concatenated in that order,
+in one transaction, with the `pg_dump` command in its header. Paste it into the
+Supabase SQL editor for the **LinkSpy** project. Running it twice changes
+nothing.
+
 None of these fails loudly. Each one is caught by `_tables_missing` or
 `_column_missing` in `database.py` and turned into a no-op, so the feature reads
 "unavailable" and the compute is thrown away on every pass. See D15 in
