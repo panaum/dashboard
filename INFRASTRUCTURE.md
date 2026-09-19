@@ -636,8 +636,9 @@ They may hold different values. **Both fail open when unset.**
 
 ## 3. Flags registry
 
-All flags below are **off/unset by default**. Remember D8: the spine/jobs flags
-accept **only the literal string `1`**.
+All flags below are **off/unset by default**, with one marked exception:
+`TRACKING_CONSISTENCY` is a scan check's kill switch, so unset means ON.
+Remember D8: the spine/jobs flags accept **only the literal string `1`**.
 
 | Flag | Surface | Test | ON | OFF / unset |
 |---|---|---|---|---|
@@ -647,6 +648,7 @@ accept **only the literal string `1`**.
 | `AUTO_ENROLL=1` | Railway | `== "1"` | On `qa.completed`, enrols an unmonitored site into Weekly monitoring + timeline + Slack | `{"enrolled": false}`. Already-monitored sites are skipped either way, so cadence is never downgraded |
 | `FLYWHEEL=1` | Railway | `!= "1"` → skip | `on_incident_resolved` classifies the incident and may draft a checklist candidate + enqueue a spine event | Returns `{"skipped": true}` before any DB import — pure no-op |
 | `JOBS_MONITORING_LIVE` | Railway | `== "1"` | **`RuntimeError` — the live path is deliberately unimplemented (D6)** | Correct state. Prints `[jobs:shadow] would scan site=… — dry-run` |
+| `TRACKING_CONSISTENCY=0` | Railway | in `{0,false,no,off}` → skip | Switches the site-wide tracking consistency check OFF | **Unset means ON** — the check runs and the scan result carries `tracking_consistency`. Each scan check owns its own switch, so one can be retired without touching the others |
 
 Sequencing note: the flywheel only produces visible effect with
 `JOBS_SHADOW=1` **and** `SPINE_SECRET` set on Railway, plus `SPINE_EMIT=1` on the
