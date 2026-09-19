@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Accessibility, Activity, Check, ChevronDown, Globe, HelpCircle, Loader2, Lock, Mail, RefreshCw, Search, ShieldAlert, ShieldCheck, X } from "lucide-react";
+import { Accessibility, Activity, AlertTriangle, BarChart3, Check, ChevronDown, Globe, HelpCircle, Loader2, Lock, Mail, RefreshCw, Search, ShieldAlert, ShieldCheck, X } from "lucide-react";
 import { staffToken, getPortalToken } from "@/lib/backendClient";
 
 type Variant = "dark" | "light";
@@ -23,7 +23,7 @@ const T = {
     brand: "var(--signal)", good: "#16a34a", notice: "#d97706", warn: "#ea580c", crit: "#dc2626", critbg: "#fef2f2", noticebg: "#fffbeb" },
 };
 
-const ICON = { ssl: Lock, domain: Globe, index: Search, uptime: Activity, dns: Globe, email: Mail, security: Lock, seo: Search, a11y: Accessibility } as const;
+const ICON = { ssl: Lock, domain: Globe, index: Search, uptime: Activity, dns: Globe, email: Mail, security: Lock, seo: Search, a11y: Accessibility, tracking: BarChart3 } as const;
 
 function escColor(esc: string, c: typeof T.dark): string {
   return esc === "critical" ? c.crit : esc === "warn" ? c.warn : esc === "notice" ? c.notice
@@ -106,7 +106,7 @@ export default function SentinelGuard({ variant, siteId, portal, canManage }:
           const crit = card.escalation === "critical";
           const notice = card.escalation === "notice" || card.escalation === "warn";
           const Icon = ICON[card.key as keyof typeof ICON] || ShieldCheck;
-          const expandable = card.key === "index" || card.key === "uptime";
+          const expandable = card.key === "uptime" || (card.checks?.length ?? 0) > 0;
           const open = openKey === card.key;
           return (
             <div key={card.key}
@@ -140,13 +140,16 @@ export default function SentinelGuard({ variant, siteId, portal, canManage }:
               {card.detail && <div style={{ color: c.muted, fontSize: 11.5, marginTop: 4 }}>{card.detail}</div>}
               {crit && <div style={{ color: c.crit, fontSize: 12.5, fontWeight: 600, marginTop: 6 }}>Needs attention now</div>}
 
-              {/* Indexability sub-checks */}
-              {card.key === "index" && open && card.checks && (
+              {/* Sub-checks, for any card that carries them: indexability, the
+                  five guards, and tracking consistency. */}
+              {open && card.checks && card.checks.length > 0 && (
                 <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
                   {card.checks.map((s) => (
                     <div key={s.key} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: c.sub }}>
                       {s.status === "ok" ? <Check size={14} style={{ color: c.good, flexShrink: 0, marginTop: 1 }} />
                         : s.status === "unknown" ? <HelpCircle size={14} style={{ color: c.muted, flexShrink: 0, marginTop: 1 }} />
+                        : s.status === "warn" || s.status === "notice"
+                          ? <AlertTriangle size={14} style={{ color: escColor(s.status, c), flexShrink: 0, marginTop: 1 }} />
                         : <X size={14} style={{ color: c.crit, flexShrink: 0, marginTop: 1 }} />}
                       <span>{s.text}</span>
                     </div>

@@ -104,6 +104,11 @@ def site_tracking_view(pages: dict) -> dict:
             "id": ident,
             "pages_with": sorted(present),
             "pages_without": sorted(set(readable) - present),
+            "missing_count": len(readable) - len(present),
+            # Which list the finding may name. The stored path can prove a tag
+            # is PRESENT on a page but cannot enumerate the pages it is absent
+            # from, because nothing records which pages a scan read.
+            "evidence_kind": "missing",
             "share": len(present) / len(readable) if readable else 0.0,
         })
     coverage.sort(key=lambda c: (-len(c["pages_with"]), c["vendor_label"], c["id"] or ""))
@@ -153,19 +158,26 @@ def consistency_findings(view: dict) -> list:
 
     # Gaps: on most pages, missing from some. The common real fault.
     for entry in view["coverage"]:
-        missing = entry["pages_without"]
+        missing = entry.get("missing_count", len(entry["pages_without"]))
         if not missing:
             continue
         have = len(entry["pages_with"])
+        names = (entry["pages_without"] if entry.get("evidence_kind") == "missing"
+                 else entry["pages_with"])
+        names_are_missing = entry.get("evidence_kind") == "missing"
         if entry["share"] >= MAJORITY:
             out.append(F(
                 f"tracking-gap-{entry['vendor']}-{entry['id'] or 'unidentified'}",
                 "WARN",
                 f"{_name(entry)} is on {have} of {read} pages",
-                f"{len(missing)} page{'s' if len(missing) != 1 else ''} carry the "
+                f"{missing} page{'s' if missing != 1 else ''} carry the "
                 f"rest of the site's tracking but not this tag. Visits and "
-                f"conversions there are not recorded against it." + _caveat(view),
-                [_path(u) for u in missing[:MAX_EVIDENCE]]))
+                f"conversions there are not recorded against it."
+                + ("" if names_are_missing else
+                   " The pages listed are the ones that DO carry it; which pages"
+                   " do not is beyond what the stored scan records.")
+                + _caveat(view),
+                [_path(u) for u in names[:MAX_EVIDENCE]]))
         else:
             out.append(F(
                 f"tracking-partial-{entry['vendor']}-{entry['id'] or 'unidentified'}",
@@ -205,3 +217,170 @@ def tracking_consistency(pages: dict) -> dict:
         return {"enabled": False, "pages_read": 0, "coverage": [], "findings": []}
     view = site_tracking_view(pages)
     return {"enabled": True, **view, "findings": consistency_findings(view)}
+
+
+# ─── The stored view: the same statements, from data already on disk ────────
+#
+# The scan-time view above needs a live crawl. The Overview needs to answer
+# between scans, so it rebuilds the same inventories from `page_integrations`
+# — which already holds host, detected id and category per page per scan,
+# 63,000 rows of it. No migration, no second detector, no extra request.
+
+_VENDOR_BY_PREFIX = (("GTM-", "gtm"), ("G-", "ga4"), ("UA-", "ua"))
+_VENDOR_BY_HOST = (
+    ("connect.facebook", "meta_pixel"), ("facebook.net", "meta_pixel"),
+    ("facebook.com", "meta_pixel"),
+    ("licdn.com", "linkedin"), ("ads.linkedin.com", "linkedin"),
+    ("tiktok.com", "tiktok"),
+    ("googletagmanager.com", "gtm"),
+    ("google-analytics.com", "ga4"), ("analytics.google.com", "ga4"),
+)
+
+_UNREADABLE = "(present, id not readable)"
+
+# The Overview's vocabulary, not the report's.
+_ESCALATION = {"PASS": "ok", "INFO": "notice", "WARN": "warn", "SKIP": "unknown"}
+_WORST = ("unknown", "ok", "notice", "warn", "critical")
+
+
+def vendor_of(host: str, detected_id: str):
+    """Which vendor an integration row belongs to, or None for anything else.
+
+    A readable id decides it — only Google mints `GTM-`, `G-` and `UA-`. Where
+    there is no id the host does, which is how a Meta pixel whose id the page
+    does not expose still counts as present.
+    """
+    ident = (detected_id or "").strip().upper()
+    for prefix, vendor in _VENDOR_BY_PREFIX:
+        if ident.startswith(prefix):
+            return vendor
+    low = (host or "").strip().lower()
+    for token, vendor in _VENDOR_BY_HOST:
+        if token in low:
+            return vendor
+    return None
+
+
+def pages_from_integrations(pages, rows) -> dict:
+    """Per-page inventories rebuilt from stored integration rows.
+
+    `pages` is every page the scan read. The rows alone cannot supply it: a
+    page carrying no third-party tag has no row at all, and such a page must
+    count as a page WITHOUT tracking rather than disappear from the
+    denominator — which would turn "GA4 on 2 of 10" into "GA4 on 2 of 2".
+    """
+    inventories = {p: {k: [] for k, _ in VENDORS} for p in pages}
+    for page, vendor, ident in _identified(rows):
+        if page not in inventories:
+            continue
+        label = ident or _UNREADABLE
+        if label not in inventories[page][vendor]:
+            inventories[page][vendor].append(label)
+    return inventories
+
+
+def consistency_card(result) -> dict:
+    """The tenth Overview card, in the shape the other nine use.
+
+    Never green by default: with nothing to compare it reads "unavailable" and
+    says why, the same way the guard cards do before their first pass.
+    """
+    base = {"key": "tracking", "label": "Tracking", "days": None}
+    if not result or not result.get("enabled"):
+        return {**base, "escalation": "unknown", "fact": "unavailable",
+                "detail": "The tracking consistency check is switched off.",
+                "checks": []}
+
+    findings = result.get("findings") or []
+    if not findings:
+        return {**base, "escalation": "unknown", "fact": "unavailable",
+                "detail": "No scan has read enough pages to compare.", "checks": []}
+
+    checks = [{"key": f["id"], "status": _ESCALATION.get(f["status"], "unknown"),
+               "text": f["title"]} for f in findings]
+    worst = max((c["status"] for c in checks), key=lambda s: _WORST.index(s)
+                if s in _WORST else 0)
+    read = result.get("pages_read") or 0
+    gaps = [c for c in checks if c["status"] in ("warn", "notice")]
+
+    if worst == "unknown":
+        fact = "unavailable"
+    elif not gaps:
+        fact = "Consistent"
+    else:
+        fact = f"{len(gaps)} to look at"
+
+    return {**base, "escalation": worst, "fact": fact,
+            "detail": findings[0]["title"] + (f" · {read} pages compared" if read else ""),
+            "checks": checks}
+
+
+def _identified(rows):
+    """(page, vendor, id) per integration, with the same tag counted once.
+
+    One container produces several rows: the inline snippet carries the id, the
+    script resource on the vendor's host does not. Left alone that becomes two
+    entries for one container — "Google Tag Manager GTM-ABC" beside "Google Tag
+    Manager (account id not readable)" — and the second would be reported as a
+    coverage gap that does not exist. Where a page names an id for a vendor,
+    the unidentified rows for that vendor on that page are the same thing.
+    """
+    seen: dict = {}
+    for row in rows or []:
+        page = row.get("page_url")
+        vendor = vendor_of(row.get("host"), row.get("detected_id"))
+        if not page or not vendor:
+            continue
+        ident = (row.get("detected_id") or "").strip() or None
+        seen.setdefault((page, vendor), set()).add(ident)
+    for (page, vendor), idents in seen.items():
+        named = {i for i in idents if i}
+        for ident in (sorted(named) if named else [None]):
+            yield page, vendor, ident
+
+
+def stored_view(pages_scanned, rows) -> dict:
+    """Coverage from stored rows, where the page LIST is not available.
+
+    `page_integrations` holds a row per third-party tag per page, so it proves
+    which pages carry a tag. It cannot supply the denominator: a page with no
+    tag at all has no row, and nothing else stored records which pages a scan
+    read. `scans.pages_scanned` is that number — and until
+    migrations/027 is applied the column does not exist, the write is dropped,
+    and this returns "not established" rather than a coverage figure computed
+    over the wrong denominator. "GA4 on 2 of 10 pages" would otherwise read as
+    "GA4 on 2 of 2", which is a clean result we did not establish.
+    """
+    read = pages_scanned if isinstance(pages_scanned, int) and pages_scanned > 0 else 0
+
+    tags: dict = {}
+    for page, vendor, ident in _identified(rows):
+        tags.setdefault((vendor, dict(VENDORS)[vendor], ident), set()).add(page)
+
+    coverage = []
+    for (vendor, label, ident), present in tags.items():
+        # A page can appear in the rows without having been counted, so never
+        # let a tag look present on more pages than the scan says it read.
+        have = min(len(present), read) if read else len(present)
+        coverage.append({
+            "vendor": vendor, "vendor_label": label, "id": ident,
+            "pages_with": sorted(present), "pages_without": [],
+            "missing_count": max(read - have, 0),
+            "evidence_kind": "present",
+            "share": (have / read) if read else 0.0,
+        })
+    coverage.sort(key=lambda c: (-len(c["pages_with"]), c["vendor_label"], c["id"] or ""))
+
+    return {"pages_read": read, "pages_unreadable": [], "coverage": coverage,
+            "established": read >= 2}
+
+
+def stored_consistency(pages_scanned, rows) -> dict:
+    """The whole stored-data path: coverage, findings, card."""
+    if not enabled():
+        return {"enabled": False, "pages_read": 0, "coverage": [], "findings": [],
+                "card": consistency_card(None)}
+    view = stored_view(pages_scanned, rows)
+    result = {"enabled": True, **view, "findings": consistency_findings(view)}
+    result["card"] = consistency_card(result)
+    return result

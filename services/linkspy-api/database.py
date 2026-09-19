@@ -1989,7 +1989,7 @@ def _upsert_sentinel_status_sync(site_id, patch) -> Optional[dict]:
     except Exception as e:
         if _tables_missing(e):
             return None
-        # Until migrations/018_sentinel_guards.sql is applied the `guards`
+        # Until migrations/026_sentinel_guards.sql is applied the `guards`
         # column does not exist. The SSL/domain/indexability row must still be
         # written — the guards simply read "unavailable" until it is.
         if "guards" in row and _column_missing(e, "guards"):
@@ -2429,10 +2429,19 @@ async def mark_cleanup(run_id, status) -> None:
 def _latest_scan_for_site_sync(site_id) -> Optional[dict]:
     client = _get_client()
     try:
-        rows = client.table("scans").select("id, results_json, scanned_at")\
+        rows = client.table("scans").select("id, results_json, scanned_at, pages_scanned")\
             .eq("site_id", site_id).order("scanned_at", desc=True).limit(1).execute().data or []
         return rows[0] if rows else None
     except Exception as e:
+        # Column check FIRST. _tables_missing matches the substring "does not
+        # exist", which is also the text of a missing-column error, so testing
+        # it first would swallow this and return None — the exact confusion
+        # D16 is about.
+        if _column_missing(e, "pages_scanned"):
+            rows = client.table("scans").select("id, results_json, scanned_at")\
+                .eq("site_id", site_id).order("scanned_at", desc=True).limit(1)\
+                .execute().data or []
+            return rows[0] if rows else None
         if _tables_missing(e):
             return None
         raise

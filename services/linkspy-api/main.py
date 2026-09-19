@@ -2511,12 +2511,48 @@ async def portal_ads(request: Request):
 
 
 # ─── Wave 3: Disaster Sentinel ───────────────────────────────────────────────
+async def _tracking_consistency_card(site_id) -> dict:
+    """The tenth Overview card, rebuilt from the latest scan's stored rows.
+
+    Reads only: the scan row it already has and page_integrations. No probe, no
+    render, no migration. It must never be able to break the other nine, so
+    every failure returns the card's own "unavailable" rather than raising.
+    """
+    from tracking_consistency import consistency_card, stored_consistency
+    try:
+        from database import get_integrations, latest_scan_for_site
+        scan = await latest_scan_for_site(site_id)
+        if not scan:
+            return consistency_card(None) | {
+                "detail": "No scan has read enough pages to compare."}
+        # The denominator is the scan's own page count. It cannot come from
+        # page_integrations, where a page with no third-party tag has no row —
+        # that would turn "GA4 on 2 of 10 pages" into "GA4 on 2 of 2". It is
+        # null until migrations/027_scans_pages_scanned.sql is applied, and the
+        # card then reads "unavailable" rather than a figure over the wrong
+        # denominator.
+        rows = await get_integrations(scan["id"])
+        return stored_consistency(scan.get("pages_scanned"), rows)["card"]
+    except Exception as e:
+        print(f"[Sentinel] tracking consistency card unavailable: "
+              f"{type(e).__name__}: {e}")
+        return consistency_card(None) | {"detail": "Could not read the last scan."}
+
+
 async def _sentinel_payload(site_id):
     from database import get_sentinel_status, recent_pings, list_incidents
     from sentinel import summarize_sentinel
     status = await get_sentinel_status(site_id)
     pings = await recent_pings(site_id)
     summary = summarize_sentinel(status, pings)
+    # Appended, then re-sorted into the same urgency order the other nine use
+    # — a warn must not hide at the bottom of the row. `worst` is deliberately
+    # NOT recomputed: a tracking gap is a marketing-integrity problem, not a
+    # broken site, and it must never turn the Overview red. That is the same
+    # rule tracking_audit follows for its per-page findings.
+    summary["cards"].append(await _tracking_consistency_card(site_id))
+    _rank = {"critical": 0, "warn": 1, "notice": 2, "unknown": 3, "ok": 4}
+    summary["cards"].sort(key=lambda c: _rank.get(c.get("escalation"), 4))
     summary["incidents"] = await list_incidents(site_id, limit=20)
     return summary
 
@@ -3189,7 +3225,7 @@ async def attestation_generate(site_id: str, request: Request,
            "classification_version": doc["methodology"]["classification_version"]}
     saved = await save_attestation(row)
     if not saved:
-        return JSONResponse({"error": "Attestation storage unavailable — apply migration 018.",
+        return JSONResponse({"error": "Attestation storage unavailable — apply migration 018_attestations.",
                              "setup_required": True}, status_code=400)
     return {"id": saved["id"], "label": label, "content_hash": row["content_hash"],
             "share_token": row["share_token"]}

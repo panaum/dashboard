@@ -357,7 +357,7 @@ def summarize_sentinel(status, pings, now=None):
     meta_noindex/header_noindex/sitemap_ok/last_checked_at."""
     status = status or {}
     # How long this certificate was issued for, where a pass has recorded it
-    # (sentinel_status.guards.ssl_cycle — migrations/018). Absent means we do
+    # (sentinel_status.guards.ssl_cycle — migrations/026). Absent means we do
     # not know, and an unknown lifetime keeps the manual ladder.
     ssl_cycle = ((status.get("guards") or {}).get("ssl_cycle") or {})
     ssl_life = ssl_cycle.get("lifetime_days")
