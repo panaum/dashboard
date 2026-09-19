@@ -7,7 +7,7 @@ from urllib.parse import urlparse, unquote
 from models import RawLink, LinkResult
 from redirect_rules import FLAG_LOOP, MAX_REDIRECT_HOPS, analyze_chain
 from beacons import beacon_reason
-from resources import content_type_problem
+from resources import ANCHOR, content_type_problem, soft_404_problem
 from resources import describe_resource_failure
 from typing import AsyncIterator, Optional
 
@@ -466,6 +466,30 @@ async def check_single(client: httpx.AsyncClient, link: RawLink) -> LinkResult:
                 # An image that answered 200 with a web page. The response is
                 # healthy and the picture is missing, which is why a link
                 # checker has never caught it.
+                # A PAGE that answers 200 while serving a "not found". Uptime
+                # looks for a status under 500 and the link checker for one
+                # under 400, so a deleted page on a hosted platform passes both
+                # while showing visitors an error. Same shape as the image
+                # check below, one level up.
+                if label == "ok" and (link.resource_type or "anchor") == ANCHOR:
+                    gone = soft_404_problem(r.status_code, ctype, link.url,
+                                            final_url, r.text)
+                    if gone:
+                        confidence, reason = gone
+                        result = _result(
+                            "ok",
+                            bucket="unverifiable",
+                            status_code=r.status_code,
+                            content_type=ctype,
+                            final_url=final_url,
+                            response_ms=elapsed,
+                            error=reason,
+                            **redirect_meta,
+                        )
+                        result.confidence = confidence
+                        result.reason = reason
+                        return result
+
                 problem = content_type_problem(link.resource_type, r.status_code, ctype)
                 if problem and label == "ok":
                     confidence, reason = problem
