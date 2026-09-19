@@ -543,6 +543,63 @@ sentinel that does not.
 
 ---
 
+### D17 — A domain-expiry alert has six ways to reach nobody, all silent ⚠️ OPEN
+
+**Found 2026-09-19, after apexure.com's 27-day alert reached a human only
+because a forced pass collected alerts instead of sending them.**
+
+The alert fired correctly. Everything after that is single-shot, unverified and
+unrecorded.
+
+| # | Failure | Where |
+|---|---|---|
+| 1 | **The rung advances before the alert is sent.** `upsert_sentinel_status` writes `prev_domain_days` first; the alert is computed and delivered afterwards. A delivery that fails is never retried, because the next pass compares against the advanced value and finds no crossing. | `sentinel.run_sentinel_for_site` |
+| 2 | **Delivery exceptions are swallowed**: `try: await notify(a) except Exception: pass`. | same |
+| 3 | **An unset webhook is a silent no-op**: `if not webhook_url: return`, with no log. All five emitters do this. | `main._watchdog_slack` and four others |
+| 4 | **The POST result is never checked.** A revoked or renamed webhook answers 404/410 without raising, so it logs nothing and looks delivered. | `main._watchdog_slack` |
+| 5 | **Nothing is persisted.** Ladder alerts are written to no table. `sentinel_incidents` is uptime-only, so "what fired, and did it arrive?" has no answer. | — |
+| 6 | **No pass, no alert.** D16's interval-vs-redeploy problem means a day can go by without a sentinel run at all. | `main` scheduler |
+
+A seventh, smaller: every sentinel alert is posted through `_watchdog_slack`,
+whose header reads **"🐕 LinkSpy Watchdog — third-party outage"**. A domain
+expiry would have arrived under a title describing something else.
+
+Each rung fires exactly once per site per cycle. For a 30/14/3 ladder that is
+three chances in the last month of a domain's life, each a single unverified
+HTTP POST, with no record that it happened.
+
+#### What it takes to make one reach a human
+
+In the order that removes the most risk per line changed:
+
+1. **Alert on the condition, not the edge.** "Inside 30 days" is a state that
+   persists; a crossing is a moment that can be missed. Fire every pass while
+   the condition holds, deduplicated by a stored `last_notified_rung` and
+   `last_notified_at` per site. A missed delivery then retries on the next pass
+   by construction, and this alone fixes 1, 2 and 6.
+2. **Separate observing from telling.** Advance the notified-rung state only
+   after delivery reports success. What we saw and what we said are different
+   facts and belong in different columns.
+3. **Make delivery report.** Check the HTTP status; treat an unset webhook as a
+   failure with a log line, not as nothing to do. A notifier that cannot
+   deliver must say so where somebody looks.
+4. **Record every alert** with its delivery outcome, so the question is
+   answerable after the fact and a retry has something to read.
+5. **Heartbeat.** A daily line saying the sentinel ran, over N sites, and
+   delivered M alerts. Without one, silence means both "nothing wrong" and
+   "nothing ran", which is how this went unnoticed.
+6. **A second channel for the bottom rungs.** At 3 days a single webhook is one
+   point of failure. Email or a second webhook, and the alert says which
+   channels it reached.
+7. **Fix the header** so the message describes what happened.
+
+`SLACK_WEBHOOK_URL` is documented as optional with a silent return at all five
+emitters, and whether it is actually set on Railway **cannot be established
+from outside the deployment** — which is itself the point of item 3. Until 1-4
+exist, the honest description of this path is: best effort, unverified, once.
+
+---
+
 ## 1. Per-surface variable tables
 
 **Type** legend: `secret` (credential — rotate), `url` (endpoint), `flag`
