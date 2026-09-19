@@ -6,6 +6,8 @@ import random
 from urllib.parse import urlparse, unquote
 from models import RawLink, LinkResult
 from redirect_rules import FLAG_LOOP, MAX_REDIRECT_HOPS, analyze_chain
+from beacons import beacon_reason
+from resources import content_type_problem
 from resources import describe_resource_failure
 from typing import AsyncIterator, Optional
 
@@ -124,6 +126,7 @@ _LABEL_BUCKETS = {
     "error": "broken",      # 5xx, DNS failure, connection refused
     "blocked": "unverifiable",   # 401/403/405/429/999, bot-blocked
     "timeout": "unverifiable",
+    "not_requested": "unverifiable",  # we declined to fetch it; see beacons.py
     "dead_cta": "dead_cta",
 }
 
@@ -346,6 +349,23 @@ async def check_single(client: httpx.AsyncClient, link: RawLink) -> LinkResult:
         # DOM; unresolved ones go through the dead-CTA detector instead.
         return _result("ok", status_code=None, final_url=None, response_ms=0)
 
+    refusal = beacon_reason(link.url)
+    if refusal:
+        # An analytics collector. Calling it would write a visit into the
+        # client's own reporting, so we do not. Saying "ok" would claim a check
+        # we refused to run, and "broken" would be false; this is the honest
+        # third state, and it carries the reason.
+        result = _result(
+            "not_requested",
+            bucket="unverifiable",
+            status_code=None,
+            final_url=None,
+            response_ms=0,
+            error=refusal,
+        )
+        result.reason = refusal
+        return result
+
     domain = urlparse(link.url).netloc
 
     async with SEMAPHORE, _domain_semaphore(domain):
@@ -386,6 +406,7 @@ async def check_single(client: httpx.AsyncClient, link: RawLink) -> LinkResult:
 
                 label = classify(r.status_code)
                 final_url = str(r.url) if str(r.url) != link.url else None
+                ctype = r.headers.get("content-type")
 
                 # /about-us/#team returns 200 regardless of whether #team
                 # exists. Validate the fragment against the body we just
@@ -442,9 +463,30 @@ async def check_single(client: httpx.AsyncClient, link: RawLink) -> LinkResult:
                         )
                         return result
 
+                # An image that answered 200 with a web page. The response is
+                # healthy and the picture is missing, which is why a link
+                # checker has never caught it.
+                problem = content_type_problem(link.resource_type, r.status_code, ctype)
+                if problem and label == "ok":
+                    confidence, reason = problem
+                    result = _result(
+                        "ok",
+                        bucket="unverifiable",
+                        status_code=r.status_code,
+                        content_type=ctype,
+                        final_url=final_url,
+                        response_ms=elapsed,
+                        error=reason,
+                        **redirect_meta,
+                    )
+                    result.confidence = confidence
+                    result.reason = reason
+                    return result
+
                 return _result(
                     label,
                     status_code=r.status_code,
+                    content_type=ctype,
                     final_url=final_url,
                     response_ms=elapsed,
                     **redirect_meta,
