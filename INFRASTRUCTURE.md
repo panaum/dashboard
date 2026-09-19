@@ -677,9 +677,17 @@ problem that the false alert had been standing in front of: the funnel at
 `shopping-protection.com` really does carry `noindex, nofollow`, confirmed in a
 browser (issue #160).
 
-Related gap, not built: a 200 that serves an error page is invisible to every
-check we run. Uptime sees a status under 500, the link checker sees 200, and
-indexability now correctly declines to judge it. #161 has the detail.
+**The related gap is now closed.** A 200 that serves an error page used to be
+invisible to every check: uptime sees a status under 500, the link checker sees
+one under 400, and indexability correctly declines to judge it.
+`resources.soft_404_problem` reads the signals the status line does not — the
+platform's own error path, a title that says it plainly, a redirect onto a
+different registrable domain — and corroborates with whether any word from the
+URL appears on the page that loaded. Never `broken`, because a 200 is a 200 and
+a page may legitimately be titled "Not Found". High confidence when the platform
+named its own error page; low when it only looks like one. A URL that is itself
+about errors is never flagged. Verified on 90 real client pages with no false
+positives, and on the dead funnel in #161 with high confidence.
 
 ---
 

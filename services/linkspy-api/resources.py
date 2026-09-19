@@ -9,7 +9,7 @@ page still returns 200.
 Pure functions over a parsed DOM. No Playwright, no network.
 """
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 from models import RawLink
 
@@ -317,3 +317,130 @@ def _get(result, field):
     if isinstance(result, dict):
         return result.get(field)
     return getattr(result, field, None)
+
+
+# ─── Soft 404: a page that says 200 and means "gone" ────────────────────────
+#
+# content_type_problem above catches an IMAGE URL that answers 200 with a web
+# page. This is the same failure one level up: a PAGE that answers 200 with a
+# "not found". Observed on a real client site — a ClickFunnels funnel had been
+# deleted, and the URL returned 200 while serving the platform's own
+# nopage_error.html. Every check we run called it healthy: uptime looks for a
+# status under 500, the link checker looks for a status under 400. The funnel
+# had been gone for an unknown length of time.
+#
+# Any client page on any hosted platform can die this way. It is not a fault of
+# the client's; it is a fault of ours for only ever reading the status line.
+
+# The platform said it itself, in the URL it redirected us to. Unambiguous.
+_NOT_FOUND_PATHS = (
+    "nopage_error", "page-not-found", "pagenotfound", "page_not_found",
+    "/404", "404.htm", "/not-found", "/notfound", "/error/404",
+)
+
+# A title is strong evidence, but only these phrasings. "Oops" and "Sorry" are
+# how half the web opens a perfectly good page.
+_NOT_FOUND_TITLES = (
+    "page not found", "404 not found", "not found", "page doesn't exist",
+    "page does not exist", "page no longer exists", "page unavailable",
+    "no longer available", "nothing here", "404 error",
+)
+
+# A URL that is ABOUT errors must never be read as one.
+_URL_IS_ABOUT_ERRORS = ("404", "not-found", "notfound", "error", "soft-404",
+                        "broken-link", "dead-link")
+
+_STOPWORDS = frozenset({
+    "the", "and", "for", "with", "from", "this", "that", "our", "your", "you",
+    "www", "com", "net", "org", "html", "htm", "php", "index", "page", "home",
+    "new", "all", "how", "what", "why", "get", "top", "best", "http", "https",
+})
+
+
+def _title_of(html: str) -> str:
+    m = re.search(r"<title[^>]*>(.*?)</title>", html or "", re.I | re.S)
+    return re.sub(r"\s+", " ", m.group(1)).strip().lower() if m else ""
+
+
+def _visible_text(html: str) -> str:
+    """Body text without script/style, lowercased. Cheap and good enough."""
+    body = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", html or "")
+    return re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", body)).strip().lower()
+
+
+def slug_words(url: str) -> list:
+    """The meaningful words in a URL's last path segment.
+
+    A page about `dr-dania-alkhani` says "dania" somewhere. A platform's error
+    page does not. This is corroboration only — never enough on its own, because
+    plenty of real pages are images or one-word landing pages.
+    """
+    try:
+        path = urlparse(url).path.rstrip("/")
+    except Exception:
+        return []
+    segment = unquote(path.rsplit("/", 1)[-1]) if path else ""
+    segment = re.sub(r"\.(html?|php|aspx?)$", "", segment, flags=re.I)
+    words = [w for w in re.split(r"[-_+.%20\s]+", segment.lower()) if w]
+    return [w for w in words if len(w) >= 4 and w not in _STOPWORDS and not w.isdigit()]
+
+
+def soft_404_problem(status_code, content_type, requested_url, final_url, html):
+    """A page that answered 2xx while telling the visitor it does not exist.
+
+    Returns (confidence, reason) or None. Never `broken`: a 200 is a 200, and
+    a page can legitimately be titled "Not Found" while being exactly what the
+    visitor wanted. Confidence separates "the platform told us" from "this
+    looks like it".
+    """
+    if status_code is None or not (200 <= int(status_code) < 300):
+        return None                       # a real 404 is already broken
+    ctype = (content_type or "").split(";")[0].strip().lower()
+    if ctype and not (ctype.startswith("text/html")
+                      or ctype.startswith("application/xhtml")):
+        return None
+    low_requested = (requested_url or "").lower()
+    if any(m in low_requested for m in _URL_IS_ABOUT_ERRORS):
+        return None                       # a page about 404s is not a 404
+
+    landed = (final_url or requested_url or "").lower()
+    title = _title_of(html)
+    words = slug_words(requested_url)
+    text = _visible_text(html)
+    # Corroboration: none of the URL's own words appear on the page it served.
+    slug_absent = bool(words) and not any(w in text for w in words)
+
+    # 1. The platform redirected us to its own error page and named it.
+    if any(m in landed for m in _NOT_FOUND_PATHS):
+        return ("high",
+                "This page answers 200 but the server sent us to its own "
+                f"\"not found\" page ({landed.rsplit('/', 1)[-1] or landed}). "
+                "Visitors following this link reach an error, and every status "
+                "check still reports it healthy.")
+
+    # 2. The title says it plainly.
+    if any(p in title for p in _NOT_FOUND_TITLES):
+        if slug_absent:
+            return ("high",
+                    f"This page answers 200 but its title reads \"{title[:70]}\", "
+                    "and nothing from the address appears on it. The page is "
+                    "almost certainly gone.")
+        return ("low",
+                f"This page answers 200 but its title reads \"{title[:70]}\". "
+                "It may be a genuine page about errors — worth opening.")
+
+    # 3. It left the host entirely and landed on the platform's own site.
+    from watchdog import _registrable        # same host logic as the watchdog
+    try:
+        want, got = urlparse(requested_url).hostname, urlparse(final_url or "").hostname
+    except Exception:
+        want = got = None
+    # A different REGISTRABLE domain. www → apex, or a subdomain moving within
+    # the same site, is ordinary and must not count.
+    if want and got and _registrable(want) != _registrable(got):
+        if slug_absent:
+            return ("low",
+                    f"This page answers 200 but redirects off {want} to {got}, "
+                    "and nothing from the address appears on the page that "
+                    "loads. Often what a platform serves once a page is deleted.")
+    return None
