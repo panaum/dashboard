@@ -10,6 +10,20 @@ expiry over RDAP/WHOIS — that surfaces as "unavailable", not a guessed date.
 An expiry we cannot read is `None`, and the UI says so.
 """
 from datetime import datetime, timezone
+from typing import NamedTuple
+
+
+class SslProbe(NamedTuple):
+    """What one TLS handshake told us. Every field defaults to None so a path
+    that learned nothing cannot return the wrong number of values — the reason
+    this is a type and not a tuple is that it already happened once: the
+    success path kept returning three while the failure paths returned four,
+    and run_sentinel_for_site would have raised for every VALID certificate,
+    silently, because run_sentinel_all swallows per-site exceptions."""
+    expiry: str = None
+    issuer: str = None
+    issued: str = None
+    problem: str = None
 
 # Alert ladder thresholds (days). Escalating copy at each; change-only.
 LADDER = (30, 14, 3)
@@ -26,6 +40,31 @@ AUTOMATED_LIFETIME_DAYS = 100
 # renewal has actually failed, which is why they are kept. At 10 days an ACME
 # client has been retrying twice a day for twenty days; that is a real fault.
 AUTOMATED_LADDER = (10, 3)
+
+# A certificate that fails validation is the opposite of one we could not
+# reach, and until now both read "unavailable" — so an expired certificate, the
+# single disaster this tier exists to prevent, looked exactly like a network
+# blip. OpenSSL's verify codes say which is which; the handshake that produced
+# them proves a certificate was there to judge.
+SSL_VERIFY_PROBLEMS = {
+    10: "expired",              # certificate has expired
+    12: "expired",              # CRL has expired
+    18: "self-signed",          # self-signed certificate
+    19: "untrusted root",       # self-signed certificate in chain
+    20: "incomplete chain",     # unable to get local issuer certificate
+    21: "incomplete chain",     # unable to verify the first certificate
+    62: "hostname mismatch",    # not valid for the host we asked for
+}
+
+# What each means for a visitor, in the card's own voice.
+SSL_PROBLEM_TEXT = {
+    "expired": "the certificate has expired — browsers are refusing this site",
+    "hostname mismatch": "the certificate is not valid for this hostname",
+    "self-signed": "the certificate is self-signed — browsers refuse it",
+    "untrusted root": "the chain ends in a root browsers do not trust",
+    "incomplete chain": "the server does not send its intermediate certificate",
+    "not trusted": "the certificate did not validate",
+}
 
 
 def _now(now=None):
@@ -111,6 +150,22 @@ def ladder_crossing(prev_days, days, lifetime_days=None):
     return None
 
 
+def ssl_invalid_alert(prev_status, prev_guards, problem, host):
+    """The Slack line for a certificate that WAS working and is now invalid,
+    or None. Change-only, like the indexability alarm: the flip is the news,
+    not the ongoing state. A site whose certificate was already invalid the
+    first time we looked is a report, not an alarm — the same rule the guards
+    use — because we cannot tell a new break from one that predates us."""
+    if not problem:
+        return None
+    if (prev_guards or {}).get("ssl_problem"):
+        return None                                   # already told them
+    if (prev_status or {}).get("ssl_expiry") is None:
+        return None                                   # never saw it working
+    return (f":rotating_light: *SSL certificate is invalid* — "
+            f"{SSL_PROBLEM_TEXT.get(problem, problem)} · {host}")
+
+
 def indexability_verdict(robots_ok, meta_noindex, header_noindex, sitemap_ok):
     """Roll the trio into per-check + overall. A page kept OUT of the index
     (noindex, or robots blocking everything) is Critical; a missing/broken
@@ -159,9 +214,15 @@ def uptime_pct(pings):
 
 # ─── Network probes (best-effort; failures surface honestly as unknown) ──────
 async def check_ssl(host, port=443, timeout=8):
-    """(expiry_iso|None, issuer|None, issued_iso|None). None expiry means we
-    couldn't read it — a handshake that fails verification reads as unavailable,
-    not as a clean result."""
+    """An SslProbe: expiry, issuer, issued, problem — all None where unknown.
+
+    `problem` separates the two opposite states that used to share the word
+    "unavailable": a certificate we REACHED and judged invalid (expired,
+    wrong host, self-signed, broken chain) versus a host we could not reach at
+    all. Only OpenSSL's own verification failure counts as invalid — it is the
+    one error that proves a certificate was presented. A timeout, a refused
+    connection, a DNS failure or a bare handshake error stay unknown, because
+    a flaky network must never be reported as a broken certificate."""
     import asyncio
     import ssl
 
@@ -184,12 +245,16 @@ async def check_ssl(host, port=443, timeout=8):
             for k, v in part:
                 if k == "organizationName":
                     issuer = v
-        return exp, issuer or None, issued
+        return SslProbe(exp, issuer or None, issued)
 
     try:
         return await asyncio.to_thread(_probe)
+    except ssl.SSLCertVerificationError as e:
+        # Deterministic: a certificate that fails validation fails it every
+        # time, so there is nothing to retry and nothing ambiguous to report.
+        return SslProbe(problem=SSL_VERIFY_PROBLEMS.get(getattr(e, "verify_code", None), "not trusted"))
     except Exception:
-        return None, None, None
+        return SslProbe()
 
 
 async def check_domain_expiry(domain, client=None):
@@ -296,6 +361,7 @@ def summarize_sentinel(status, pings, now=None):
     # not know, and an unknown lifetime keeps the manual ladder.
     ssl_cycle = ((status.get("guards") or {}).get("ssl_cycle") or {})
     ssl_life = ssl_cycle.get("lifetime_days")
+    ssl_problem = (status.get("guards") or {}).get("ssl_problem")
     ssl_days = days_until(status.get("ssl_expiry"), now)
     dom_days = days_until(status.get("domain_expiry"), now)
     idx = indexability_verdict(status.get("robots_ok"), status.get("meta_noindex"),
@@ -305,12 +371,18 @@ def summarize_sentinel(status, pings, now=None):
 
     from sentinel_guards import guard_cards
     cards = [
-        {"key": "ssl", "label": "SSL", "days": ssl_days, "escalation": escalation(ssl_days, ssl_life),
-         "fact": (f"{ssl_days} days" if ssl_days is not None else "unavailable"),
+        # An invalid certificate outranks any countdown: there is no number of
+        # days left on a certificate browsers are already refusing.
+        {"key": "ssl", "label": "SSL",
+         "days": None if ssl_problem else ssl_days,
+         "escalation": "critical" if ssl_problem else escalation(ssl_days, ssl_life),
+         "fact": ("Expired" if ssl_problem == "expired" else "Invalid") if ssl_problem
+                 else (f"{ssl_days} days" if ssl_days is not None else "unavailable"),
          # "Let's Encrypt · 89-day cycle" — a fact, not a promise that it will
          # renew. If it does not, the 10-day rung says so.
-         "detail": " · ".join(x for x in (status.get("ssl_issuer"),
-                                          f"{ssl_life}-day cycle" if ssl_life else None) if x) or None},
+         "detail": SSL_PROBLEM_TEXT.get(ssl_problem, ssl_problem) if ssl_problem
+                   else (" · ".join(x for x in (status.get("ssl_issuer"),
+                                                f"{ssl_life}-day cycle" if ssl_life else None) if x) or None)},
         {"key": "domain", "label": "Domain", "days": dom_days, "escalation": escalation(dom_days),
          "fact": (f"{dom_days} days" if dom_days is not None else "unavailable"), "detail": None},
         {"key": "index", "label": "Search visibility", "days": None, "escalation": idx["overall"],
@@ -353,7 +425,7 @@ async def run_sentinel_for_site(site, notify=None, client=None):
     prev = await get_sentinel_status(site["id"]) or {}
 
     from sentinel_guards import run_guards, guard_alerts
-    ssl_exp, issuer, ssl_issued = await check_ssl(host)
+    ssl_exp, issuer, ssl_issued, ssl_problem = await check_ssl(host)
     ssl_life = cert_lifetime_days(ssl_issued, ssl_exp)
     dom_exp = await check_domain_expiry(host, client=client)
     robots_ok, meta_ni, header_ni, sitemap_ok = await check_indexability(url, client=client)
@@ -369,9 +441,13 @@ async def run_sentinel_for_site(site, notify=None, client=None):
         dom_exp = guards["domain_expiry"]
     # Recorded even when the guard probe failed: the card's ladder depends on
     # it, and it costs nothing — it came from the handshake we already made.
-    if ssl_life is not None:
+    if ssl_life is not None or ssl_problem is not None:
         guards = dict(guards or {})
-        guards["ssl_cycle"] = {"issued": ssl_issued, "lifetime_days": ssl_life}
+        if ssl_life is not None:
+            guards["ssl_cycle"] = {"issued": ssl_issued, "lifetime_days": ssl_life}
+        # Carried whether or not it is set, so a certificate that was fixed
+        # since the last pass stops being reported as broken.
+        guards["ssl_problem"] = ssl_problem
     ssl_days, dom_days = days_until(ssl_exp), days_until(dom_exp)
 
     await upsert_sentinel_status(site["id"], {
@@ -396,6 +472,12 @@ async def run_sentinel_for_site(site, notify=None, client=None):
     if idx["overall"] == "critical" and prev_idx["overall"] != "critical":
         bad = next((c for c in idx["checks"] if c["status"] == "critical"), None)
         alerts.append(f":rotating_light: *Search visibility at risk* — {bad['text'] if bad else 'indexability'} · {host}")
+    # A certificate that was working and is now invalid. It needs no migration
+    # — the pass has the verdict in hand — so this fires from deploy even
+    # though the card waits on guards being stored.
+    invalid_alert = ssl_invalid_alert(prev, prev_guards, ssl_problem, host)
+    if invalid_alert:
+        alerts.append(invalid_alert)
     if guards is not None:
         alerts.extend(guard_alerts(prev_guards, guards, host))
 

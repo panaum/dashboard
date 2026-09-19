@@ -156,3 +156,77 @@ def test_without_a_recorded_cycle_the_card_is_exactly_what_it_was():
     card = next(c for c in summarize_sentinel(status, [], NOW)["cards"] if c["key"] == "ssl")
     assert card["escalation"] == "notice"
     assert card["detail"] == "Let's Encrypt"
+
+
+# ─── invalid is not the same as unreachable ─────────────────────────────────
+# Both used to read "unavailable", so an expired certificate — the disaster
+# this tier exists to prevent — looked exactly like a network blip. The verify
+# codes below are the ones OpenSSL actually returns, read off badssl.com.
+from sentinel import SSL_VERIFY_PROBLEMS, SSL_PROBLEM_TEXT, ssl_invalid_alert
+
+
+def test_the_verify_codes_are_the_ones_openssl_really_returns():
+    assert SSL_VERIFY_PROBLEMS[10] == "expired"              # expired.badssl.com
+    assert SSL_VERIFY_PROBLEMS[62] == "hostname mismatch"    # wrong.host.badssl.com
+    assert SSL_VERIFY_PROBLEMS[18] == "self-signed"          # self-signed.badssl.com
+    assert SSL_VERIFY_PROBLEMS[19] == "untrusted root"       # untrusted-root.badssl.com
+    assert SSL_VERIFY_PROBLEMS[20] == "incomplete chain"     # incomplete-chain.badssl.com
+    for word in set(SSL_VERIFY_PROBLEMS.values()) | {"not trusted"}:
+        assert word in SSL_PROBLEM_TEXT, f"{word} has no sentence a client could read"
+
+
+def test_an_invalid_certificate_is_critical_and_says_which_kind():
+    for problem, fact in (("expired", "Expired"), ("hostname mismatch", "Invalid"),
+                          ("self-signed", "Invalid"), ("incomplete chain", "Invalid")):
+        status = {"ssl_expiry": None, "ssl_issuer": "Some CA", "guards": {"ssl_problem": problem}}
+        card = next(c for c in summarize_sentinel(status, [], NOW)["cards"] if c["key"] == "ssl")
+        assert card["escalation"] == "critical", problem
+        assert card["fact"] == fact
+        assert card["detail"] == SSL_PROBLEM_TEXT[problem]
+        assert card["days"] is None, "there is no countdown on a certificate browsers already refuse"
+
+
+def test_a_host_we_could_not_reach_still_reads_unavailable():
+    # The opposite state, and it must stay distinguishable.
+    status = {"ssl_expiry": None, "guards": {"ssl_problem": None}}
+    card = next(c for c in summarize_sentinel(status, [], NOW)["cards"] if c["key"] == "ssl")
+    assert card["escalation"] == "unknown"
+    assert card["fact"] == "unavailable"
+
+
+def test_an_invalid_certificate_outranks_its_own_countdown():
+    # An expiry left over from the last good pass must not soften the verdict.
+    status = {"ssl_expiry": (NOW + timedelta(days=60)).isoformat(),
+              "guards": {"ssl_problem": "hostname mismatch", "ssl_cycle": {"lifetime_days": 89}}}
+    card = next(c for c in summarize_sentinel(status, [], NOW)["cards"] if c["key"] == "ssl")
+    assert card["escalation"] == "critical" and card["fact"] == "Invalid"
+
+
+def test_the_alarm_fires_on_the_flip_and_only_on_the_flip():
+    working = {"ssl_expiry": (NOW + timedelta(days=60)).isoformat()}
+    line = ssl_invalid_alert(working, {}, "expired", "example.com")
+    assert line == (":rotating_light: *SSL certificate is invalid* — "
+                    "the certificate has expired — browsers are refusing this site · example.com")
+    # Already reported last pass: silence.
+    assert ssl_invalid_alert(working, {"ssl_problem": "expired"}, "expired", "example.com") is None
+    # Never seen working: a report, not an alarm.
+    assert ssl_invalid_alert({}, {}, "expired", "example.com") is None
+    assert ssl_invalid_alert({"ssl_expiry": None}, {}, "expired", "example.com") is None
+    # Nothing wrong: nothing said.
+    assert ssl_invalid_alert(working, {}, None, "example.com") is None
+    # A certificate that was fixed clears, so the next break can alarm again.
+    assert ssl_invalid_alert(working, {"ssl_problem": None}, "expired", "example.com") is not None
+
+
+def test_every_probe_path_returns_the_same_shape():
+    """The success path once returned three values while the failure paths
+    returned four. run_sentinel_all swallows per-site exceptions, so that would
+    have skipped every site with a VALID certificate, in silence."""
+    from sentinel import SslProbe
+    assert SslProbe()._fields == ("expiry", "issuer", "issued", "problem")
+    assert tuple(SslProbe()) == (None, None, None, None)
+    assert tuple(SslProbe("e", "i", "d")) == ("e", "i", "d", None)
+    assert tuple(SslProbe(problem="expired")) == (None, None, None, "expired")
+    for probe in (SslProbe(), SslProbe("e", "i", "d"), SslProbe(problem="expired")):
+        expiry, issuer, issued, problem = probe          # the call site's unpacking
+        assert (expiry, issuer, issued, problem) == tuple(probe)
