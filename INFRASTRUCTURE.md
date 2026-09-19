@@ -97,22 +97,46 @@ route. It is enqueued internally by APScheduler every 5 minutes
 (`backend/main.py:290-299`). Nothing in FastAPI is designed to be poked by an
 external cron.
 
-The only external-cron surfaces that actually exist are:
+The only external-cron surface that actually exists is:
 - **Dashboard** `/api/spine/drain` — cron-job.org, every 5 min. *(Until
   2026-07-20 this was a daily Vercel cron; that entry has been removed from
   `vercel.json` in favour of the external job.)*
-- **LinkSpy frontend** `/api/cron/auto-scan` — but see D3.
 
-### D3 — LinkSpy's cron route is almost certainly unreachable ⚠️
+### D3 — LinkSpy's cron route was unreachable; it has been deleted ✅
 
-`frontend/middleware.ts:33`'s matcher excludes `login|handoff|portal|reports|
+**Confirmed in production on 2026-09-19, then resolved by deleting the route.**
+
+`frontend/middleware.ts`'s matcher excludes `login|handoff|portal|reports|
 attest|api/auth|api/slack|api/portal|api/reports|api/attest|api/attestations|
-_next/...`. **`api/cron` and `api/webhooks` are not in that exclusion list.**
+_next/...`. **`api/cron` and `api/webhooks` are not in that exclusion list**, so
+the auth wall ran first and 307'd to `/login` before any handler executed.
+Probed with `GET` (the route exported only `POST`, so a GET could not trigger a
+scan but still discriminated: 405 if the handler were reached):
 
-So the auth middleware runs first, `getToken` returns null for a cookie-less
-cron request, and it 307s to `/login` before the handler's `CRON_SECRET` check
-ever executes. If an external cron is configured against this route today,
-verify it is not simply collecting redirects. Same applies to the GitHub webhook.
+| Path | Result |
+|---|---|
+| `/login`, `/api/auth/providers` (excluded) | 200 — controls: the exclusion list works |
+| `/dashboard` (protected) | 307 → `/login?callbackUrl=%2Fdashboard` |
+| `/api/cron/auto-scan` | **307** → `/login?callbackUrl=%2Fapi%2Fcron%2Fauto-scan` |
+| `/api/webhooks/github` | **307** → same |
+
+The `callbackUrl` is the middleware's own construction, so the redirect is
+unambiguously the auth wall and not Next's routing.
+
+**Automated scanning never depended on it.** The LinkSpy *backend* runs its own
+in-process scheduler on Railway (`MonitorScheduler`, one interval job per site
+with `monitoring_enabled`, at that site's cadence, via `run_monitored_scan`),
+alongside the daily sentinel, 5-minute uptime, ads verification, fragility,
+perf and tracer jobs. The frontend route duplicated that logic worse — it
+re-derived `freq`/`last_scanned_at` and poked `/scan` with no auth — so it was
+deleted rather than unblocked: a second scheduler racing the backend's would
+double-scan client sites. **If an external heartbeat is ever wanted, point it
+at the backend, not the frontend.**
+
+⚠️ **`/api/webhooks/github` is still dead.** Same interception, deliberately
+left alone because self-heal is opt-in and default-off. Anyone wiring self-heal
+up must add `api/webhooks` to the matcher's exclusion list first, or GitHub's
+deliveries will silently collect 307s and nothing will ever fire.
 
 ### D4 — `PORTAL_ENFORCE` unset means the LinkSpy backend has no authorization at all ⚠️
 
@@ -341,7 +365,7 @@ Next.js, NextAuth **v4** (`next-auth@4.24.14`). No `vercel.json`, no
 | `DASHBOARD_BRIDGE_URL` | Dashboard read-API origin for delivery data (`api/delivery/route.ts:35`, `api/presence/delivery/route.ts:33`) | url | — | No — Delivery panel + presence line degrade quietly (**D1 resolved**) |
 | `DASHBOARD_BRIDGE_KEY` | Bearer credential for that bridge (`:36`, `presence:34`) | secret | Vercel dashboard | No — as above (**D1 resolved**) |
 | `PRESENCE` | Gates the **delivery-presence line** on Site Detail (`api/presence/delivery/route.ts:26`). Only the literal `1` enables it | flag | *(same name, set separately, on Vercel dashboard)* | No — unset ⇒ the Overview is byte-identical to pre-presence |
-| `CRON_SECRET` | Bearer auth on `/api/cron/auto-scan` (`:7`) | secret | Vercel dashboard *(separate endpoint)* | Fails open if unset; route likely unreachable (D3) |
+| `CRON_SECRET` | **Unused in LinkSpy since 2026-09-19** — its only consumer, `/api/cron/auto-scan`, was deleted (D3). Still live on the *Dashboard* for `/api/spine/drain` | secret | Vercel dashboard | No — safe to remove from the LinkSpy project |
 | `GITHUB_WEBHOOK_SECRET` | HMAC verification of GitHub deployment webhooks (`api/webhooks/github/route.ts:6`) | secret | GitHub repo settings | Yes for that route — 401 otherwise |
 | `AUTH_SECRET` | — | — | — | **Dead** — v5 name (D10) |
 | `AUTH_TRUST_HOST` | — | — | — | **Dead** — v5 name (D10) |
@@ -583,7 +607,8 @@ Baseline of record (Gate −1, 2026-07-15):
 |---|---|---|---|
 | Spine outbox drain | **cron-job.org** → Dashboard `/api/spine/drain` | every 5 min | `Authorization: Bearer {CRON_SECRET}` |
 | Spine outbox drain | **Internal APScheduler** → LinkSpy job queue | every 5 min | none (in-process) |
-| Auto-scan | LinkSpy frontend `/api/cron/auto-scan` | external (cron-job.org) | `Authorization: Bearer {CRON_SECRET}`, **POST only** |
+| Monitored-site scans | **Internal APScheduler** → LinkSpy backend, one job per `monitoring_enabled` site | each site's own cadence | none (in-process) |
+| ~~Auto-scan~~ | ~~LinkSpy frontend `/api/cron/auto-scan`~~ | **route deleted 2026-09-19 (D3)** | — |
 
 **The Vercel cron was removed** (2026-07-20). `vercel.json` previously carried
 `{ "path": "/api/spine/drain", "schedule": "0 3 * * *" }`, but Vercel **Hobby**
@@ -598,8 +623,10 @@ nothing on Vercel will pick up the slack — the queue simply grows. Watch the
 *"spine heartbeat silent >2h"* Slack alert as the signal. For immediate
 delivery, drain manually (see runbook 5.4) — the route is idempotent and unrated.
 
-If cron-job.org is used against `/api/cron/auto-scan`, note it must issue **POST**
-(there is no `GET` export → 405) and that middleware likely intercepts it (D3).
+`/api/cron/auto-scan` no longer exists (D3). Scheduled scanning is the LinkSpy
+backend's own APScheduler, which needs no external trigger; a cron pointed at
+the frontend was collecting 307s. Any future external heartbeat points at the
+backend.
 
 ### Slack
 
