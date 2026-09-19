@@ -1,47 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, HelpCircle, XCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, Check, ChevronDown, HelpCircle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { VitalCard, VitalEscalation } from "@/lib/linkspy/sites-view";
+import { OWNER_LABEL, SURFACE_LABEL, type Surface } from "@/lib/linkspy/check-roles";
 import {
-  badChecks,
-  cardSummary,
-  overviewVerdict,
-  partitionCards,
-  remedyFor,
+  SEVERITY_RANK, bySurface, findingsOf, passingLine, unknownCards, type Finding,
 } from "@/lib/linkspy/vitals-view";
 
-// The site Overview's nine checks.
+// The site Overview: one prioritised list of work.
 //
-// Severity decides three things here and nothing else does: the order, the
-// size, and whether a card appears at all. Four green tiles taking a full row
-// to say nothing was the largest waste on this page, so passing checks
-// collapse into one quiet line.
+// It used to be nine cards — our internal taxonomy of checkers, one box each,
+// with a green Uptime tile given the same weight as a critical email failure.
+// Nobody reads a page that way. They want to know how much there is to do and
+// what to do first.
 //
-// Colour is severity's alone. The accent is for interactive and selected
-// states, so when red appears it means exactly one thing.
+// The screenshot rail from the full design is not here, and cannot be yet: no
+// sentinel check records which element it failed on, so there is nothing to
+// pin. #170 covers keeping the selectors the guards already find. The list is
+// the degraded path by design, and it degrades cleanly.
 
-const VERDICT_TONE = {
-  error: { text: "text-error-strong", Icon: XCircle },
-  warning: { text: "text-warning-strong", Icon: AlertTriangle },
-  success: { text: "text-success-strong", Icon: CheckCircle2 },
-  neutral: { text: "text-text-secondary", Icon: HelpCircle },
-} as const;
-
-// The 3px left edge, instead of a badge in the corner. More scannable, and it
-// lets every card drop one element.
-const EDGE: Record<VitalEscalation, string> = {
-  critical: "bg-error",
-  warn: "bg-warning",
-  notice: "bg-text-muted",
-  unknown: "bg-border-soft",
-  ok: "bg-success",
-};
-
-// Raw severity colours are for bars and fills. As text they are 2–3.4:1 on
-// white, so the -strong tokens carry every word.
-const CHECK_TEXT: Record<VitalEscalation, string> = {
+const SEVERITY_TEXT: Record<VitalEscalation, string> = {
   critical: "text-error-strong",
   warn: "text-warning-strong",
   notice: "text-text-secondary",
@@ -49,170 +29,209 @@ const CHECK_TEXT: Record<VitalEscalation, string> = {
   ok: "text-success-strong",
 };
 
+const SEVERITY_EDGE: Record<VitalEscalation, string> = {
+  critical: "bg-error",
+  warn: "bg-warning",
+  notice: "bg-text-muted",
+  unknown: "bg-border-soft",
+  ok: "bg-success",
+};
+
+/** Counts up once, on first paint only. A number that re-animates every time
+ *  the data refreshes is infuriating, so this never runs twice. */
+function useCountUp(target: number, ms = 400): number {
+  const [value, setValue] = useState(target);
+  const done = useRef(false);
+  useEffect(() => {
+    if (done.current) return;
+    done.current = true;
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduced || target <= 0) return;
+    setValue(0);
+    const start = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / ms);
+      setValue(Math.round(target * (1 - (1 - t) ** 3)));   // ease-out
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target, ms]);
+  return value;
+}
+
 export function SiteVitals({ cards }: { cards: VitalCard[] }) {
-  const [openStrip, setOpenStrip] = useState(false);
-  const verdict = overviewVerdict(cards);
-  const { attention, passing } = partitionCards(cards);
-  const { text, Icon } = VERDICT_TONE[verdict.tone];
+  const findings = findingsOf(cards);
+  const split = bySurface(findings);
+  // Severity stays primary; the grouping is secondary. Ordering the groups by
+  // where the fix lives would bury a critical under two warnings, which is the
+  // one thing this page exists to prevent — so the group holding the worst
+  // finding leads, and `findingsOf` has already sorted within each.
+  const groups: Array<[Surface | null, Finding[]]> = (
+    [["page", split.page],
+     ["infrastructure", split.infrastructure],
+     [null, split.unclassified]] as Array<[Surface | null, Finding[]]>
+  )
+    .filter(([, rows]) => rows.length > 0)
+    .sort(([, a], [, b]) => SEVERITY_RANK[a[0].status] - SEVERITY_RANK[b[0].status]);
+  const groupCount = groups.length;
+  const unknown = unknownCards(cards);
+  const passing = passingLine(cards);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const shown = useCountUp(findings.length);
 
   return (
     <section className="flex flex-col gap-6">
-      {/* The verdict — same voice and scale as the Layout checks report, so
-          the two pages read as one product. Tone by type and icon colour, not
-          a filled bar: this is a statement of fact, not an alert component. */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-start gap-3">
-          <Icon className={cn("mt-1 size-6 shrink-0", text)} strokeWidth={2} aria-hidden />
-          <h2 className={cn("text-[24px] font-semibold leading-tight tracking-tight text-balance", text)}>
-            {verdict.headline}
-          </h2>
-        </div>
-        {verdict.urgent && (
-          <p className="max-w-[70ch] pl-9 text-[14px] leading-relaxed text-text-secondary">
-            {verdict.urgent}
-          </p>
-        )}
-      </div>
+      <Header count={findings.length} shown={shown} />
 
-      {attention.length > 0 && (
-        <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {attention.map((card) => (
-            <VitalTile key={card.key} card={card} />
+      {groups.map(([surface, rows]) => (
+        <div key={surface ?? "unclassified"} className="flex flex-col gap-2">
+          {/* The heading names where the FIX lives, never where the fault is
+              on the page — nothing here records a selector (#170). */}
+          {surface && groupCount > 1 && (
+            <h3 className="px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
+              {SURFACE_LABEL[surface]}
+            </h3>
+          )}
+          <FindingsList
+            findings={rows}
+            openId={openId}
+            onToggle={(id) => setOpenId((cur) => (cur === id ? null : id))}
+          />
+        </div>
+      ))}
+
+      {unknown.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-xl bg-card px-5 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
+            Not established
+          </p>
+          {/* "We could not check this" is not a pass and never folds in with
+              the green line below. */}
+          {unknown.map((c) => (
+            <p key={c.key} className="flex items-start gap-2 text-[13px]">
+              <HelpCircle className="mt-0.5 size-3.5 shrink-0 text-text-secondary" aria-hidden />
+              {/* One text flow, so a wrapped second line stays left-aligned
+                  under the first rather than centring itself in the row. */}
+              <span className="min-w-0 text-text-secondary">
+                <span className="text-text-primary">{c.label}</span>{" "}
+                {c.detail ?? c.fact}
+              </span>
+            </p>
           ))}
         </div>
       )}
 
-      {passing.length > 0 && (
-        <PassingStrip cards={passing} open={openStrip} onToggle={() => setOpenStrip((v) => !v)} />
+      {passing && (
+        <p className="flex items-center gap-2 px-1 text-[13px] text-text-secondary">
+          <Check className="size-4 shrink-0 text-success-strong" strokeWidth={2.5} aria-hidden />
+          {passing}
+        </p>
       )}
     </section>
   );
 }
 
-function VitalTile({ card }: { card: VitalCard }) {
-  const bad = badChecks(card);
-  const { count } = cardSummary(card);
-  const lead = card.escalation === "critical";
-  // The critical card spans two columns and takes larger type, so it is
-  // unmistakably the first thing on the screen.
+function Header({ count, shown }: { count: number; shown: number }) {
+  if (count === 0) {
+    return (
+      <h2 className="flex items-center gap-3 text-[24px] font-semibold leading-tight tracking-tight text-success-strong">
+        <Check className="size-6 shrink-0" strokeWidth={2.5} aria-hidden />
+        Nothing to fix
+      </h2>
+    );
+  }
   return (
-    <article
-      className={cn(
-        "relative overflow-hidden rounded-xl bg-card px-5 py-4 transition-colors hover:bg-card-soft",
-        lead && "sm:col-span-2",
-      )}
-    >
-      <span className={cn("absolute inset-y-0 left-0 w-[3px]", EDGE[card.escalation])} aria-hidden />
-      {/* text-secondary, not text-muted: #7a7a8c is 4.21:1 on white and AA
-          asks 4.5 for text this size. Hierarchy comes from size and weight. */}
-      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
-        {card.label}
-      </p>
-      <p
-        className={cn(
-          "mt-1 font-semibold leading-tight text-text-primary",
-          lead ? "text-[28px]" : "text-[18px]",
-        )}
-      >
-        {card.fact}
-      </p>
-
-      {/* When the findings are listed below, a summary line above them is the
-          same information twice — the fault this redesign exists to remove.
-          The count is already in the value ("2 to fix"). The summary is the
-          fallback for a payload with no checks, where the old code truncated
-          a joined string mid-word: the count and the worst one whole instead. */}
-      {count === 0 && card.detail && (
-        <p className="mt-2 text-[13px] leading-snug text-text-secondary">
-          {card.detail}
-        </p>
-      )}
-
-      {/* Every finding gets its remedy. A finding says something is wrong; a
-          remedy lets someone act on it. */}
-      {bad.length > 0 && (
-        <ul
-          className={cn(
-            "mt-3 flex flex-col gap-2.5",
-            // The lead card is given two columns; its findings should use
-            // them rather than leaving half the card empty.
-            lead && "sm:grid sm:grid-cols-2 sm:gap-x-6",
-          )}
-        >
-          {bad.slice(0, lead ? 5 : 3).map((check, i) => {
-            const remedy = remedyFor(check.text);
-            return (
-              <li key={`${check.key ?? check.text}-${i}`} className="flex flex-col gap-0.5">
-                <span className={cn("text-[13px] leading-snug", CHECK_TEXT[check.status])}>
-                  {check.text}
-                </span>
-                {remedy && (
-                  <span className="text-[12px] leading-snug text-text-secondary">{remedy}</span>
-                )}
-              </li>
-            );
-          })}
-          {bad.length > (lead ? 5 : 3) && (
-            <li className="text-[12px] text-text-secondary">
-              and {bad.length - (lead ? 5 : 3)} more
-            </li>
-          )}
-        </ul>
-      )}
-    </article>
+    <h2 className="text-[28px] font-semibold leading-tight tracking-tight text-text-primary">
+      {/* The count of WORK, not of checks. An audit statistic tells you how
+          thorough we were; this tells you about your afternoon. */}
+      <span className="tabular-nums">{shown}</span> to fix
+    </h2>
   );
 }
 
-function PassingStrip({
-  cards,
-  open,
+function FindingsList({
+  findings,
+  openId,
   onToggle,
 }: {
-  cards: VitalCard[];
-  open: boolean;
-  onToggle: () => void;
+  findings: Finding[];
+  openId: string | null;
+  onToggle: (id: string) => void;
 }) {
-  // Green states should be reassuring and quiet, not loud and space-consuming.
+  const refs = useRef(new Map<string, HTMLButtonElement>());
+
+  // Arrows walk the list; the list itself is one tab stop away from being a
+  // keyboard trap, so every row stays tabbable and arrows are the shortcut.
+  const onKeyDown = (e: React.KeyboardEvent, index: number) => {
+    const delta = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+    if (!delta) return;
+    e.preventDefault();
+    const next = findings[(index + delta + findings.length) % findings.length];
+    refs.current.get(next.id)?.focus();
+  };
+
   return (
-    <div className="rounded-xl bg-card">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl px-5 py-3 text-left transition-colors hover:bg-card-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      >
-        <Check className="size-4 shrink-0 text-success-strong" strokeWidth={2.5} aria-hidden />
-        {cards.map((c) => (
-          <span key={c.key} className="text-[13px] text-text-secondary">
-            <span className="font-medium text-text-primary">{c.label}</span> {c.fact}
-          </span>
-        ))}
-        <ChevronDown
-          className={cn(
-            "ml-auto size-4 shrink-0 text-text-muted transition-transform duration-200",
-            open && "rotate-180",
-          )}
-          aria-hidden
-        />
-      </button>
-      <div
-        className={cn(
-          "grid transition-[grid-template-rows] duration-200 ease-out",
-          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-        )}
-      >
-        <div className="overflow-hidden">
-          <ul className="flex flex-col gap-2 px-5 pb-4 pt-1">
-            {cards.map((c) => (
-              <li key={c.key} className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
-                <span className="font-medium text-text-primary">{c.label}</span>
-                <span className="text-text-secondary">{c.fact}</span>
-                {c.detail && <span className="text-text-secondary">· {c.detail}</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
+    <ul className="flex flex-col gap-px overflow-hidden rounded-xl bg-card">
+      {findings.map((f, i) => {
+        const open = openId === f.id;
+        return (
+          <li key={f.id} className="relative">
+            <span
+              className={cn("absolute inset-y-0 left-0 w-[3px]", SEVERITY_EDGE[f.status])}
+              aria-hidden
+            />
+            <button
+              type="button"
+              ref={(el) => {
+                if (el) refs.current.set(f.id, el);
+                else refs.current.delete(f.id);
+              }}
+              onClick={() => onToggle(f.id)}
+              onKeyDown={(e) => onKeyDown(e, i)}
+              aria-expanded={open}
+              className="flex w-full items-start gap-3 py-3.5 pl-5 pr-4 text-left transition-colors hover:bg-card-soft focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+            >
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className={cn("text-[14px] font-medium leading-snug", SEVERITY_TEXT[f.status])}>
+                  {f.text}
+                </span>
+                {(f.role || f.remedy) && (
+                  <span className="text-[12px] leading-snug text-text-secondary">
+                    {f.role && (
+                      <span className="font-medium">{OWNER_LABEL[f.role.owner]}</span>
+                    )}
+                    {f.role && f.remedy && " · "}
+                    {f.remedy}
+                  </span>
+                )}
+              </span>
+              <ChevronDown
+                className={cn(
+                  "mt-0.5 size-4 shrink-0 text-text-secondary transition-transform duration-200",
+                  open && "rotate-180",
+                )}
+                aria-hidden
+              />
+            </button>
+            <div
+              className={cn(
+                "grid transition-[grid-template-rows] duration-[240ms] ease-out",
+                open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+              )}
+            >
+              <div className="overflow-hidden">
+                <p className="pb-3.5 pl-5 pr-4 text-[12px] text-text-secondary">
+                  Found by the {f.cardLabel} check.
+                </p>
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
