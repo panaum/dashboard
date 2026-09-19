@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 from typing import Optional
 
@@ -811,9 +812,12 @@ class MonitoringColumnMissing(RuntimeError):
 
 
 def _looks_like_missing_column(e: Exception) -> bool:
-    detail = f"{describe_exception(e)}".lower()
-    return "monitoring_enabled" in detail or ("column" in detail and "does not exist" in detail) \
-        or "pgrst204" in detail or "42703" in detail
+    """Any missing column, where the caller does not care which one."""
+    gap = schema_gap(e)
+    if not gap or gap[0] != "column":
+        return False
+    _note_gap("column", gap[1], swallowed=True)
+    return True
 
 
 def _set_monitoring_sync(site_id: str, enabled: bool, freq: Optional[str]) -> dict:
@@ -918,11 +922,87 @@ async def set_expected_tracking(site_id: str, ids: dict) -> dict:
 # All reads/writes are best-effort. Before migrations/004 the tables do not
 # exist; a scan must never fail because the watchdog could not record a host.
 # ─────────────────────────────────────────────────────────────────────────────
+# ─── Schema gaps: which object is missing, decided by code not by prose ─────
+#
+# D16. The predicate here used to be a substring test for "does not exist",
+# which is the text of BOTH `relation "x" does not exist` and
+# `column x does not exist`. One check answered two opposite questions, so a
+# missing COLUMN at any of ~115 call sites read as "this table is not migrated
+# yet" and the write vanished with no signal. Five migrations went unnoticed
+# that way, and the guard results of every sentinel pass were thrown away.
+#
+# PostgREST and Postgres both carry an unambiguous code. Codes decide; the text
+# is only a fallback for an error that carries none.
+
+_TABLE_CODES = ("pgrst205", "42p01")
+_COLUMN_CODES = ("pgrst204", "42703")
+_TABLE_NAME_RE = re.compile(r"(?:table|relation)\s+'?\"?(?:public\.)?([a-z0-9_]+)", re.I)
+_COLUMN_NAME_RE = re.compile(r"column\s+'?\"?([a-z0-9_.]+)", re.I)
+# PostgREST puts the name BEFORE the word: "Could not find the 'x' column of
+# 'scans'". Reading left to right for "column" there yields "of".
+_PGRST_COLUMN_RE = re.compile(r"could not find the '([a-z0-9_.]+)' column", re.I)
+
+
+def _column_name(blob: str):
+    m = _PGRST_COLUMN_RE.search(blob) or _COLUMN_NAME_RE.search(blob)
+    return m.group(1) if m else None
+
+# What is missing, how often we have seen it, and whether we carried on.
+_SCHEMA_GAPS: dict = {}
+
+
+def schema_gap(e: BaseException):
+    """('table', name) or ('column', name) for a schema gap, else None."""
+    info = describe_exception(e)
+    code = str(info.get("code", "")).lower()
+    blob = f"{info}".lower()
+
+    if code in _COLUMN_CODES or (not code and "column" in blob and "does not exist" in blob):
+        return "column", _column_name(blob)
+    if code in _TABLE_CODES or (not code and "does not exist" in blob):
+        m = _TABLE_NAME_RE.search(blob)
+        return "table", (m.group(1) if m else None)
+    if "could not find the" in blob and "column" in blob:
+        return "column", _column_name(blob)
+    return None
+
+
+def _note_gap(kind: str, name, swallowed: bool) -> None:
+    """Record it and say so once. A degraded write must not look like a clean one."""
+    key = f"{kind}:{name or 'unknown'}"
+    entry = _SCHEMA_GAPS.setdefault(key, {"kind": kind, "name": name, "count": 0,
+                                          "swallowed": swallowed})
+    entry["count"] += 1
+    entry["swallowed"] = swallowed
+    if entry["count"] == 1 or entry["count"] % 200 == 0:
+        print(f"[Schema] MISSING {kind} {name or '?'} — "
+              f"{'feature degraded, write discarded' if swallowed else 'raising'} "
+              f"(seen {entry['count']}x). Apply the pending migration: "
+              f"services/linkspy-api/migrations/README.md")
+
+
+def schema_gaps() -> list:
+    """Every schema gap this process has hit, for the health endpoint."""
+    return sorted(_SCHEMA_GAPS.values(), key=lambda g: -g["count"])
+
+
 def _tables_missing(e: Exception) -> bool:
-    detail = f"{describe_exception(e)}".lower()
-    return ("third_party_hosts" in detail or "watchdog_alerts" in detail
-            or "does not exist" in detail or "pgrst205" in detail
-            or "42p01" in detail)
+    """True only for a MISSING TABLE.
+
+    A caller that tolerates a table which has not been created has said nothing
+    about a column that is absent from a table which has. Those are different
+    faults with different fixes, and conflating them is D16. A column gap is
+    recorded and then re-raised, so it surfaces instead of vanishing.
+    """
+    gap = schema_gap(e)
+    if not gap:
+        return False
+    kind, name = gap
+    if kind == "table":
+        _note_gap("table", name, swallowed=True)
+        return True
+    _note_gap("column", name, swallowed=False)
+    return False
 
 
 def _upsert_host_inventory_sync(site_id: str, records: list) -> int:
@@ -1976,8 +2056,15 @@ async def get_sentinel_status(site_id) -> Optional[dict]:
 
 
 def _column_missing(e: Exception, column: str) -> bool:
-    detail = f"{describe_exception(e)}".lower()
-    return column in detail and ("pgrst204" in detail or "could not find" in detail or "column" in detail)
+    """True only when the gap is a column, and it is the column asked about."""
+    gap = schema_gap(e)
+    if not gap or gap[0] != "column":
+        return False
+    named = (gap[1] or "").lower()
+    if column and named and column.lower() not in named:
+        return False
+    _note_gap("column", gap[1] or column, swallowed=True)
+    return True
 
 
 def _upsert_sentinel_status_sync(site_id, patch) -> Optional[dict]:
@@ -2433,10 +2520,13 @@ def _latest_scan_for_site_sync(site_id) -> Optional[dict]:
             .eq("site_id", site_id).order("scanned_at", desc=True).limit(1).execute().data or []
         return rows[0] if rows else None
     except Exception as e:
-        # Column check FIRST. _tables_missing matches the substring "does not
-        # exist", which is also the text of a missing-column error, so testing
-        # it first would swallow this and return None — the exact confusion
-        # D16 is about.
+        # Column check first. This ordering was load-bearing before D16 was
+        # fixed: _tables_missing matched the substring "does not exist", which
+        # is also the text of a missing-column error, so testing it first
+        # swallowed this and returned None. I wrote that bug into this very
+        # function while documenting it, which is how ordinary the mistake is.
+        # It is no longer load-bearing — _tables_missing is now table-only —
+        # but the order stays, and so does this note.
         if _column_missing(e, "pages_scanned"):
             rows = client.table("scans").select("id, results_json, scanned_at")\
                 .eq("site_id", site_id).order("scanned_at", desc=True).limit(1)\

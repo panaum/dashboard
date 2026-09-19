@@ -4636,4 +4636,16 @@ async def inbound404_redirect(site_id: str, request: Request,
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """Liveness, plus any schema gap this process has hit.
+
+    D16: a missing table or column is tolerated so one unapplied migration
+    cannot take a scan down with it. Tolerated is not the same as fine, and
+    until now there was nowhere to ask. `schema_gaps` lists what was missing,
+    how often, and whether the write was discarded — so "unavailable" on a card
+    can be told apart from "nobody ran the migration".
+    """
+    from database import schema_gaps
+    gaps = schema_gaps()
+    return {"status": "ok",
+            "schema_gaps": gaps,
+            "degraded": bool(gaps)}
