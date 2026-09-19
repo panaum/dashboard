@@ -450,10 +450,32 @@ unifying them cannot become a quiet downgrade.
 
 ---
 
-### D16 — Five migrations are unapplied, and every one of them fails silently ⚠️ OPEN
+### D16 — Five migrations were unapplied, and every one failed silently ✅ RESOLVED
 
-**Found 2026-09-19. Needs the operator: applying these requires a Postgres
-connection to the LinkSpy project, which exists only in Railway.**
+**Found and applied 2026-09-19.** Verified `pg_dump` first (29 MB custom-format,
+727 TOC entries, 79 `TABLE DATA` entries, `pg_restore --list` clean), kept at
+`~/linkspy-backups/linkspy-20260919-195130.dump`. Applied through the session
+pooler on 5432 against project `uyvjqaggkqotqcqjwxgm`, one transaction per file,
+ordered by what was being discarded: `004` first because the watchdog throws a
+result away after every scan, then `026` because five cards were computed and
+dropped every pass, then `003`, `005`, `009`, `027`.
+
+All seven objects confirmed present afterwards from `pg_class` and
+`information_schema`. A forced sentinel pass over all eight sites completed
+8 of 8, and every Overview card now carries data — no site reports
+"unavailable" on any of the nine.
+
+What the guards had been computing and discarding, visible on the first pass:
+
+| Site | Was being thrown away |
+|---|---|
+| apexure.com | HSTS missing, CSP missing, three more header notices, a 200-character meta description, one skipped heading level |
+| fautons.com | SPF **none**, DMARC `p=none`, 2 of 5 form fields without a label |
+| dev.apexure.org | 2 email faults, 1 security, 1 accessibility, search visibility at risk |
+
+`scans.pages_scanned` is null on every existing row, so the tenth card reads
+"unavailable" until the next scan writes one. That is the column doing its job,
+not a fault.
 
 `sentinel_status.guards` was known to be missing. Checking the rest of the
 LinkSpy schema against `migrations/*.sql` found four more, verified live:
@@ -582,12 +604,18 @@ with their errors, and alerts undelivered. It still refuses to let one site end
 the sweep, but a run that completed 5 of 8 no longer returns the same shape of
 good news as one that completed 8 of 8.
 
+**DNS drift now retries like everything else.** It was the one alert type left
+on the old behaviour: drift is detected inside `run_guards` by comparing against
+a previous snapshot, and it was handed the STORED snapshot, which advances with
+the observation — so a drift alert that failed to deliver was never re-detected.
+It is now handed the snapshot from `guards.notified`, so the comparison is
+against what we last told them. The snapshot that gets STORED is still the fresh
+one, so the DNS card stays current. One exception is how a fixed class of bug
+comes back.
+
 **Still open**: no alert is persisted with its delivery outcome (item 4), there
 is no heartbeat (item 5), and there is no second channel for the bottom rungs
-(item 6). One residual in the retry: DNS drift is detected inside `run_guards`
-by comparing against the stored snapshot, and that snapshot advances with the
-observation, so a drift alert that fails to deliver is not re-detected. Every
-other alert is.
+(item 6).
 
 #### What it takes to make one reach a human
 
@@ -618,6 +646,40 @@ In the order that removes the most risk per line changed:
 emitters, and whether it is actually set on Railway **cannot be established
 from outside the deployment** — which is itself the point of item 3. Until 1-4
 exist, the honest description of this path is: best effort, unverified, once.
+
+---
+
+### D18 — "Search visibility at risk" was read off pages that were not the client's ✅ RESOLVED
+
+**Found and fixed 2026-09-19**, from two critical alerts raised in the same
+sentinel pass. Neither response came from the site it described.
+
+| Site | What we fetched | What we reported |
+|---|---|---|
+| `shopping-protection.com` | **HTTP 403** with a *"Just a moment…"* bot challenge, and the challenge page carries `noindex, nofollow` | "Homepage carries a noindex directive" — right by accident; the live page does carry one, but we had not seen the live page |
+| `elitepractice.clickfunnels.com` | **HTTP 200** landing on ClickFunnels' `nopage_error.html`, because the funnel no longer exists | the same sentence, describing ClickFunnels' error page as the client's homepage |
+
+`check_indexability` read `<meta name=robots>` and `X-Robots-Tag` from whatever
+came back, with no test that it was the page asked for. A challenge page and an
+error page both carry `noindex` of their own, so both produce a **critical**
+verdict — the one severity the house rule reserves for a provable fault.
+
+It now declines to read directives when the response cannot answer for the
+client's page: a status at or above 400, a body matching the crawler's existing
+`_BOT_BLOCK_PHRASES`, or a landing path that looks like an error page. The
+directives become `None`, which the verdict already renders as **Unknown**
+rather than **At risk**, and the reason is logged. A genuine `noindex` on a page
+we actually read is still critical.
+
+Both sites were then investigated by hand, and both turned out to have a real
+problem that the false alert had been standing in front of: the funnel at
+`elitepractice.clickfunnels.com` is **gone** (issue #161), and
+`shopping-protection.com` really does carry `noindex, nofollow`, confirmed in a
+browser (issue #160).
+
+Related gap, not built: a 200 that serves an error page is invisible to every
+check we run. Uptime sees a status under 500, the link checker sees 200, and
+indexability now correctly declines to judge it. #161 has the detail.
 
 ---
 

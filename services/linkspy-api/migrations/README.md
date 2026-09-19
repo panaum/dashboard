@@ -21,9 +21,11 @@ curl -s "$SUPABASE_URL/rest/v1/<table>?select=<column>&limit=1" \
   -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY"
 ```
 
-## Pending as of 2026-09-19
+## Applied 2026-09-19 (none pending)
 
-Verified against the live project, in the order to run them:
+All applied on 2026-09-19 after a verified `pg_dump`, in this order — by what
+was being discarded rather than by number. Kept as the record of what each one
+turned back on:
 
 | File | Creates | What is silently disabled without it |
 |---|---|---|

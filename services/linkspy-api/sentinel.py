@@ -287,6 +287,35 @@ async def check_domain_expiry(domain, client=None):
             await client.aclose()
 
 
+# A page that is not the one we asked for tells us nothing about the one we
+# did. Each of these was seen producing a false "critical" on a real site.
+_ERROR_PAGE_MARKERS = ("nopage_error", "/404", "404.htm", "page-not-found",
+                       "pagenotfound", "/error")
+
+
+def _not_their_page(response):
+    """Why this response cannot answer for the client's page, or None.
+
+    Returns a short reason so the log says what was wrong rather than leaving a
+    silent None behind.
+    """
+    from urllib.parse import urlsplit
+    try:
+        if response.status_code >= 400:
+            return f"HTTP {response.status_code}"
+        body = (response.text or "")[:4000].lower()
+        from checker import _BOT_BLOCK_PHRASES
+        hit = next((p for p in _BOT_BLOCK_PHRASES if p in body), None)
+        if hit:
+            return f"bot challenge ({hit!r})"
+        landed = urlsplit(str(response.url)).path.lower()
+        if any(m in landed for m in _ERROR_PAGE_MARKERS):
+            return f"served an error page at {landed}"
+    except Exception:
+        return None
+    return None
+
+
 async def check_indexability(base_url, client=None):
     """(robots_ok, meta_noindex, header_noindex, sitemap_ok) — any may be None."""
     import re
@@ -310,12 +339,24 @@ async def check_indexability(base_url, client=None):
                 robots_ok = True  # no robots.txt = nothing blocked
         except Exception:
             robots_ok = None
-        # homepage noindex — meta tag AND X-Robots-Tag header
+        # homepage noindex — meta tag AND X-Robots-Tag header.
+        #
+        # Only from a page we were actually served. A bot challenge and a
+        # "page not found" both carry noindex of their own, and reading it off
+        # either one reports the CLIENT's homepage as deindexed on the strength
+        # of a page that is not theirs. Both were observed on 2026-09-19 and
+        # both raised a critical alert. None here means "couldn't check", which
+        # the verdict renders as Unknown and never as At risk.
         try:
             hr = await client.get(base_url)
-            header_noindex = "noindex" in (hr.headers.get("x-robots-tag", "").lower())
-            meta_noindex = bool(re.search(r'<meta[^>]+name=["\']robots["\'][^>]*content=["\'][^"\']*noindex',
-                                          hr.text, re.IGNORECASE))
+            unreadable = _not_their_page(hr)
+            if unreadable:
+                print(f"[Sentinel] indexability not established for {base_url}: {unreadable}")
+                meta_noindex = header_noindex = None
+            else:
+                header_noindex = "noindex" in (hr.headers.get("x-robots-tag", "").lower())
+                meta_noindex = bool(re.search(r'<meta[^>]+name=["\']robots["\'][^>]*content=["\'][^"\']*noindex',
+                                              hr.text, re.IGNORECASE))
         except Exception:
             meta_noindex = header_noindex = None
         # sitemap
@@ -515,8 +556,17 @@ async def run_sentinel_for_site(site, notify=None, client=None):
     # accessibility essentials. Their failure must never cost the site its
     # SSL/domain/indexability row, so they are one try, stored beside it.
     prev_guards = prev.get("guards") or {}
+    # Decided up here because run_guards needs it: DNS drift is detected inside
+    # run_guards against a previous snapshot, so handing it the STORED snapshot
+    # left drift as the one alert type still on the old behaviour — the snapshot
+    # advanced with the observation, and a drift alert that failed to deliver
+    # was never re-detected. It now compares against what we last told them,
+    # like every other alert. The snapshot STORED is still the fresh one, so
+    # the DNS card stays current.
+    told = notified_baseline(prev, prev_guards)
     try:
-        guards = await run_guards(url if "://" in url else "https://" + url, host, client, prev_guards=prev_guards)
+        guards = await run_guards(url if "://" in url else "https://" + url, host, client,
+                                  prev_guards=told.get("guards") or {})
     except Exception:
         guards = None
     if dom_exp is None and guards and guards.get("domain_expiry"):
@@ -533,11 +583,9 @@ async def run_sentinel_for_site(site, notify=None, client=None):
     ssl_days, dom_days = days_until(ssl_exp), days_until(dom_exp)
     idx = indexability_verdict(robots_ok, meta_ni, header_ni, sitemap_ok)
 
-    # ── Decide what to say, against what we last SAID — not against what we
-    # last saw. The two diverge exactly when a delivery failed, which is the
-    # case the old ordering could not survive.
-    told = notified_baseline(prev, prev_guards)
-
+    # What to say, against what we last SAID — not against what we last saw.
+    # The two diverge exactly when a delivery failed, which is the case the old
+    # ordering could not survive.
     alerts = []
     for label, key, days, life in (("SSL certificate", "ssl_days", ssl_days, ssl_life),
                                    ("Domain registration", "domain_days", dom_days, None)):
