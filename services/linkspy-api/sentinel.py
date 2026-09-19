@@ -412,6 +412,88 @@ def summarize_sentinel(status, pings, now=None):
 
 
 # ─── Orchestration (network + storage; injected notify keeps it testable) ────
+# ─── What we observed vs what we successfully told them ─────────────────────
+#
+# D17. The pass used to write prev_ssl_days / prev_domain_days and THEN try to
+# deliver the alert. A delivery that failed was never retried, because the next
+# pass compared against the advanced number and found no crossing. Each rung of
+# a 30/14/3 ladder therefore got exactly one unverified HTTP POST, and
+# apexure.com's 27-day warning reached a human only because a forced pass
+# collected alerts instead of sending them.
+#
+# Observing and telling are different facts. The columns keep the observation,
+# so the cards are always current. `guards.notified` keeps what we have
+# actually delivered, and it only moves when delivery is confirmed.
+
+NOTIFIED = "notified"
+
+
+def notified_baseline(prev, prev_guards) -> dict:
+    """What we last successfully told them about this site.
+
+    Falls back to the observed columns so the first pass after this ships does
+    not re-announce everything the old code had already sent.
+    """
+    prev, prev_guards = prev or {}, prev_guards or {}
+    told = prev_guards.get(NOTIFIED) or {}
+    # The indexability fallback is the verdict the LAST pass would have
+    # computed from the stored columns — the same comparison the old code made.
+    # Without it the first pass after this ships re-announces every site whose
+    # homepage is already critical, which is noise about a state nobody changed.
+    prior_index = indexability_verdict(
+        prev.get("robots_ok"), prev.get("meta_noindex"),
+        prev.get("header_noindex"), prev.get("sitemap_ok"))["overall"]
+    return {
+        "ssl_days": told.get("ssl_days", prev.get("prev_ssl_days")),
+        "domain_days": told.get("domain_days", prev.get("prev_domain_days")),
+        "index_overall": told.get("index_overall", prior_index),
+        "ssl_problem": told.get("ssl_problem", prev_guards.get("ssl_problem")),
+        "guards": told.get("guards", prev_guards),
+    }
+
+
+def next_notified_state(told: dict, observed: dict, undelivered) -> dict:
+    """What `guards.notified` should hold after this pass.
+
+    Delivered: the observation becomes the new baseline. Undelivered: the OLD
+    baseline is written back unchanged — written back, not left absent, which
+    is the subtle half. `notified_baseline` falls back to the observed columns
+    when nothing has been recorded, and those advance every pass, so leaving
+    the key absent after a failure would let the baseline drift along behind
+    the observation and lose the rung a second time. Pinning it makes the
+    fallback a one-off for the first pass and nothing more.
+    """
+    if undelivered:
+        return {k: told.get(k) for k in ("ssl_days", "domain_days", "index_overall",
+                                         "ssl_problem", "guards")}
+    return {k: observed.get(k) for k in ("ssl_days", "domain_days", "index_overall",
+                                         "ssl_problem", "guards")}
+
+
+async def deliver_alerts(notify, alerts, host="") -> list:
+    """Send each alert; return the ones that were NOT confirmed delivered.
+
+    A notifier confirms by returning something truthy. None, False and any
+    exception all mean unconfirmed — silence is not evidence of delivery, and
+    that assumption is most of D17.
+    """
+    undelivered = []
+    for text in alerts:
+        if not notify:
+            undelivered.append(text)
+            continue
+        try:
+            ok = await notify(text)
+        except Exception as e:
+            print(f"[Sentinel] ALERT NOT DELIVERED ({type(e).__name__}: {e}) — {host}: {text}")
+            undelivered.append(text)
+            continue
+        if not ok:
+            print(f"[Sentinel] ALERT NOT DELIVERED (notifier did not confirm) — {host}: {text}")
+            undelivered.append(text)
+    return undelivered
+
+
 async def run_sentinel_for_site(site, notify=None, client=None):
     """One full sentinel pass for a site: SSL + domain + indexability. Updates
     stored status, fires change-only ladder alerts + indexability-critical."""
@@ -449,45 +531,63 @@ async def run_sentinel_for_site(site, notify=None, client=None):
         # since the last pass stops being reported as broken.
         guards["ssl_problem"] = ssl_problem
     ssl_days, dom_days = days_until(ssl_exp), days_until(dom_exp)
+    idx = indexability_verdict(robots_ok, meta_ni, header_ni, sitemap_ok)
+
+    # ── Decide what to say, against what we last SAID — not against what we
+    # last saw. The two diverge exactly when a delivery failed, which is the
+    # case the old ordering could not survive.
+    told = notified_baseline(prev, prev_guards)
+
+    alerts = []
+    for label, key, days, life in (("SSL certificate", "ssl_days", ssl_days, ssl_life),
+                                   ("Domain registration", "domain_days", dom_days, None)):
+        rung = ladder_crossing(told.get(key), days, life)
+        if rung is not None:
+            urgency = ":rotating_light:" if rung <= 3 else ":warning:"
+            alerts.append(f"{urgency} *{label} expires in {days} days* — {host}")
+    # Indexability critical, change-only (fire when it flips into a bad state).
+    if idx["overall"] == "critical" and told.get("index_overall") != "critical":
+        bad = next((c for c in idx["checks"] if c["status"] == "critical"), None)
+        alerts.append(f":rotating_light: *Search visibility at risk* — {bad['text'] if bad else 'indexability'} · {host}")
+    # A certificate that was working and is now invalid.
+    invalid_alert = ssl_invalid_alert(
+        {"prev_ssl_days": told.get("ssl_days")},
+        {"ssl_problem": told.get("ssl_problem")}, ssl_problem, host)
+    if invalid_alert:
+        alerts.append(invalid_alert)
+    if guards is not None:
+        alerts.extend(guard_alerts(told.get("guards"), guards, host))
+
+    # ── Tell them, and find out whether it landed.
+    undelivered = await deliver_alerts(notify, alerts, host)
+
+    # ── Record. The observation always lands, so the cards stay current.
+    # `notified` advances only when every alert was confirmed: if one of two
+    # failed, both are re-sent next pass. A duplicate alert is a nuisance; a
+    # dropped one is a monitoring system that reliably tells you nothing.
+    if undelivered:
+        print(f"[Sentinel] {len(undelivered)} of {len(alerts)} alert(s) undelivered for "
+              f"{host} — state NOT advanced, they will be retried next pass")
+    next_notified = next_notified_state(
+        told,
+        {"ssl_days": ssl_days, "domain_days": dom_days,
+         "index_overall": idx["overall"], "ssl_problem": ssl_problem,
+         "guards": {k: v for k, v in (guards or {}).items() if k != NOTIFIED}},
+        undelivered)
+
+    stored_guards = dict(guards or {})
+    stored_guards[NOTIFIED] = next_notified
 
     await upsert_sentinel_status(site["id"], {
         "ssl_expiry": ssl_exp, "ssl_issuer": issuer, "domain_expiry": dom_exp,
         "robots_ok": robots_ok, "meta_noindex": meta_ni, "header_noindex": header_ni,
         "sitemap_ok": sitemap_ok, "prev_ssl_days": ssl_days, "prev_domain_days": dom_days,
         "last_checked_at": _now().isoformat(),
-        **({"guards": guards} if guards is not None else {}),
+        **({"guards": stored_guards} if stored_guards is not None else {}),
     })
 
-    alerts = []
-    for label, prev_key, days, life in (("SSL certificate", "prev_ssl_days", ssl_days, ssl_life),
-                                        ("Domain registration", "prev_domain_days", dom_days, None)):
-        rung = ladder_crossing(prev.get(prev_key), days, life)
-        if rung is not None:
-            urgency = ":rotating_light:" if rung <= 3 else ":warning:"
-            alerts.append(f"{urgency} *{label} expires in {days} days* — {host}")
-    # Indexability critical, change-only (fire when it flips into a bad state).
-    idx = indexability_verdict(robots_ok, meta_ni, header_ni, sitemap_ok)
-    prev_idx = indexability_verdict(prev.get("robots_ok"), prev.get("meta_noindex"),
-                                    prev.get("header_noindex"), prev.get("sitemap_ok"))
-    if idx["overall"] == "critical" and prev_idx["overall"] != "critical":
-        bad = next((c for c in idx["checks"] if c["status"] == "critical"), None)
-        alerts.append(f":rotating_light: *Search visibility at risk* — {bad['text'] if bad else 'indexability'} · {host}")
-    # A certificate that was working and is now invalid. It needs no migration
-    # — the pass has the verdict in hand — so this fires from deploy even
-    # though the card waits on guards being stored.
-    invalid_alert = ssl_invalid_alert(prev, prev_guards, ssl_problem, host)
-    if invalid_alert:
-        alerts.append(invalid_alert)
-    if guards is not None:
-        alerts.extend(guard_alerts(prev_guards, guards, host))
-
-    if notify:
-        for a in alerts:
-            try:
-                await notify(a)
-            except Exception:
-                pass
-    return {"ssl_days": ssl_days, "domain_days": dom_days, "index": idx["overall"], "alerts": len(alerts)}
+    return {"ssl_days": ssl_days, "domain_days": dom_days, "index": idx["overall"],
+            "alerts": len(alerts), "undelivered": len(undelivered)}
 
 
 async def run_uptime_for_site(site, notify=None, client=None):
@@ -518,18 +618,31 @@ async def run_uptime_for_site(site, notify=None, client=None):
 
 
 async def run_sentinel_all(notify=None):
+    """One pass over every site, reporting what it actually managed.
+
+    It still refuses to let one site's failure end the sweep, but it no longer
+    reports only the successes. A run that completed 5 of 8 and a run that
+    completed 8 of 8 used to return the same shape of good news.
+    """
     import httpx
     from database import all_sites_min
     sites = await all_sites_min()
-    n = 0
+    done = undelivered = 0
+    failed = []
     async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
         for s in sites:
             try:
-                await run_sentinel_for_site(s, notify=notify, client=client)
-                n += 1
-            except Exception:
-                pass
-    return {"checked": n}
+                res = await run_sentinel_for_site(s, notify=notify, client=client) or {}
+                done += 1
+                undelivered += res.get("undelivered", 0)
+            except Exception as e:
+                failed.append({"url": s.get("url"), "error": f"{type(e).__name__}: {e}"[:200]})
+                print(f"[Sentinel] site FAILED — {s.get('url')}: {type(e).__name__}: {e}")
+    if failed or undelivered:
+        print(f"[Sentinel] pass finished: {done}/{len(sites)} sites completed, "
+              f"{len(failed)} failed, {undelivered} alert(s) undelivered")
+    return {"checked": done, "given": len(sites), "failed": len(failed),
+            "failures": failed, "undelivered": undelivered}
 
 
 async def run_uptime_all(notify=None):

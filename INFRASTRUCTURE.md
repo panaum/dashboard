@@ -521,7 +521,7 @@ sentinel that does not.
 
 ---
 
-### D17 — A domain-expiry alert has six ways to reach nobody, all silent ⚠️ OPEN
+### D17 — A domain-expiry alert had six ways to reach nobody, all silent ✅ MOSTLY RESOLVED
 
 **Found 2026-09-19, after apexure.com's 27-day alert reached a human only
 because a forced pass collected alerts instead of sending them.**
@@ -545,6 +545,49 @@ expiry would have arrived under a title describing something else.
 Each rung fires exactly once per site per cycle. For a 30/14/3 ladder that is
 three chances in the last month of a domain's life, each a single unverified
 HTTP POST, with no record that it happened.
+
+#### Fixed 2026-09-19
+
+Items 1-3 and 7 are done; 4-6 remain.
+
+**The ordering.** The pass now decides what to say, says it, finds out whether
+it landed, and only then records what was said. Observing and telling are
+separate: the columns always take the fresh observation, so the cards stay
+current, while `guards.notified` holds what was actually delivered and moves
+only on confirmation.
+
+**Confirmation is required, not assumed.** `deliver_alerts` treats a truthy
+return as delivery. `None`, `False` and any exception are unconfirmed, and each
+one prints the message it could not deliver. `_watchdog_slack` now returns a
+boolean, checks the HTTP status — a revoked webhook answers 404 without raising,
+which is how a broken path stays quiet for months — and logs loudly when
+`SLACK_WEBHOOK_URL` is unset instead of returning silently.
+
+**The subtle half.** On a failure the OLD baseline is written back, not left
+absent. `notified_baseline` falls back to the observed columns when nothing has
+been recorded, and those advance every pass, so leaving the key absent would let
+the baseline drift along behind the observation and lose the rung a second time.
+Writing it back pins it. A test walks four consecutive failed passes and asserts
+the rung fires on every one, then goes quiet only after a delivery succeeds.
+
+**When only some alerts land**, none of the state advances, so the delivered
+ones repeat next pass. A duplicate alert is a nuisance; a dropped one is a
+monitoring system that reliably tells you nothing.
+
+**Headers follow the message** (item 7), so an expiry no longer arrives titled
+"third-party outage".
+
+**`run_sentinel_all` reports what it managed**: sites given, completed, failed
+with their errors, and alerts undelivered. It still refuses to let one site end
+the sweep, but a run that completed 5 of 8 no longer returns the same shape of
+good news as one that completed 8 of 8.
+
+**Still open**: no alert is persisted with its delivery outcome (item 4), there
+is no heartbeat (item 5), and there is no second channel for the bottom rungs
+(item 6). One residual in the retry: DNS drift is detected inside `run_guards`
+by comparing against the stored snapshot, and that snapshot advances with the
+observation, so a drift alert that fails to deliver is not re-detected. Every
+other alert is.
 
 #### What it takes to make one reach a human
 
@@ -831,6 +874,56 @@ Remember D8: the spine/jobs flags accept **only the literal string `1`**.
 Sequencing note: the flywheel only produces visible effect with
 `JOBS_SHADOW=1` **and** `SPINE_SECRET` set on Railway, plus `SPINE_EMIT=1` on the
 Dashboard for the reverse direction.
+
+---
+
+## 3b. Reaching the LinkSpy database
+
+**Use the session pooler on 5432. The direct host is IPv6-only and does not
+resolve over IPv4**, which is twenty minutes of "the hostname is wrong" before
+anyone thinks to check the address family. This cost that once on 2026-09-19.
+
+| | |
+|---|---|
+| Host | `aws-1-ap-southeast-1.pooler.supabase.com` |
+| Port | **5432** (session mode) |
+| Database | `postgres` |
+| User | `postgres.uyvjqaggkqotqcqjwxgm` — the project ref is the part after the dot |
+| Server | PostgreSQL 17.6 |
+| Env var | `LINKSPY_DIRECT_URL`, **Railway only** |
+
+Three ports, three behaviours, and only one of them works for a dump:
+
+- **5432 session pooler** — what to use. Holds a real session, so `pg_dump`,
+  `psql -f` and transactions all behave.
+- **6543 transaction pooler** — pgbouncer in transaction mode. **Breaks
+  `pg_dump`**, and prepared statements with it.
+- **`db.<ref>.supabase.co` direct** — IPv6-only. It resolves to a AAAA record
+  and nothing else, so on an IPv4-only network it looks like a dead hostname
+  rather than an unreachable one.
+
+`PGSSLMODE=require`. The `pg_dump` client major version must be at or above the
+server's 17.
+
+**`npm run db:deploy` has nothing to do with this database.** That is
+`prisma migrate deploy` against the *Dashboard* project. LinkSpy's migrations
+are plain SQL run by hand; see `services/linkspy-api/migrations/README.md`.
+
+**Getting the URL to a tool that is not your interactive shell.** An `export`
+in a terminal does not reach a subprocess started from elsewhere. Write it to a
+file that gets deleted afterwards, rather than pasting it anywhere that keeps a
+transcript:
+
+```bash
+printf 'LINKSPY_DIRECT_URL=%s\n' "$LINKSPY_DIRECT_URL" > ~/.linkspy-dump.env
+chmod 600 ~/.linkspy-dump.env
+# … do the work …
+shred -u ~/.linkspy-dump.env
+```
+
+Dump before any DDL — free tier, no point-in-time recovery, on both projects.
+`docs/runbooks/backup.md` has the commands; verify with `pg_restore --list`
+before believing the file.
 
 ---
 
