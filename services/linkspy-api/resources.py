@@ -67,6 +67,35 @@ _CSS_URL_RE = re.compile(r"""url\(\s*(?:'([^']*)'|"([^"]*)"|([^)'"]*))\s*\)""", 
 _IMPORT_RE = re.compile(r"""@import\s+(?:url\(\s*)?(?:'([^']*)'|"([^"]*)")""", re.IGNORECASE)
 
 
+# Content types that prove nothing either way. A server that does not say what
+# it sent has not told us it is wrong, and octet-stream is what a great many
+# CDNs send for a perfectly good image.
+UNTELLING_TYPES = ("", "application/octet-stream", "binary/octet-stream")
+
+
+def content_type_problem(resource_type: str, status_code, content_type):
+    """An image URL that answered 2xx with something that is not an image.
+
+    Returns (confidence, reason) or None. The classic case is a soft 404: the
+    server answers 200 with its "page not found" HTML, so the link checker sees
+    a healthy response and the visitor sees a broken image. Nothing here is
+    ever `broken` — a Referer-checking host can serve us a page and a browser
+    the picture — so it is a warning that names what actually came back, and
+    the reader decides.
+    """
+    if resource_type != IMAGE:
+        return None
+    if status_code is None or not (200 <= int(status_code) < 300):
+        return None                      # a 404 is already a broken image
+    ctype = (content_type or "").split(";")[0].strip().lower()
+    if ctype in UNTELLING_TYPES or ctype.startswith("image/"):
+        return None
+    if ctype.startswith("text/html") or ctype.startswith("application/xhtml"):
+        return ("high", "This image URL returns a web page, not an image — usually a "
+                        "\"not found\" page answering 200. The visitor sees a broken image.")
+    return ("low", f"This image URL returns {ctype}, not an image. It may not render.")
+
+
 def describe_resource_failure(resource_type: str) -> str:
     """Reason text for a broken resource, e.g. for a dead <script src>."""
     label = RESOURCE_LABELS.get(resource_type, RESOURCE_LABELS[OTHER])
@@ -133,6 +162,40 @@ def _resource(url: str, page_url: str, resource_type: str, element: str) -> RawL
     )
 
 
+_PIXEL_STYLE = re.compile(r"(?:width|height):[01](?:\.0+)?px")
+
+
+def is_tracking_pixel(tag) -> bool:
+    """A 1x1 or zero-sized <img>: a beacon, not something a visitor can see.
+
+    Nothing a person is meant to look at is one pixel wide, so a broken one is
+    not a broken image — and fetching it is usually the whole point of it
+    existing. Attribute sizes and the inline style both count; a pixel sized
+    only by an external stylesheet still reaches the beacon guard in the
+    checker.
+    """
+    for attr in ("width", "height"):
+        raw = (tag.get(attr) or "").strip().lower().removesuffix("px")
+        try:
+            if float(raw) <= 1:
+                return True
+        except ValueError:
+            pass
+    style = (tag.get("style") or "").lower().replace(" ", "")
+    return bool(_PIXEL_STYLE.search(style))
+
+
+def is_noscript(tag) -> bool:
+    """Inside <noscript>: markup for browsers with JavaScript off.
+
+    The scan renders with JavaScript on, so this never loaded for us and never
+    loads for virtually any visitor. Checking it would report a fault nobody
+    can see, and for the usual occupant — a pixel's fallback <img> — the check
+    itself is the fault.
+    """
+    return tag.find_parent("noscript") is not None
+
+
 def collect_resources(soup, page_url: str) -> list:
     """Every fetchable non-anchor resource the page references, deduped by URL."""
     found: dict = {}
@@ -154,6 +217,8 @@ def collect_resources(soup, page_url: str) -> list:
             found[absolute] = _resource(absolute, page_url, resource_type, element)
 
     for tag in soup.find_all("img"):
+        if is_noscript(tag) or is_tracking_pixel(tag):
+            continue
         add(tag.get("src", ""), IMAGE, "img")
         for candidate in parse_srcset(tag.get("srcset", "")):
             add(candidate, IMAGE, "img[srcset]")

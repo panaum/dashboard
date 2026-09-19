@@ -41,6 +41,10 @@ class RawLink(BaseModel):
 class LinkResult(RawLink):
     status_code: Optional[int] = None
     label: str  # ok | broken | redirect | forbidden | timeout | error
+    # What the server said it sent. Free — it rides on the response the checker
+    # already downloads — and it is how an image that answers 200 with a "not
+    # found" page is told from one that answers with a picture.
+    content_type: Optional[str] = None
     final_url: Optional[str] = None
     response_ms: int = 0
     error: Optional[str] = None
