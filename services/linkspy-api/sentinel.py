@@ -150,15 +150,21 @@ async def check_domain_expiry(domain, client=None):
     own = client is None
     if own:
         client = httpx.AsyncClient(timeout=10, follow_redirects=True)
+    # RDAP knows registrations, not hosts: for a site registered with its
+    # www, `www.example.com` is a 404 there and the card read "unavailable"
+    # for the life of the feature. Walk from the host down to the registrable
+    # domain and take the first answer (sentinel_guards.registrable_candidates).
+    from sentinel_guards import registrable_candidates, parse_rdap
     try:
-        r = await client.get(f"https://rdap.org/domain/{domain}")
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        for ev in data.get("events", []):
-            if ev.get("eventAction") == "expiration":
-                d = _dt(ev.get("eventDate"))
-                return d.isoformat() if d else None
+        for cand in registrable_candidates(domain) or [domain]:
+            try:
+                r = await client.get(f"https://rdap.org/domain/{cand}")
+            except Exception:
+                continue
+            if r.status_code != 200:
+                continue
+            expiry, _registrar = parse_rdap(r.json())
+            return expiry
         return None
     except Exception:
         return None
@@ -243,6 +249,7 @@ def summarize_sentinel(status, pings, now=None):
     up_pct = uptime_pct(pings)
     down = downtime_state(pings)
 
+    from sentinel_guards import guard_cards
     cards = [
         {"key": "ssl", "label": "SSL", "days": ssl_days, "escalation": escalation(ssl_days),
          "fact": (f"{ssl_days} days" if ssl_days is not None else "unavailable"),
@@ -257,6 +264,9 @@ def summarize_sentinel(status, pings, now=None):
          "escalation": "critical" if down else ("ok" if up_pct is not None else "unknown"),
          "fact": (f"{up_pct}%" if up_pct is not None else "—"), "detail": "30-day"},
     ]
+    # The five guards (sentinel_guards.py): DNS, email, security, SEO, a11y —
+    # "unavailable" until their first pass, never a green card by default.
+    cards.extend(guard_cards(status.get("guards")))
     # Proximity = prominence: the most urgent card sorts first.
     rank = {"critical": 0, "warn": 1, "notice": 2, "unknown": 3, "ok": 4}
     cards.sort(key=lambda c: rank.get(c["escalation"], 4))
@@ -285,9 +295,20 @@ async def run_sentinel_for_site(site, notify=None, client=None):
         return {"skipped": True}
     prev = await get_sentinel_status(site["id"]) or {}
 
+    from sentinel_guards import run_guards, guard_alerts
     ssl_exp, issuer = await check_ssl(host)
     dom_exp = await check_domain_expiry(host, client=client)
     robots_ok, meta_ni, header_ni, sitemap_ok = await check_indexability(url, client=client)
+    # The guards: DNS drift, email authentication, security posture, SEO and
+    # accessibility essentials. Their failure must never cost the site its
+    # SSL/domain/indexability row, so they are one try, stored beside it.
+    prev_guards = prev.get("guards") or {}
+    try:
+        guards = await run_guards(url if "://" in url else "https://" + url, host, client, prev_guards=prev_guards)
+    except Exception:
+        guards = None
+    if dom_exp is None and guards and guards.get("domain_expiry"):
+        dom_exp = guards["domain_expiry"]
     ssl_days, dom_days = days_until(ssl_exp), days_until(dom_exp)
 
     await upsert_sentinel_status(site["id"], {
@@ -295,6 +316,7 @@ async def run_sentinel_for_site(site, notify=None, client=None):
         "robots_ok": robots_ok, "meta_noindex": meta_ni, "header_noindex": header_ni,
         "sitemap_ok": sitemap_ok, "prev_ssl_days": ssl_days, "prev_domain_days": dom_days,
         "last_checked_at": _now().isoformat(),
+        **({"guards": guards} if guards is not None else {}),
     })
 
     alerts = []
@@ -311,6 +333,8 @@ async def run_sentinel_for_site(site, notify=None, client=None):
     if idx["overall"] == "critical" and prev_idx["overall"] != "critical":
         bad = next((c for c in idx["checks"] if c["status"] == "critical"), None)
         alerts.append(f":rotating_light: *Search visibility at risk* — {bad['text'] if bad else 'indexability'} · {host}")
+    if guards is not None:
+        alerts.extend(guard_alerts(prev_guards, guards, host))
 
     if notify:
         for a in alerts:

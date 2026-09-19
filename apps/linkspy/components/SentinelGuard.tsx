@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ShieldCheck, ShieldAlert, Lock, Globe, Search, Activity, RefreshCw, Loader2, Check, X, HelpCircle, ChevronDown } from "lucide-react";
+import { Accessibility, Activity, Check, ChevronDown, Globe, HelpCircle, Loader2, Lock, Mail, RefreshCw, Search, ShieldAlert, ShieldCheck, X } from "lucide-react";
 import { staffToken, getPortalToken } from "@/lib/backendClient";
 
 type Variant = "dark" | "light";
@@ -23,7 +23,7 @@ const T = {
     brand: "var(--signal)", good: "#16a34a", notice: "#d97706", warn: "#ea580c", crit: "#dc2626", critbg: "#fef2f2", noticebg: "#fffbeb" },
 };
 
-const ICON = { ssl: Lock, domain: Globe, index: Search, uptime: Activity } as const;
+const ICON = { ssl: Lock, domain: Globe, index: Search, uptime: Activity, dns: Globe, email: Mail, security: Lock, seo: Search, a11y: Accessibility } as const;
 
 function escColor(esc: string, c: typeof T.dark): string {
   return esc === "critical" ? c.crit : esc === "warn" ? c.warn : esc === "notice" ? c.notice

@@ -1975,15 +1975,32 @@ async def get_sentinel_status(site_id) -> Optional[dict]:
     return await asyncio.to_thread(_sentinel_status_sync, site_id)
 
 
+def _column_missing(e: Exception, column: str) -> bool:
+    detail = f"{describe_exception(e)}".lower()
+    return column in detail and ("pgrst204" in detail or "could not find" in detail or "column" in detail)
+
+
 def _upsert_sentinel_status_sync(site_id, patch) -> Optional[dict]:
     client = _get_client()
+    row = {"site_id": site_id, **patch}
     try:
-        row = {"site_id": site_id, **patch}
         r = client.table("sentinel_status").upsert(row, on_conflict="site_id").execute()
         return r.data[0] if r.data else None
     except Exception as e:
         if _tables_missing(e):
             return None
+        # Until migrations/018_sentinel_guards.sql is applied the `guards`
+        # column does not exist. The SSL/domain/indexability row must still be
+        # written — the guards simply read "unavailable" until it is.
+        if "guards" in row and _column_missing(e, "guards"):
+            row.pop("guards", None)
+            try:
+                r = client.table("sentinel_status").upsert(row, on_conflict="site_id").execute()
+                return r.data[0] if r.data else None
+            except Exception as e2:
+                if _tables_missing(e2):
+                    return None
+                raise
         raise
 
 
