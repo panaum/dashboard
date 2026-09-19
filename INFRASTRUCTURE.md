@@ -450,6 +450,77 @@ unifying them cannot become a quiet downgrade.
 
 ---
 
+### D16 — Five migrations are unapplied, and every one of them fails silently ⚠️ OPEN
+
+**Found 2026-09-19. Needs the operator: applying these requires a Postgres
+connection to the LinkSpy project, which exists only in Railway.**
+
+`sentinel_status.guards` was known to be missing. Checking the rest of the
+LinkSpy schema against `migrations/*.sql` found four more, verified live:
+
+| Migration | Missing | Silently disabled |
+|---|---|---|
+| `003_phase5_expected_tracking.sql` | `sites.expected_tracking` (42703) | expected-vs-found tracking mismatch findings |
+| `004_phase7_watchdog.sql` | `third_party_hosts`, `watchdog_alerts` (PGRST205) | the third-party watchdog — it runs after **every** scan and discards the result |
+| `005_phase4_active_optin.sql` | `active_form_optin` (PGRST205) | per-site opt-in for active form submission |
+| `009_client_resources.sql` | `client_resources` (PGRST205) | the client portal's Resources panel |
+| `026_sentinel_guards.sql` | `sentinel_status.guards` (42703) | five Overview cards: DNS, Email, Security, SEO, Accessibility |
+| `027_scans_pages_scanned.sql` (new) | `scans.pages_scanned` (42703) | the per-scan page count |
+
+**`npm run db:deploy` does not apply any of these.** That is
+`prisma migrate deploy` against the *Dashboard* Supabase project. LinkSpy's
+migrations are plain SQL with no migrator and no ledger table, run by hand in
+the Supabase SQL editor. The file names are not a record of what has been
+applied; the database is, and `migrations/README.md` now says how to ask it.
+
+#### Why none of this was visible
+
+Two helpers in `database.py` turn a schema gap into a no-op:
+
+- `_column_missing` is used **once**, for `guards`. The write is retried with
+  the column dropped, so the row is still written and the guard results are
+  thrown away every pass.
+- `_tables_missing` is used at about **115** call sites. Its predicate matches
+  the substring `"does not exist"`, which is the text of a missing **column**
+  error as well as a missing table. So any write whose payload names a column
+  the schema lacks is swallowed at any of those sites and reported as "this
+  table is not migrated yet".
+- `_OPTIONAL_SCAN_COLUMNS` is the same shape again: `_insert_scan` retries
+  without `pages_scanned`. That column has never existed, which is why a scan's
+  page count cannot be read back and has to be derived from `results_json`.
+
+Each of these was written for a real reason — a missing table must not crash a
+scan, and losing a whole scan row over one column was a worse bug. The failure
+is that they are indistinguishable from success. Nothing counts a degraded
+write, nothing logs one at a level anybody reads, and the UI shows the same
+"unavailable" it would show for a check that had simply not run yet.
+
+**This is the same shape as D15 and as the dead cron route: work that is
+performed and then discarded, with no signal anywhere.** Guards are computed on
+every sentinel pass for eight sites and dropped. The watchdog is computed after
+every scan — roughly 3,300 of them — and dropped.
+
+The fix is not to remove the tolerance. It is to make a degraded write say so:
+count it, name the column, and surface it on a health endpoint, so "unavailable"
+can be told apart from "not migrated". Not done here.
+
+#### A daily job on a service that redeploys is a daily job that never runs
+
+Related, and found while explaining why the Overview was stale. The sentinel is
+registered with APScheduler as `interval, hours=24`, which first fires 24 hours
+after the process starts. Railway redeploys on every merge. On 2026-09-19 there
+were seven merges, so the timer was reset seven times and the newest row was
+from a process that had been up since the previous day.
+
+It is the same failure as D3's cron route: a schedule that looks configured and
+does not fire. A wall-clock trigger (`cron`, a fixed hour) survives a restart
+where an interval does not, and `misfire_grace_time` lets a pass that was missed
+during a deploy run on the next boot. `_recompute_fragility_all` and
+`_recompute_perf_all` already use `cron` with a grace time, two lines below the
+sentinel that does not.
+
+---
+
 ## 1. Per-surface variable tables
 
 **Type** legend: `secret` (credential — rotate), `url` (endpoint), `flag`

@@ -544,6 +544,6 @@ dependency. Honesty rules as the sentinel's: a lookup that did not answer is
 "unavailable", and never votes.
 
 Storage is one `jsonb` column, `sentinel_status.guards`
-(`migrations/018_sentinel_guards.sql`, run by the operator in Supabase after a
+(`migrations/026_sentinel_guards.sql`, run by the operator in Supabase after a
 `pg_dump`). Until it is applied the row is still written without it and the
 five cards read "unavailable".
