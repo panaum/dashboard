@@ -14,6 +14,19 @@ from datetime import datetime, timezone
 # Alert ladder thresholds (days). Escalating copy at each; change-only.
 LADDER = (30, 14, 3)
 
+# A certificate short enough to be on an automated cycle. Let's Encrypt and
+# Google Trust Services both issue 90 days; every certificate in the portfolio
+# today is one of the two.
+AUTOMATED_LIFETIME_DAYS = 100
+
+# The rungs that still mean something for such a certificate. The 30-day rung
+# is where these certs RENEW — ACME clients renew at a third of lifetime — so
+# a warning there fires on every healthy cycle and means nothing. Worse, it is
+# the only rung a healthy cert ever reaches: 14 and 3 are never crossed unless
+# renewal has actually failed, which is why they are kept. At 10 days an ACME
+# client has been retrying twice a day for twenty days; that is a real fault.
+AUTOMATED_LADDER = (10, 3)
+
 
 def _now(now=None):
     return now or datetime.now(timezone.utc)
@@ -42,10 +55,40 @@ def days_until(expiry, now=None):
     return int(delta.total_seconds() // 86400)
 
 
-def escalation(days):
-    """Visual/severity tier from days remaining. None → 'unknown' (honest)."""
+def cert_lifetime_days(issued, expiry):
+    """Whole days the certificate was issued FOR. None when either end is
+    unknown — and an unknown lifetime is never treated as automated, because
+    suppressing a warning on a guess is how a manual renewal gets missed."""
+    a, b = _dt(issued), _dt(expiry)
+    if a is None or b is None:
+        return None
+    days = int((b - a).total_seconds() // 86400)
+    return days if days > 0 else None
+
+
+def is_automated(lifetime_days):
+    """A certificate we KNOW renews itself. Unknown lifetime → False."""
+    return lifetime_days is not None and lifetime_days <= AUTOMATED_LIFETIME_DAYS
+
+
+def ladder_for(lifetime_days):
+    return AUTOMATED_LADDER if is_automated(lifetime_days) else LADDER
+
+
+def escalation(days, lifetime_days=None):
+    """Visual/severity tier from days remaining. None → 'unknown' (honest).
+
+    `lifetime_days` is how long the certificate was issued for, where we know
+    it. A 90-day certificate at 30 days is mid-cycle, not expiring, so it stays
+    green until the rungs that mean something."""
     if days is None:
         return "unknown"
+    if is_automated(lifetime_days):
+        # No "notice" tier: for a cert that renews itself there is nothing to
+        # notice between issue and failure.
+        if days <= AUTOMATED_LADDER[1]:
+            return "critical"
+        return "warn" if days <= AUTOMATED_LADDER[0] else "ok"
     if days <= 3:
         return "critical"
     if days <= 14:
@@ -55,13 +98,14 @@ def escalation(days):
     return "ok"
 
 
-def ladder_crossing(prev_days, days):
+def ladder_crossing(prev_days, days, lifetime_days=None):
     """The alert-ladder rung newly crossed downward since last check, or None.
-    Change-only: fires once as the countdown passes each of 30/14/3."""
+    Change-only: fires once as the countdown passes each rung — 30/14/3 for a
+    certificate renewed by hand, 10/3 for one that renews itself."""
     if days is None:
         return None
     # Report the smallest (most urgent) rung newly crossed downward.
-    for t in sorted(LADDER):  # 3, 14, 30
+    for t in sorted(ladder_for(lifetime_days)):
         if days <= t and (prev_days is None or prev_days > t):
             return t
     return None
@@ -115,7 +159,9 @@ def uptime_pct(pings):
 
 # ─── Network probes (best-effort; failures surface honestly as unknown) ──────
 async def check_ssl(host, port=443, timeout=8):
-    """(expiry_iso|None, issuer|None). None expiry means we couldn't read it."""
+    """(expiry_iso|None, issuer|None, issued_iso|None). None expiry means we
+    couldn't read it — a handshake that fails verification reads as unavailable,
+    not as a clean result."""
     import asyncio
     import ssl
 
@@ -125,22 +171,25 @@ async def check_ssl(host, port=443, timeout=8):
         with socket.create_connection((host, port), timeout=timeout) as sock:
             with ctx.wrap_socket(sock, server_hostname=host) as ss:
                 cert = ss.getpeercert()
-        not_after = cert.get("notAfter")
-        exp = None
-        if not_after:
-            dt = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
-            exp = dt.isoformat()
+        def _stamp(value):
+            if not value:
+                return None
+            return datetime.strptime(value, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc).isoformat()
+        exp = _stamp(cert.get("notAfter"))
+        # notBefore comes from the same handshake: the lifetime it gives is
+        # what tells an automated 90-day cert from a manual annual one.
+        issued = _stamp(cert.get("notBefore"))
         issuer = ""
         for part in cert.get("issuer", ()):
             for k, v in part:
                 if k == "organizationName":
                     issuer = v
-        return exp, issuer or None
+        return exp, issuer or None, issued
 
     try:
         return await asyncio.to_thread(_probe)
     except Exception:
-        return None, None
+        return None, None, None
 
 
 async def check_domain_expiry(domain, client=None):
@@ -242,6 +291,11 @@ def summarize_sentinel(status, pings, now=None):
     Pure. `status` carries ssl_expiry/ssl_issuer/domain_expiry/robots_ok/
     meta_noindex/header_noindex/sitemap_ok/last_checked_at."""
     status = status or {}
+    # How long this certificate was issued for, where a pass has recorded it
+    # (sentinel_status.guards.ssl_cycle — migrations/018). Absent means we do
+    # not know, and an unknown lifetime keeps the manual ladder.
+    ssl_cycle = ((status.get("guards") or {}).get("ssl_cycle") or {})
+    ssl_life = ssl_cycle.get("lifetime_days")
     ssl_days = days_until(status.get("ssl_expiry"), now)
     dom_days = days_until(status.get("domain_expiry"), now)
     idx = indexability_verdict(status.get("robots_ok"), status.get("meta_noindex"),
@@ -251,9 +305,12 @@ def summarize_sentinel(status, pings, now=None):
 
     from sentinel_guards import guard_cards
     cards = [
-        {"key": "ssl", "label": "SSL", "days": ssl_days, "escalation": escalation(ssl_days),
+        {"key": "ssl", "label": "SSL", "days": ssl_days, "escalation": escalation(ssl_days, ssl_life),
          "fact": (f"{ssl_days} days" if ssl_days is not None else "unavailable"),
-         "detail": status.get("ssl_issuer")},
+         # "Let's Encrypt · 89-day cycle" — a fact, not a promise that it will
+         # renew. If it does not, the 10-day rung says so.
+         "detail": " · ".join(x for x in (status.get("ssl_issuer"),
+                                          f"{ssl_life}-day cycle" if ssl_life else None) if x) or None},
         {"key": "domain", "label": "Domain", "days": dom_days, "escalation": escalation(dom_days),
          "fact": (f"{dom_days} days" if dom_days is not None else "unavailable"), "detail": None},
         {"key": "index", "label": "Search visibility", "days": None, "escalation": idx["overall"],
@@ -296,7 +353,8 @@ async def run_sentinel_for_site(site, notify=None, client=None):
     prev = await get_sentinel_status(site["id"]) or {}
 
     from sentinel_guards import run_guards, guard_alerts
-    ssl_exp, issuer = await check_ssl(host)
+    ssl_exp, issuer, ssl_issued = await check_ssl(host)
+    ssl_life = cert_lifetime_days(ssl_issued, ssl_exp)
     dom_exp = await check_domain_expiry(host, client=client)
     robots_ok, meta_ni, header_ni, sitemap_ok = await check_indexability(url, client=client)
     # The guards: DNS drift, email authentication, security posture, SEO and
@@ -309,6 +367,11 @@ async def run_sentinel_for_site(site, notify=None, client=None):
         guards = None
     if dom_exp is None and guards and guards.get("domain_expiry"):
         dom_exp = guards["domain_expiry"]
+    # Recorded even when the guard probe failed: the card's ladder depends on
+    # it, and it costs nothing — it came from the handshake we already made.
+    if ssl_life is not None:
+        guards = dict(guards or {})
+        guards["ssl_cycle"] = {"issued": ssl_issued, "lifetime_days": ssl_life}
     ssl_days, dom_days = days_until(ssl_exp), days_until(dom_exp)
 
     await upsert_sentinel_status(site["id"], {
@@ -320,9 +383,9 @@ async def run_sentinel_for_site(site, notify=None, client=None):
     })
 
     alerts = []
-    for label, prev_key, days in (("SSL certificate", "prev_ssl_days", ssl_days),
-                                  ("Domain registration", "prev_domain_days", dom_days)):
-        rung = ladder_crossing(prev.get(prev_key), days)
+    for label, prev_key, days, life in (("SSL certificate", "prev_ssl_days", ssl_days, ssl_life),
+                                        ("Domain registration", "prev_domain_days", dom_days, None)):
+        rung = ladder_crossing(prev.get(prev_key), days, life)
         if rung is not None:
             urgency = ":rotating_light:" if rung <= 3 else ":warning:"
             alerts.append(f"{urgency} *{label} expires in {days} days* — {host}")

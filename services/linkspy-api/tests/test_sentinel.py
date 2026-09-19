@@ -82,3 +82,77 @@ def test_summarize_puts_most_urgent_card_first_and_honest_unavailable():
     dom = next(c for c in s["cards"] if c["key"] == "domain")
     assert dom["fact"] == "unavailable" and dom["escalation"] == "unknown"
     assert s["uptime_pct"] == 100.0
+
+
+# ─── certificates that renew themselves ─────────────────────────────────────
+# Every certificate in the portfolio today is 89 or 90 days (Let's Encrypt or
+# Google Trust Services). An ACME client renews at a third of lifetime, so the
+# 30-day rung is where these certs RENEW — the one rung a healthy cert reaches,
+# and the only one it ever reaches. 14 and 3 are never crossed unless renewal
+# has actually failed, which is why they are kept.
+from sentinel import cert_lifetime_days, is_automated, ladder_for, AUTOMATED_LADDER
+
+LE_ISSUED = "2026-08-12T00:00:00+00:00"
+LE_EXPIRY = "2026-11-09T00:00:00+00:00"          # 89 days, apexure.com's real pair
+
+
+def test_lifetime_is_read_from_the_certificate_and_never_guessed():
+    assert cert_lifetime_days(LE_ISSUED, LE_EXPIRY) == 89
+    assert cert_lifetime_days(None, LE_EXPIRY) is None
+    assert cert_lifetime_days(LE_ISSUED, None) is None
+    assert cert_lifetime_days("not a date", LE_EXPIRY) is None
+    assert cert_lifetime_days(LE_EXPIRY, LE_ISSUED) is None, "expiry before issue is nonsense, not a lifetime"
+
+
+def test_an_unknown_lifetime_is_never_treated_as_automated():
+    # Suppressing a warning on a guess is how a manual renewal gets missed.
+    assert is_automated(None) is False
+    assert ladder_for(None) == (30, 14, 3)
+    assert is_automated(89) is True and is_automated(90) is True
+    assert is_automated(365) is False, "an annual certificate is renewed by a human"
+    assert ladder_for(89) == AUTOMATED_LADDER
+
+
+def test_a_90_day_certificate_stays_green_through_its_own_renewal():
+    assert escalation(34, 89) == "ok", "roadmap.thepeakfp.com today"
+    assert escalation(30, 89) == "ok", "the moment it renews — today this reads 'notice'"
+    assert escalation(11, 89) == "ok"
+    assert escalation(10, 89) == "warn", "twenty days of failed retries is a real fault"
+    assert escalation(4, 89) == "warn"
+    assert escalation(3, 89) == "critical"
+    assert escalation(0, 89) == "critical"
+
+
+def test_a_certificate_renewed_by_hand_keeps_every_rung():
+    assert escalation(30, 365) == "notice"
+    assert escalation(14, 365) == "warn"
+    assert escalation(3, 365) == "critical"
+    assert escalation(30) == "notice", "no lifetime known: unchanged"
+    assert escalation(None, 89) == "unknown"
+
+
+def test_the_slack_alert_stops_firing_on_a_healthy_renewal_cycle():
+    # The live false alarm: every site crosses 31 -> 30 every cycle.
+    assert ladder_crossing(31, 30, 89) is None
+    assert ladder_crossing(31, 30) == 30, "without a known lifetime, unchanged"
+    assert ladder_crossing(31, 30, 365) == 30, "an annual cert still warns a month out"
+    # The rungs that mean something still fire, once each.
+    assert ladder_crossing(11, 10, 89) == 10
+    assert ladder_crossing(10, 9, 89) is None, "change-only: already reported"
+    assert ladder_crossing(4, 3, 89) == 3
+
+
+def test_the_card_reads_the_recorded_cycle_and_says_what_it_is():
+    status = {"ssl_expiry": (NOW + timedelta(days=30)).isoformat(), "ssl_issuer": "Let's Encrypt",
+              "guards": {"ssl_cycle": {"issued": LE_ISSUED, "lifetime_days": 89}}}
+    card = next(c for c in summarize_sentinel(status, [], NOW)["cards"] if c["key"] == "ssl")
+    assert card["escalation"] == "ok"
+    assert card["fact"] == "30 days"
+    assert card["detail"] == "Let's Encrypt · 89-day cycle"
+
+
+def test_without_a_recorded_cycle_the_card_is_exactly_what_it_was():
+    status = {"ssl_expiry": (NOW + timedelta(days=30)).isoformat(), "ssl_issuer": "Let's Encrypt"}
+    card = next(c for c in summarize_sentinel(status, [], NOW)["cards"] if c["key"] == "ssl")
+    assert card["escalation"] == "notice"
+    assert card["detail"] == "Let's Encrypt"
