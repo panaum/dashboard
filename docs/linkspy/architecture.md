@@ -517,3 +517,33 @@ analytics stay partial until entities are touched — accepted; (2) two-event
 spine means the flywheel and live-observed flag wait — accepted; (3) the
 primary QA tester is also the builder (111 pages QA'd), so P3 adoption risk
 is unusually low — noted as a tailwind, not a plan.
+
+## Sentinel guards (2026-09-19)
+
+Beside SSL / domain / indexability / uptime, `sentinel_guards.py` adds five
+cards to the same daily pass and the same `summarize_sentinel` payload, so
+both the LinkSpy site view and the Dashboard's Sites page draw them without a
+frontend change:
+
+- **DNS** — nameservers, A/AAAA, MX and the www alias, snapshot per pass;
+  a change is a critical card and a change-only alert (a migration nobody
+  mentioned, or a hijack). Also fixes the domain card: RDAP is asked for the
+  registrable domain, not the host (`www.example.com` was always a 404), and
+  the registrar is shown.
+- **Email** — SPF, DMARC and its policy, MX, DKIM by common selectors. Lead
+  forms deliver by email; a domain without DMARC lands in spam.
+- **Security** — HTTP→HTTPS redirect (critical when the plain page is served),
+  active mixed content (critical), HSTS/CSP (warn), the small headers (notice).
+- **SEO** — title and description lengths, canonical host, one H1, Open
+  Graph, `lang`. Never critical.
+- **Accessibility** — alt text, labelled fields, named links and buttons,
+  `lang`, heading order, unique ids. Warn at most.
+
+DNS goes over DoH (Cloudflare, then Google) through httpx — no resolver
+dependency. Honesty rules as the sentinel's: a lookup that did not answer is
+"unavailable", and never votes.
+
+Storage is one `jsonb` column, `sentinel_status.guards`
+(`migrations/018_sentinel_guards.sql`, run by the operator in Supabase after a
+`pg_dump`). Until it is applied the row is still written without it and the
+five cards read "unavailable".
