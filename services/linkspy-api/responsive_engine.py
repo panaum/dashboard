@@ -22,6 +22,7 @@ import time
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 from playwright.sync_api import Error as PWError, TimeoutError as PWTimeout, sync_playwright
+from outbound import guarded_context
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/124.0.0.0 Safari/537.36 Pagecheck/0.1 (+https://apexure.com; read-only QA)")
@@ -661,16 +662,13 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
                 # A fresh context per width: it arms the collector route on every
                 # one of the eight loads, and stops a consent choice made at
                 # 350px changing what is measured at 1440.
-                ctx = browser.new_context(user_agent=UA, viewport={"width": w, "height": h},
-                                          device_scale_factor=SHOT_DPR, locale="en-AU")
+                ctx, guard = guarded_context(
+                    browser, purpose=f"responsive render {w}px",
+                    user_agent=UA, viewport={"width": w, "height": h},
+                    device_scale_factor=SHOT_DPR, locale="en-AU")
                 ctx.set_default_timeout(20000)
-                blocked: list[str] = []
-                ctx.route(COLLECTOR_RX,
-                          lambda rt, req, b=blocked: (b.append(req.url), rt.abort()))
+                blocked = guard.blocked
                 page = ctx.new_page()
-                page.on("requestfinished",
-                        lambda rq: out["hits"].append(rq.url[:200])
-                        if COLLECTOR_RX.search(rq.url) else None)
                 try:
                     page.goto(target, wait_until="domcontentloaded", timeout=35000)
                     try:
@@ -729,6 +727,9 @@ def run_responsive(url: str, on_progress=None) -> tuple[dict, dict]:
                                      "elapsed": round(time.time() - t0, 1)})
                         out["widths"].append(data)
                     out["blocked"] += len(blocked)
+                    # Anything matching the predicate that still completed is a
+                    # gap in the predicate, not a finding about the page.
+                    out["hits"].extend(guard.leaked)
                 except (PWError, PWTimeout) as exc:
                     out["errors"].append(f"{w}px: {type(exc).__name__}: {str(exc)[:140]}")
                 finally:

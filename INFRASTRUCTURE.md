@@ -306,9 +306,9 @@ redirecting, and that the `proxy.ts` matcher still does not claim to cover
 
 ---
 
-### D15 — The analytics guard covered the browser, not the checker; every scan fired the client's tracking ⚠️ PARTLY RESOLVED
+### D15 — The analytics guard covered one outbound path out of nine; every scan fired the client's tracking ✅ RESOLVED
 
-**Found 2026-09-19. Checker fixed (#151); the render paths are still open.**
+**Found and fixed 2026-09-19. Checker in #151, the nine outbound paths in #154.**
 
 `scraper._block_non_get` aborts analytics requests *inside Playwright*, because
 firing a pixel while auditing logs a visitor who does not exist. That guard was
@@ -375,28 +375,78 @@ the render-time list, which matches the whole URL loosely; the checker also sees
 that 404s means their analytics is not running at all. `collect_resources` also
 stops collecting `<img>` inside `<noscript>` and 1×1 pixels.
 
-#### Audit: every other path that fetches a client URL
+#### Audit: every path that points a browser or a fetch at a client URL
 
-| Path | Kind | Guard | Risk |
+**Corrected 2026-09-19, later the same day.** The first version of this audit
+said the scan's own render was covered by `_block_non_get`. It was not. That
+route is armed inside `_reveal_forms`, only while clicking things open, and the
+page LOAD at `scraper.py` had no guard at all. Counting
+`main._capture_screenshot`, there were nine outbound paths, not six.
+
+| Path | Kind | Before | Now |
 |---|---|---|---|
-| `checker.check_single` | httpx GET | **`beacons.py`** (#151) | resolved |
-| `ads_guard`, `fix_verify` | httpx via `check_single` | inherits #151 | resolved |
-| `scraper._scrape_sync` | render | `_block_non_get` | covered |
-| `responsive_engine` | render | `COLLECTOR_RX` route abort | covered |
-| `consent_render` | render | **none — by design** | it exists to record third-party requests under each consent state; blocking them defeats the measurement. Inherent, and should stay documented rather than fixed |
-| `pagecheck_engine`, `attribution` | render | **none** | **highest** — renders landing pages *with UTM and click-id parameters*, so a fired tag creates a campaign-attributed session, not merely a pageview |
-| `active_submission_exec` | render | **none** | submits a real form; the render fires the full tag stack first |
-| `lead_contracts` | render | **none** | hydrated render of a form page |
-| `xray` | render | **none** | on-demand screenshot capture |
-| `sentinel` (uptime) | httpx GET | n/a | fetches the homepage only; no JS, so no tags fire |
-| `form_audit`, `suggester`, `sitemap` | httpx GET | n/a | fetch form actions / candidates / `sitemap.xml`, not collectors |
+| `checker.check_single` | httpx GET | `beacons.py` (#151) | unchanged |
+| `ads_guard`, `fix_verify` | httpx via `check_single` | inherits #151 | unchanged |
+| `scraper._scrape_sync` | render | **guard armed only during click-reveal, not for the page load** | `guarded_context` |
+| `responsive_engine` | render | own `COLLECTOR_RX` route | `guarded_context`, one predicate |
+| `main._capture_screenshot` | render | **none** — the seventh place | `guarded_context` |
+| `pagecheck_engine`, `attribution` | render | **none**, and they carry UTM + click ids | `guarded_context` |
+| `active_submission_exec` | render | **none**, via `browser.new_page()` | `guarded_context` |
+| `lead_contracts` | render | **none** | `guarded_context_async` |
+| `xray` | render | **none** | `guarded_context` |
+| `consent_render` | render | none, by design | `allow_collectors="<reason>"`, explicit |
+| `sentinel` (uptime) | httpx GET | n/a | homepage only, no JS, fires no tags |
+| `form_audit`, `suggester`, `sitemap` | httpx GET | n/a | form actions / candidates / `sitemap.xml` |
 
-Six render paths execute the page's JavaScript with no analytics guard, which
-fires *everything* — GA4, Meta, Ads — not only the no-script fallbacks the
-checker hit. They are on-demand rather than scheduled, so the volume is far
-below the scan's, but the per-run pollution is worse. `_block_non_get` is
-importable and takes a Playwright route; adopting it in each is the fix, with
-`consent_render` documented as the deliberate exception.
+#### What a render actually fired
+
+Measured by rendering the page with the loader scripts allowed, so each tag
+initialised and attempted its real beacon, and aborting only the endpoints that
+record a hit. Nothing reached the client's analytics during the measurement.
+
+| Site | Hit-recording requests per render |
+|---|---|
+| apexure.com | **10** |
+| fautons.com | 0 — its container fires nothing |
+
+apexure.com's ten are two Google Ads view-through conversions on `700482601`,
+four GA4 and Ads collect hits (`analytics.google.com/g/collect`,
+`google-analytics.com/j/collect`, `stats.g.doubleclick.net/g/collect`,
+`www.google.com/g/collect`), two `ad.doubleclick.net/ccm/s/collect`, one Meta
+`/tr` PageView, and one `heapanalytics.com/h`.
+
+Unlike the checker's figures above, the render total is **arithmetic, not a
+count**: render requests are not stored, so 10 × 1,635 scans ≈ 16,000 is a
+multiplication that assumes the tag setup held for ten weeks. The per-render
+figure is measured; the multiplier is the scan count. It roughly **doubles** the
+Google Ads view-through number, to about 6,400 including the checker's 3,173.
+
+#### The structural fix
+
+`outbound.py` is now the only place a Playwright context is created. It arms the
+collector route on every one, using `beacons.beacon_reason` — the same predicate
+the checker uses, so the two outbound paths cannot drift apart. Tag scripts
+still load, because a render that blocks `gtm.js` is not measuring the client's
+page; only the endpoints that record a hit are aborted.
+
+`tests/test_outbound_guard.py` fails the build if any module calls
+`.new_context(` or `browser.new_page()` directly, if a caller omits `purpose=`,
+or if anything but `consent_render.py` passes `allow_collectors`. That argument
+takes a written reason rather than a boolean, so the justification lives at the
+call site and an exemption is reviewed rather than inherited.
+
+Every context keeps a ledger of what it refused and what got through anyway.
+The leak list earned itself immediately: on the first real run it showed
+`heapanalytics.com/h` being served four times. A **page** route takes priority
+over its **context** route, so `_block_non_get` calling `route.continue_()`
+during click-reveal was waving requests straight past the collector guard. It
+now calls `route.fallback()`, which hands the request down instead of answering
+it. After that change the same run blocked 18 and leaked none.
+
+Two hand-kept collector lists became one. `responsive_engine.COLLECTORS` is
+retained only for excluding tracking pixels from broken-image detection, and a
+test asserts every token it holds is still refused by the shared predicate, so
+unifying them cannot become a quiet downgrade.
 
 ---
 

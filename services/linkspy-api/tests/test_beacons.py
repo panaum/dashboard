@@ -145,3 +145,29 @@ def test_odd_sizes_never_crash_the_collector():
             '</body></html>')
     assert _images(html) == {"https://client.com/a.png", "https://client.com/b.png",
                              "https://client.com/c.png"}
+
+
+def _probe_url(token: str) -> str:
+    """A URL that exercises one of the old list's tokens."""
+    if token.startswith("/"):
+        return f"https://client.example{token}"
+    if token.endswith(".php"):
+        return f"https://client.example/stats/{token}"
+    if "/" in token:
+        return f"https://{token}"
+    return f"https://{token}/collect"
+
+
+def test_the_render_guard_covers_everything_the_old_per_path_list_did():
+    # responsive_engine's COLLECTOR_RX was the second hand-kept list. The
+    # render paths now share the checker's predicate, so nothing that list
+    # caught may fall through — otherwise unifying them is a quiet downgrade.
+    from responsive_engine import COLLECTORS
+    # gtag/js is the one deliberate difference: a tag SCRIPT records nothing,
+    # and letting it load makes the render faithful to the page a visitor gets.
+    scripts = {"googletagmanager.com/gtag", "/gtag/js"}
+    for token in COLLECTORS:
+        if token in scripts:
+            continue
+        url = _probe_url(token)
+        assert beacon_reason(url) is not None, f"{token} slips through ({url})"

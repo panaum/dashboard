@@ -52,6 +52,7 @@ from form_audit import audit_forms, probe_action_methods
 from tracking_audit import audit_tracking
 from integration_audit import collect_integrations, unchecked_resource_urls, status_to_health
 from tracking_consistency import tracking_consistency
+from outbound import guarded_context
 from database import save_integrations, update_integration_health, get_integrations
 from watchdog import (
     inventory_hosts, demote_third_party_failures, aggregate_outages, run_watchdog,
@@ -1953,7 +1954,9 @@ def _capture_screenshot(url: str) -> str:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
-            context = browser.new_context(
+            context, _guard = guarded_context(
+                browser,
+                purpose="screenshot capture",
                 viewport={"width": 1280, "height": 720},
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

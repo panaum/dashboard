@@ -20,6 +20,7 @@ import re
 import time
 
 from active_submission import plan_submission, default_test_email, TEST_VALUE
+from outbound import guarded_context
 
 
 class SubmitGuard:
@@ -149,7 +150,11 @@ def submit_test_form(url: str, form_selector: str, *, test_email: str = None,
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page()
+        # browser.new_page() builds a context of its own, which no route can
+        # reach. The form submission below is the deliberate risk here; firing
+        # the client's analytics on the way is not.
+        context, _guard = guarded_context(browser, purpose="active form submission")
+        page = context.new_page()
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(1200)

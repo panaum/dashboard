@@ -10,6 +10,7 @@ The frontend matches findings to these boxes by URL / anchor text, so we don't
 need to know which elements are "flagged" at capture time — we return them all.
 """
 import base64
+from outbound import guarded_context
 
 # Bounding boxes for every clickable thing, in FULL-PAGE (document) coordinates
 # at a known viewport width. Coordinates already include scroll offset so they
@@ -52,7 +53,9 @@ def capture_xray_sync(url: str, viewport_width: int = 1280,
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
+            context, _guard = guarded_context(
+                browser,
+                purpose="x-ray capture",
                 viewport={"width": viewport_width, "height": 900},
                 device_scale_factor=1,
                 user_agent=(

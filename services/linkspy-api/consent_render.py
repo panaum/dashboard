@@ -11,6 +11,8 @@ undetected/inoperable CMP is reported as such, never guessed.
 """
 from urllib.parse import urlparse
 
+from outbound import guarded_context_async
+
 from consent_classify import consent_class
 from consent_cmp import CMP_ADAPTERS, adapter_for, _REJECT_TEXT, _ACCEPT_TEXT
 from consent_verdict import ENGINE_VERSION
@@ -140,7 +142,10 @@ async def accept_render(context, url, site_host):
 async def gpc_render(browser, url, site_host):
     """US regime: load with Sec-GPC:1 + navigator.globalPrivacyControl=true, no
     interaction. Needs its own context to set the header + init script."""
-    context = await browser.new_context(extra_http_headers={"Sec-GPC": "1"})
+    context, _guard = await guarded_context_async(
+        browser, purpose="consent render: gpc",
+        allow_collectors="consent_render exists to record which third-party requests fire under each consent state; a guard would erase the measurement",
+        extra_http_headers={"Sec-GPC": "1"})
     await context.add_init_script("Object.defineProperty(navigator,'globalPrivacyControl',{get:()=>true});")
     try:
         page, requests = await _capture_page(context, url, site_host)
@@ -210,7 +215,9 @@ async def run_consent_session(site_id, page_url, regime):
         browser = await pw.chromium.launch()
         try:
             if regime in ("UK", "BOTH"):
-                ctx = await browser.new_context()
+                ctx, _guard = await guarded_context_async(
+                    browser, purpose="consent render: uk",
+                    allow_collectors="consent_render exists to record which third-party requests fire under each consent state; a guard would erase the measurement")
                 cold = await cold_render(ctx, page_url, site_host)
                 rej = await reject_render(ctx, page_url, site_host)
                 acc = await accept_render(ctx, page_url, site_host)
@@ -224,7 +231,9 @@ async def run_consent_session(site_id, page_url, regime):
                                          verdicts if mode_data["mode"] == "cold" else []))
             if regime in ("US", "BOTH"):
                 gpc = await gpc_render(browser, page_url, site_host)
-                ctx2 = await browser.new_context()
+                ctx2, _guard2 = await guarded_context_async(
+                    browser, purpose="consent render: us opt-out",
+                    allow_collectors="consent_render exists to record which third-party requests fire under each consent state; a guard would erase the measurement")
                 oc = await optout_check(ctx2, page_url, site_host)
                 await ctx2.close()
                 verdicts = us_verdicts(gpc["requests"], oc.get("optout", {}))

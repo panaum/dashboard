@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass, field as dc_field, asdict
 from typing import Any
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
+from outbound import guarded_context
 
 
 # ── Test parameters ─────────────────────────────────────────────────────────
@@ -337,7 +338,12 @@ def check_url(pw, url: str, timeout_ms: int, delay_s: float) -> UrlReport:
     rep.tested_url = build_test_url(url)
 
     browser = pw.chromium.launch(headless=True)
-    context = browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
+    # This page is loaded WITH utm_* and click ids on it. A tag firing here
+    # does not write a stray pageview, it writes a campaign-attributed session
+    # against a real campaign.
+    context, _guard = guarded_context(
+        browser, purpose="attribution render",
+        user_agent=UA, viewport={"width": 1280, "height": 900})
     page = context.new_page()
 
     try:

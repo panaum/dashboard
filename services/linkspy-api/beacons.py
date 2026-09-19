@@ -40,6 +40,7 @@ BEACON_HOSTS = (
     "clarity.ms", "fullstory.com", "logrocket.io", "logrocket.com",
     "analytics.tiktok.com", "ads.linkedin.com", "snap.licdn.com",
     "bat.bing.com", "plausible.io", "posthog.com", "heapanalytics.com",
+    "track.hubspot.com", "hs-analytics.net",
     "matomo.cloud", "ct.pinterest.com", "analytics.twitter.com",
     "static.ads-twitter.com",
 )
@@ -58,6 +59,11 @@ BEACON_URLS = (
 COLLECTOR_PATHS = (
     "/matomo.php", "/piwik.php",
     "/g/collect", "/j/collect", "/r/collect", "/mp/collect",
+    # Google's consent-mode collectors, served from www.google.com itself —
+    # so the host tells us nothing and only the path does. Measured firing on
+    # a real client render, twice per page load.
+    "/ccm/collect", "/ccm/s/collect",
+    "/ads/ga-audiences",
     "/i/adsct",
 )
 

@@ -11,6 +11,7 @@ submits anything — that is Wave 2, behind its own rails.
 """
 import hashlib
 import re
+from outbound import guarded_context_async
 
 # Injected on the observation render so JS that reads URL params populates the
 # hidden tracking inputs — that's how we learn a field is JS-populated.
@@ -260,7 +261,8 @@ async def observe_page_forms(page_url: str) -> dict:
     async with async_playwright() as pw:
         browser = await pw.chromium.launch()
         try:
-            ctx = await browser.new_context()
+            ctx, _guard = await guarded_context_async(
+                browser, purpose="lead contract observation")
             page = await ctx.new_page()
             await page.goto(target, wait_until="networkidle", timeout=30000)
             await page.wait_for_timeout(1200)   # let hydration/tracking scripts run
