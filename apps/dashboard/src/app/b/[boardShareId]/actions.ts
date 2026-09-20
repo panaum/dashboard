@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { commentWithMentions, removeImage, setCoverImage, storeImage } from "@/app/dashboard/boards/actions";
+import { commentWithMentions, hasCover, removeImage, setCoverImage, storeImage } from "@/app/dashboard/boards/actions";
 import { boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { canMove, isStage, reorder } from "@/lib/boards";
 import type { BoardStage } from "@/lib/constants";
@@ -83,7 +83,7 @@ export async function developerImage(formData: FormData): Promise<ActionResult> 
   if (!card) return { error: "Card not found on this board." };
   const file = formData.get("image");
   if (!(file instanceof File) || !file.size) return { error: "Choose an image." };
-  const r = await storeImage(issueId, file);
+  const r = await storeImage(issueId, file, { cover: !(await hasCover(issueId)) });
   if (r.error) return r;
   revalidatePath(`/b/${boardShareId}`);
   return { ok: true };

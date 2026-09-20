@@ -178,6 +178,12 @@ export async function addComment(formData: FormData): Promise<ActionResult> {
   return r;
 }
 
+/** Does the card already have a cover? The first image becomes it, like the
+ *  reference; after that the cover is whatever was chosen. */
+export async function hasCover(issueId: string): Promise<boolean> {
+  return (await db.issueImage.count({ where: { issueId, isCover: true } })) > 0;
+}
+
 /** The one rule for uploads, as a message or null. */
 function checkImage(file: File): string | null {
   if (!IMAGE_TYPES.has(file.type)) return "PNG, JPEG, WebP or GIF only.";
@@ -210,7 +216,7 @@ export async function addImage(formData: FormData): Promise<ActionResult> {
   if (!(file instanceof File) || !file.size) return { error: "Choose an image." };
   const projectId = await projectOf(issueId);
   if (!projectId) return { error: "Card not found." };
-  const r = await storeImage(issueId, file);
+  const r = await storeImage(issueId, file, { cover: !(await hasCover(issueId)) });
   if (r.error) return r;
   revalidatePath(boardPath(projectId));
   return { ok: true };

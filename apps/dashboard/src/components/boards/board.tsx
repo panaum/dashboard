@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { MessageSquare, Paperclip, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -233,6 +233,20 @@ function QuickAdd({ projectId, pages, onCreate, onAdded }: {
 }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A screenshot pasted (or dropped) into the box rides along as the cover —
+  // the reference's paste-to-create. The title falls back to the file's name.
+  const [shot, setShot] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!shot) { setPreview(null); return; }
+    const url = URL.createObjectURL(shot); setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [shot]);
+  const takeImage = (files: FileList | File[] | null | undefined) => {
+    const f = Array.from(files ?? []).find((x) => x.type.startsWith("image/"));
+    if (f) { setShot(f); return true; }
+    return false;
+  };
   const [pending, start] = useTransition();
   if (!open) {
     return (
@@ -245,16 +259,35 @@ function QuickAdd({ projectId, pages, onCreate, onAdded }: {
   return (
     <form
       className="mt-1 grid gap-2"
+      onPaste={(e) => { if (takeImage(e.clipboardData.files)) e.preventDefault(); }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); takeImage(e.dataTransfer.files); }}
       onSubmit={(e) => {
         e.preventDefault();
         const form = e.currentTarget; const fd = new FormData(form);
+        const title = String(fd.get("title") ?? "").trim();
+        if (!title && !shot) return;
+        if (!title) fd.set("title", shot!.name || "Screenshot");
+        if (shot) fd.set("image", shot, shot.name || "screenshot.png");
         fd.set("projectId", projectId); if (pages.length === 1) fd.set("pageId", pages[0].id); fd.set("severity", "MEDIUM");
-        start(async () => { setError(null); const r = await onCreate(fd); if (r.error) setError(r.error); else { form.reset(); setOpen(false); if (r.id) onAdded(r.id); } });
+        start(async () => {
+          setError(null); const r = await onCreate(fd);
+          if (r.error) setError(r.error); else { form.reset(); setShot(null); setOpen(false); if (r.id) onAdded(r.id); }
+        });
       }}
     >
       {error && <p role="alert" className="rounded-lg bg-error/[0.11] px-3 py-2 text-[12px] text-error-strong">{error}</p>}
-      <textarea name="title" required maxLength={200} rows={2} autoFocus placeholder="Enter a title for this card…"
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } if (e.key === "Escape") setOpen(false); }}
+      {preview && (
+        <div className="relative overflow-hidden rounded-lg bg-card ring-1 ring-inset ring-border-soft">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={preview} alt="" className="max-h-40 w-full object-cover" data-testid="pasted-preview" />
+          <button type="button" onClick={() => setShot(null)} aria-label="Remove screenshot"
+                  className="absolute right-1.5 top-1.5 rounded-full bg-black/45 p-1 text-white hover:bg-black/60"><X className="size-3.5" /></button>
+          <p className="truncate px-2 py-1 text-[11px] text-text-secondary">{shot?.name || "Screenshot"} · becomes the cover</p>
+        </div>
+      )}
+      <textarea name="title" maxLength={200} rows={2} autoFocus placeholder="Enter a title or paste a screenshot…"
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } if (e.key === "Escape") { setShot(null); setOpen(false); } }}
                 className="w-full resize-none rounded-lg border border-border-soft bg-card px-3 py-2 text-[13px] text-text-primary shadow-xs placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent" />
       {pages.length > 1 && (
         <select name="pageId" required defaultValue="" aria-label="Page" className="w-full rounded-lg border border-border-soft bg-card px-2.5 py-1.5 text-[12px] text-text-primary">
@@ -264,7 +297,7 @@ function QuickAdd({ projectId, pages, onCreate, onAdded }: {
       )}
       <div className="flex items-center gap-1">
         <Button type="submit" size="sm" disabled={pending}>Add card</Button>
-        <button type="button" onClick={() => setOpen(false)} aria-label="Cancel" className="rounded-md p-1.5 text-text-secondary hover:bg-card hover:text-text-primary"><X className="size-4" /></button>
+        <button type="button" onClick={() => { setShot(null); setOpen(false); }} aria-label="Cancel" className="rounded-md p-1.5 text-text-secondary hover:bg-card hover:text-text-primary"><X className="size-4" /></button>
       </div>
     </form>
   );

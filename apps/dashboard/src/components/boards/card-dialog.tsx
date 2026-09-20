@@ -135,6 +135,21 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
   const iconBtn = (onCoverBg: boolean) => cn("rounded-full p-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
     onCoverBg ? "bg-black/35 text-white hover:bg-black/55" : "text-text-secondary hover:bg-card-soft hover:text-text-primary");
 
+  // Paste a screenshot while the card is open and it attaches — the first
+  // one becomes the cover. Listened for on the document, like the reference,
+  // because right after opening nothing inside the card has focus and a
+  // paste would otherwise land on <body>. Text pastes are left alone.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const f = Array.from(e.clipboardData?.files ?? []).find((x) => x.type.startsWith("image/"));
+      if (!f) return;
+      e.preventDefault(); upload(f); setNote(`Attached ${f.name || "screenshot"}`);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.id]);
+
   return (
     <div className="flex flex-col text-[13px]">
       {/* Header: the cover, or a plain bar when there is none. */}
