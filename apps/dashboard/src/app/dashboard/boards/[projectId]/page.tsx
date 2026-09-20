@@ -98,6 +98,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
         onImage={addImage}
         onCover={setCover}
         onDates={setDates}
+        viewerName={actor.bootstrap ? null : actor.name}
         onDeleteImage={deleteImage}
         onDelete={deleteCard}
         quickAdd={{ projectId: project.id, pages: project.pages }}

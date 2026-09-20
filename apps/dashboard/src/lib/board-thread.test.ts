@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  activityFeed, coverOf, eventLine, formatStamp, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, slackMentionText,
+  activityFeed, conversationMembers, coverOf, eventLine, formatStamp, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, plainText, renderComment, slackMentionText,
 } from "./board-thread";
 
 const card = { reporterId: "qa-1", reporterName: "Anaum", assigneeId: "dev-1", assigneeName: "Priya Sharma" };
@@ -100,4 +100,47 @@ test("the composer never offers the viewer their own name; the shared session se
 test("formatStamp writes the date the reference does: day, month, year, 24-hour time", () => {
   assert.equal(formatStamp("2026-08-27T18:45:00.000Z", "Asia/Kolkata"), "28 Aug 2026, 00:15");
   assert.equal(formatStamp("2026-09-12T15:04:00.000Z", "UTC"), "12 Sep 2026, 15:04");
+});
+
+
+// ── comment markup ──────────────────────────────────────────────────────────
+
+const src = (id: string) => `/img?id=${id}`;
+
+test("comment markup: bold, italic, strike, code, lists, links, mention chips, attached images", () => {
+  const html = renderComment("**Fixed** the _label_ ~~twice~~ `aria-label`\n- one\n- two\n1. first\nsee https://x.test/p?a=1. @Priya ok\n![shot.png](img:abc_1)", src, ["Priya"]);
+  assert.ok(html.includes("<strong>Fixed</strong>"));
+  assert.ok(html.includes("<em>label</em>") && html.includes("<s>twice</s>") && html.includes("<code"));
+  assert.ok(html.includes('<ul class="my-1 list-disc pl-5"><li>one</li><li>two</li></ul>'));
+  assert.ok(html.includes('<ol class="my-1 list-decimal pl-5"><li>first</li></ol>'));
+  assert.ok(html.includes('href="https://x.test/p?a=1"'), "trailing full stop stays outside the link");
+  assert.ok(html.includes('>@Priya</span>'));
+  assert.ok(html.includes('src="/img?id=abc_1"') && html.includes('alt="shot.png"'));
+});
+
+test("comment markup never lets typed HTML through", () => {
+  const html = renderComment('<img src=x onerror=alert(1)> **b** <script>x</script>', src);
+  assert.ok(!html.includes("<img src=x") && !html.includes("<script"));
+  assert.ok(html.includes("&lt;script&gt;") && html.includes("<strong>b</strong>"));
+});
+
+test("an underscore inside a word is not italics", () => {
+  assert.ok(!renderComment("snake_case_name", src).includes("<em>"));
+});
+
+// ── who hears a reply ───────────────────────────────────────────────────────
+
+test("a comment pings everyone already in the conversation, never the speaker", () => {
+  const prior = [
+    { authorId: "qa-1", mentionedIds: ["dev-1"] },   // QA tagged the developer
+    { authorId: "dev-1", mentionedIds: [] },          // the developer answered without a tag
+    { authorId: null, mentionedIds: [] },             // shared session, nobody to ping
+  ];
+  assert.deepEqual(conversationMembers(prior, "dev-1").sort(), ["qa-1"]);
+  assert.deepEqual(conversationMembers(prior, "qa-1").sort(), ["dev-1"]);
+  assert.deepEqual(conversationMembers([], "qa-1"), []);
+});
+
+test("plainText strips markup for the Slack excerpt", () => {
+  assert.equal(plainText("**Fixed** the _label_\n- one\n\n![shot.png](img:abc)"), "Fixed the label\n• one\n[image]");
 });
