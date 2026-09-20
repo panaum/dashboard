@@ -29,7 +29,7 @@ export default async function DeveloperBoardPage({ params }: { params: Promise<{
             where: { boardStage: { not: null } },
             select: {
               id: true, title: true, description: true, link: true,
-              boardStage: true, boardOrder: true, assigneeId: true, reporterId: true, createdAt: true,
+              boardStage: true, boardOrder: true, assigneeId: true, reporterId: true, createdAt: true, startAt: true, dueAt: true,
               assignee: { select: { name: true } },
               comments: { orderBy: { createdAt: "asc" }, select: { id: true, body: true, createdAt: true, authorId: true, author: { select: { name: true } } } },
               events: { orderBy: { createdAt: "asc" }, select: { id: true, fromStage: true, toStage: true, createdAt: true, actorId: true, actor: { select: { name: true } } } },
@@ -48,6 +48,7 @@ export default async function DeveloperBoardPage({ params }: { params: Promise<{
     return [{
       ...safe,
       createdAt: i.createdAt.toISOString(),
+      startAt: safe.startAt ? new Date(safe.startAt).toISOString() : null, dueAt: safe.dueAt ? new Date(safe.dueAt).toISOString() : null,
       assigneeName: i.assignee?.name ?? null,
       comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: developerAuthorLabel({ authorId: c.authorId, authorName: c.author?.name ?? null }, i.assigneeId), createdAt: c.createdAt.toISOString() })),
       // Stage changes, with every non-assignee actor named "QA" — the same rule as the thread.

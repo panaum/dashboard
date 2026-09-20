@@ -99,6 +99,11 @@ route. It is enqueued internally by APScheduler every 5 minutes
 external cron.
 
 The only external-cron surface that actually exists is:
+- **Dashboard** `/api/boards/reminders` — **needs a cron-job.org job** (every
+  5 min, `Authorization: Bearer <CRON_SECRET>`): the board due-date reminder
+  sweep. Reports `inWindow / sent / skipped[]` each call; a card is marked
+  reminded only after Slack confirmed delivery. Without the job, due dates
+  still show on cards; nobody is pinged.
 - **Dashboard** `/api/spine/drain` — cron-job.org, every 5 min. *(Until
   2026-07-20 this was a daily Vercel cron; that entry has been removed from
   `vercel.json` in favour of the external job.)*

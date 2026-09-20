@@ -122,6 +122,13 @@ model Issue {
   // no per-person identity to record until access control lands.
   reporter    TeamMember? @relation("Reporter", fields: [reporterId], references: [id], onDelete: SetNull)
   reporterId  String?
+  // Dates, as the reference's card has them: an optional start, an optional
+  // due date-time, and a reminder some minutes before it. dueRemindedAt is the
+  // once-only mark for the reminder sweep; it resets when dueAt changes.
+  startAt            DateTime?
+  dueAt              DateTime?
+  dueReminderMinutes Int?
+  dueRemindedAt      DateTime?
   events      IssueEvent[]
   comments    IssueComment[]
   images      IssueImage[]
@@ -131,6 +138,7 @@ model Issue {
   @@index([pageId])
   @@index([assigneeId])
   @@index([boardStage])
+  @@index([dueAt])
 }
 
 // One row per stage change — the current stage alone cannot yield cycle time

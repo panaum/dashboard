@@ -50,14 +50,15 @@ test("the developer view is a whitelist, so a new field is hidden by default", (
   const full = {
     id: "i1", title: "Phone field has no label", description: "…", link: "https://x/y",
     boardStage: "NEW" as const, boardOrder: 0, assigneeId: "dev1", createdAt: "2026-09-20",
+    startAt: null, dueAt: "2026-09-21T10:58:00.000Z", // the deadline is the developer's to see
     // Everything below must never reach the developer.
-    severity: "CRITICAL_HIGH", recurring: true, reporterId: "qa1", status: "OPEN",
+    severity: "CRITICAL_HIGH", recurring: true, reporterId: "qa1", status: "OPEN", dueReminderMinutes: 60,
     somethingAddedLater: "leaks by default unless this is a whitelist",
   };
   const seen = developerView(full);
   assert.deepEqual(Object.keys(seen).sort(),
-    ["assigneeId", "boardOrder", "boardStage", "createdAt", "description", "id", "link", "title"]);
-  assert.ok(!("severity" in seen) && !("recurring" in seen) && !("reporterId" in seen));
+    ["assigneeId", "boardOrder", "boardStage", "createdAt", "description", "dueAt", "id", "link", "startAt", "title"]);
+  assert.ok(!("severity" in seen) && !("recurring" in seen) && !("reporterId" in seen) && !("dueReminderMinutes" in seen));
   assert.ok(!("somethingAddedLater" in seen));
 });
 

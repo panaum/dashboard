@@ -21,6 +21,10 @@ export type Card = {
   assigneeId: string | null;
   assigneeName: string | null;
   createdAt: string;
+  startAt: string | null;
+  dueAt: string | null;
+  /** QA only: minutes before dueAt to ping; absent on the developer view. */
+  dueReminderMinutes?: number | null;
   comments: Comment[];
   events: StageEvent[];
   images: Image[];
@@ -37,6 +41,7 @@ export type Card = {
 export type Member = { id: string; name: string };
 
 export type MoveInput = { id: string; to: BoardStage; index: number };
+export type DatesInput = { id: string; startAt: string | null; dueAt: string | null; dueReminderMinutes: number | null };
 
 export type Result = { ok?: boolean; error?: string };
 export type CommentResult = Result & { mentioned?: number; notified?: number; unnotified?: string[] };

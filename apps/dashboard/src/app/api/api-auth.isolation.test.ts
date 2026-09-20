@@ -47,6 +47,7 @@ const SERVICE_GUARDED: Record<string, RegExp> = {
   "src/app/api/registry-bridge/delivery/route.ts": /DASHBOARD_BRIDGE_KEY/,
   "src/app/api/spine/inbox/route.ts": /SPINE_SECRET/,
   "src/app/api/spine/drain/route.ts": /CRON_SECRET/,
+  "src/app/api/boards/reminders/route.ts": /CRON_SECRET/,
   "src/app/api/spine/outbox-status/route.ts": /SPINE_SECRET/,
 };
 

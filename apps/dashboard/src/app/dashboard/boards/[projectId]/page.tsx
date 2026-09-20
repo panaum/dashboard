@@ -11,7 +11,7 @@ import type { Card } from "@/components/boards/types";
 import { isStage } from "@/lib/boards";
 import { mentionLabelsFor } from "@/lib/board-thread";
 import {
-  addComment, addImage, createCard, deleteCard, deleteImage, mintBoardLink, moveCard, patchCard, revokeBoardLink, setCover, updateCard,
+  addComment, addImage, createCard, deleteCard, deleteImage, mintBoardLink, moveCard, patchCard, revokeBoardLink, setCover, setDates, updateCard,
 } from "../actions";
 
 // QA's board for one project. Full fields, every move, the developer link.
@@ -32,7 +32,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
               where: { boardStage: { not: null } },
               select: {
                 id: true, title: true, description: true, link: true, severity: true, recurring: true,
-                boardStage: true, boardOrder: true, assigneeId: true, reporterId: true, createdAt: true,
+                boardStage: true, boardOrder: true, assigneeId: true, reporterId: true, createdAt: true, startAt: true, dueAt: true, dueReminderMinutes: true,
                 assignee: { select: { name: true } }, reporter: { select: { name: true } },
                 comments: { orderBy: { createdAt: "asc" }, select: { id: true, body: true, createdAt: true, author: { select: { name: true } } } },
                 events: { orderBy: { createdAt: "asc" }, select: { id: true, fromStage: true, toStage: true, createdAt: true, actor: { select: { name: true } } } },
@@ -52,6 +52,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     boardStage: i.boardStage, boardOrder: i.boardOrder,
     assigneeId: i.assigneeId, assigneeName: i.assignee?.name ?? null,
     createdAt: i.createdAt.toISOString(),
+    startAt: i.startAt?.toISOString() ?? null, dueAt: i.dueAt?.toISOString() ?? null, dueReminderMinutes: i.dueReminderMinutes,
     severity: i.severity, recurring: i.recurring, reporterName: i.reporter?.name ?? null,
     comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: c.author?.name ?? null, createdAt: c.createdAt.toISOString() })),
     events: i.events.flatMap((e) => isStage(e.toStage) ? [{
@@ -96,6 +97,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
         onComment={addComment}
         onImage={addImage}
         onCover={setCover}
+        onDates={setDates}
         onDeleteImage={deleteImage}
         onDelete={deleteCard}
         quickAdd={{ projectId: project.id, pages: project.pages }}

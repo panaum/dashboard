@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { getActor } from "@/lib/auth";
 import { type Actor, type Capability, can } from "@/lib/permissions";
 import { headers } from "next/headers";
-import { boardCardPatchSchema, boardCardSchema, boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
+import { boardCardPatchSchema, boardCardSchema, boardDatesSchema, boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { parseMentions, participantsFor, slackMentionText } from "@/lib/board-thread";
 import { postSlack } from "@/lib/slack";
 import { canMove, isStage, nextOrder, reorder } from "@/lib/boards";
@@ -268,6 +268,31 @@ export async function patchCard(formData: FormData): Promise<ActionResult> {
   if (formData.has("description")) data.description = parsed.data.description || null;
   if (!Object.keys(data).length) return { ok: true };
   await db.issue.update({ where: { id }, data });
+  revalidatePath(boardPath(projectId));
+  return { ok: true };
+}
+
+/** Start, due and reminder from the Dates popover. Changing the due date
+ *  re-arms the reminder: dueRemindedAt is cleared so the sweep sends again. */
+export async function setDates(input: { id: string; startAt: string | null; dueAt: string | null; dueReminderMinutes: number | null }): Promise<ActionResult> {
+  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  const parsed = boardDatesSchema.safeParse(input);
+  if (!parsed.success) return { error: "Those dates do not make sense." };
+  const { startAt, dueAt, dueReminderMinutes } = parsed.data;
+  if (startAt && dueAt && new Date(startAt) > new Date(dueAt)) return { error: "The start date is after the due date." };
+  const projectId = await projectOf(input.id);
+  if (!projectId) return { error: "Card not found." };
+  const current = await db.issue.findUnique({ where: { id: input.id }, select: { dueAt: true } });
+  const dueChanged = (current?.dueAt?.toISOString() ?? null) !== (dueAt ? new Date(dueAt).toISOString() : null);
+  await db.issue.update({
+    where: { id: input.id },
+    data: {
+      startAt: startAt ? new Date(startAt) : null,
+      dueAt: dueAt ? new Date(dueAt) : null,
+      dueReminderMinutes: dueAt ? dueReminderMinutes : null,
+      ...(dueChanged ? { dueRemindedAt: null } : {}),
+    },
+  });
   revalidatePath(boardPath(projectId));
   return { ok: true };
 }
