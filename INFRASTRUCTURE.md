@@ -751,6 +751,29 @@ verified from source. There is no pydantic `Settings` class; every read is a bar
 | `SELF_HEAL_GITHUB_TOKEN` | GitHub token for opening fix PRs (`main.py:1732`) | secret | — | Yes for that route — 400 `refused: true` |
 | `PORT` | Injected by Railway; used by `Dockerfile` shell only | platform | — | **Dead in Python** (D10) |
 
+### D11 — Vercel Hobby rate limit: 100 deployments per rolling day, across all three projects ⚠️
+
+On 2026-09-20 every push to `main` built **all three** Vercel projects
+(`dashboard`, `brokenlinkchecker`, `qa-ecosystem`) plus a preview per PR
+push. Fourteen Dashboard PRs in one day hit the Hobby limit at 10:53 UTC:
+every later commit got `Vercel – <project>: failure — Deployment rate
+limited, retry in 24 hours`, and production stayed on the 10:42 build while
+four merged PRs waited. The GitHub deployment list shows the gap; the
+commit statuses show the reason.
+
+Rules that follow:
+
+- `apps/dashboard/vercel.json` and `apps/linkspy/vercel.json` carry
+  `"ignoreCommand": "git diff --quiet HEAD^ HEAD -- ."` — a push that does
+  not touch that app's directory is **skipped** for that project (exit 0 =
+  skip). `qa-ecosystem` already has an Ignored Build Step in the Vercel UI.
+  A Dashboard-only push now costs one build, not three.
+- Vercel does **not** retry a rate-limited commit. When the window resets,
+  push any commit (or "Redeploy" the newest commit in the Vercel UI) to
+  ship everything merged in the meantime.
+- Before a day with many merges: batch PRs, or accept that previews count
+  too. The alternative is the Pro plan (operator's call).
+
 ### 1.2 Vercel — `brokenlinkchecker` project (LinkSpy frontend)
 
 Next.js, NextAuth **v4** (`next-auth@4.24.14`). No `vercel.json`, no
