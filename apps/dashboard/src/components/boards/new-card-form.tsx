@@ -45,6 +45,10 @@ export function NewCardForm({
             <textarea name="description" rows={4} className={field} /></label>
           <label className="grid gap-1"><span className={label}>Link</span>
             <input name="link" placeholder="https://" className={field} /></label>
+          {/* The screenshot most issues start from. Stored like any attachment and
+              set as the card's cover, so it shows on the board face at once. */}
+          <label className="grid gap-1"><span className={label}>Screenshot <span className="font-normal normal-case tracking-normal">(optional, becomes the cover)</span></span>
+            <input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/gif" className="min-w-0 max-w-full text-[12px] text-text-secondary" /></label>
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="grid gap-1"><span className={label}>Severity</span>
               <select name="severity" defaultValue="MEDIUM" className={field}>

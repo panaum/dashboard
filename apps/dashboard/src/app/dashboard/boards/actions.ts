@@ -57,12 +57,22 @@ export async function createCard(formData: FormData): Promise<ActionResult> {
   const page = await db.page.findFirst({ where: { id: pageId, projectId }, select: { id: true } });
   if (!page) return { error: "That page is not in this project." };
 
+  // An optional screenshot, checked BEFORE the card exists so a bad file
+  // never leaves a card behind without the image the reporter meant to attach.
+  const upload = formData.get("image");
+  const file = upload instanceof File && upload.size > 0 ? upload : null;
+  if (file) {
+    const bad = checkImage(file);
+    if (bad) return { error: bad };
+  }
+
   const siblings = await db.issue.findMany({
     where: { page: { projectId }, boardStage: { not: null } },
     select: { boardStage: true, boardOrder: true },
   });
+  let issueId: string;
   try {
-    await db.$transaction(async (tx) => {
+    issueId = await db.$transaction(async (tx) => {
       const issue = await tx.issue.create({
         data: {
           ...parsed.data,
@@ -73,9 +83,15 @@ export async function createCard(formData: FormData): Promise<ActionResult> {
         },
       });
       await tx.issueEvent.create({ data: { issueId: issue.id, fromStage: null, toStage: "NEW", actorId: memberId(actor) } });
+      return issue.id;
     });
   } catch {
     return { error: "Could not create the card." };
+  }
+  if (file) {
+    // The first screenshot is the cover: it is what the issue looks like.
+    const r = await storeImage(issueId, file, { cover: true });
+    if (r.error) { revalidatePath(boardPath(projectId)); return { error: `Card added, but the screenshot failed: ${r.error}` }; }
   }
   revalidatePath(boardPath(projectId));
   return { ok: true };
@@ -162,14 +178,28 @@ export async function addComment(formData: FormData): Promise<ActionResult> {
   return r;
 }
 
-/** Shared by both sides: the bytes go in the same table either way. */
-export async function storeImage(issueId: string, file: File): Promise<ActionResult> {
-  if (!IMAGE_TYPES.has(file.type)) return { error: "PNG, JPEG, WebP or GIF only." };
-  if (file.size > MAX_IMAGE_BYTES) return { error: "Images are capped at 4 MB." };
+/** The one rule for uploads, as a message or null. */
+function checkImage(file: File): string | null {
+  if (!IMAGE_TYPES.has(file.type)) return "PNG, JPEG, WebP or GIF only.";
+  if (file.size > MAX_IMAGE_BYTES) return "Images are capped at 4 MB.";
+  return null;
+}
+
+/** Shared by both sides: the bytes go in the same table either way. With
+ *  `cover`, the new image becomes the card's cover in the same transaction. */
+export async function storeImage(issueId: string, file: File, opts: { cover?: boolean } = {}): Promise<ActionResult> {
+  const bad = checkImage(file);
+  if (bad) return { error: bad };
   const buf = Buffer.from(await file.arrayBuffer());
-  await db.issueImage.create({
-    data: { issueId, contentType: file.type, image: buf, bytes: buf.length, filename: file.name.slice(0, 200) || null },
-  });
+  const data = { issueId, contentType: file.type, image: buf, bytes: buf.length, filename: file.name.slice(0, 200) || null };
+  if (opts.cover) {
+    await db.$transaction([
+      db.issueImage.updateMany({ where: { issueId, isCover: true }, data: { isCover: false } }),
+      db.issueImage.create({ data: { ...data, isCover: true } }),
+    ]);
+  } else {
+    await db.issueImage.create({ data });
+  }
   return { ok: true };
 }
 
