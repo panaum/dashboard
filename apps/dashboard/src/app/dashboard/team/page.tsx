@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { requireCapability } from "@/lib/auth";
+import { RANKS, type Rank } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/page-header";
 import { AddMemberButton } from "@/components/forms/dialogs";
 import { TeamTable, type MemberRow } from "@/components/team/team-table";
@@ -12,6 +14,10 @@ type Stat = { built: number; tested: number; issuesBuilt: number; repetitive: nu
 export const metadata = { title: "Team" };
 
 export default async function TeamPage() {
+  // Admin-only: the team list, and who may do what, is not for everyone.
+  const actor = await requireCapability("team:view");
+
+
   // This month's board activity, for the second performance panel.
   const month = new Date().toISOString().slice(0, 7);
   const period = monthPeriod(month);
@@ -68,6 +74,10 @@ export default async function TeamPage() {
       id: m.id,
       name: m.name,
       role: m.role,
+      rank: ((RANKS as readonly string[]).includes(m.rank) ? m.rank : "VIEWER") as Rank,
+      email: m.email,
+      hasLogin: Boolean(m.email && m.passwordHash),
+      isSelf: m.id === actor.id,
       built: s?.built ?? 0,
       tested: s?.tested ?? 0,
       repetitive: s?.repetitive ?? 0,

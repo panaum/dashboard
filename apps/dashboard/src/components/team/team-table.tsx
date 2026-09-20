@@ -8,19 +8,29 @@ import { Badge } from "@/components/ui/badge";
 import { EditMemberButton } from "@/components/forms/dialogs";
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { deleteMember } from "@/app/dashboard/team/actions";
+import { RankSelect } from "@/components/team/rank-select";
+import { LoginButton } from "@/components/team/login-button";
 import { label } from "@/lib/constants";
+import type { Rank } from "@/lib/permissions";
 
 export type MemberRow = {
   id: string;
   name: string;
   role: string;
+  rank: Rank;
+  email: string | null;
+  /** Whether an admin has given this person an email + password yet. */
+  hasLogin: boolean;
+  /** True for the row of the person currently signed in — they may not demote
+   *  themselves, so the control is disabled rather than failing on submit. */
+  isSelf: boolean;
   built: number;
   tested: number;
   repetitive: number;
 };
 
 const ROW =
-  "grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem_5rem_3.5rem] items-center gap-4";
+  "grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem_5rem_9.5rem_5.5rem] items-center gap-4";
 
 export function TeamTable({ members }: { members: MemberRow[] }) {
   const [q, setQ] = useState("");
@@ -55,6 +65,7 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
           <span className="text-right">Built</span>
           <span className="text-right">QA&apos;d</span>
           <span className="text-right">Repetitive</span>
+          <span className="text-right">Access</span>
           <span />
         </div>
 
@@ -78,12 +89,17 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
                   <span className="truncate text-sm font-medium text-text-primary group-hover:underline">
                     {m.name}
                   </span>
-                  <Badge
-                    tone={m.role === "TESTER" ? "info" : "neutral"}
-                    className="w-fit"
-                  >
-                    {label(m.role)}
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge
+                      tone={m.role === "TESTER" ? "info" : "neutral"}
+                      className="w-fit"
+                    >
+                      {label(m.role)}
+                    </Badge>
+                    {!m.hasLogin && (
+                      <span className="text-[11px] text-text-muted">no login</span>
+                    )}
+                  </div>
                 </div>
               </Link>
               <span className="text-right text-sm tabular-nums text-text-primary">
@@ -99,7 +115,17 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
               >
                 {m.repetitive}
               </span>
+              <RankSelect
+                memberId={m.id}
+                rank={m.rank}
+                name={m.name}
+                disabled={m.isSelf}
+                disabledReason="You cannot change your own access level."
+              />
               <div className="flex items-center justify-end gap-0.5">
+                <LoginButton
+                  member={{ id: m.id, name: m.name, email: m.email, hasLogin: m.hasLogin }}
+                />
                 <EditMemberButton member={{ id: m.id, name: m.name, role: m.role }} />
                 <ConfirmDelete
                   action={deleteMember}
