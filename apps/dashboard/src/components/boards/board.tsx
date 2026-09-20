@@ -71,6 +71,15 @@ export function Board({
   // The card just added opens itself — Trello's "+ Add a card" is the only
   // way in, and everything else is set on the card's back.
   const [justAdded, setJustAdded] = useState<string | null>(null);
+  // Consume the mark as soon as the card has rendered once. Its dialog keeps
+  // the open state it started with; without this, every later move of that
+  // card re-creates its element in another column and it would open again.
+  useEffect(() => {
+    if (justAdded && cards.some((c) => c.id === justAdded)) {
+      const t = setTimeout(() => setJustAdded(null), 0);
+      return () => clearTimeout(t);
+    }
+  }, [justAdded, cards]);
   const [pending, start] = useTransition();
   const byId = useRef(new Map(cards.map((c) => [c.id, c])));
   byId.current = new Map(cards.map((c) => [c.id, c]));
