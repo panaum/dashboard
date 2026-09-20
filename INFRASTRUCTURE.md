@@ -1,3 +1,4 @@
+| `SLACK_WEBHOOK_URL` | Incoming webhook for board @mention pings (`lib/slack.ts`). Same mechanism as LinkSpy's notifiers; a `<@U…>` in the text is what makes a channel post notify one person, so members need `TeamMember.slackUserId` (Team page → edit) | secret | *(same name on Railway linkspy-api, set separately)* | No — unset ⇒ mentions are stored with `notifiedAt` null and the comment reports "not notified" |
 # INFRASTRUCTURE.md — Apexure QA ecosystem
 
 The definitive map of every deployment surface, environment variable, shared

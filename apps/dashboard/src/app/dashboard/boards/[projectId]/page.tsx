@@ -10,8 +10,9 @@ import { NewCardForm } from "@/components/boards/new-card-form";
 import { BoardLinkControls } from "@/components/boards/board-link-controls";
 import type { Card } from "@/components/boards/types";
 import { isStage } from "@/lib/boards";
+import { participantsFor } from "@/lib/board-thread";
 import {
-  addComment, addImage, createCard, deleteCard, mintBoardLink, moveCard, revokeBoardLink, updateCard,
+  addComment, addImage, createCard, deleteCard, mintBoardLink, moveCard, patchCard, revokeBoardLink, setCover, updateCard,
 } from "../actions";
 
 // QA's board for one project. Full fields, every move, the developer link.
@@ -31,10 +32,11 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
               where: { boardStage: { not: null } },
               select: {
                 id: true, title: true, description: true, link: true, severity: true, recurring: true,
-                boardStage: true, boardOrder: true, assigneeId: true, createdAt: true,
+                boardStage: true, boardOrder: true, assigneeId: true, reporterId: true, createdAt: true,
                 assignee: { select: { name: true } }, reporter: { select: { name: true } },
                 comments: { orderBy: { createdAt: "asc" }, select: { id: true, body: true, createdAt: true, author: { select: { name: true } } } },
-                images: { orderBy: { createdAt: "asc" }, select: { id: true } },
+                events: { orderBy: { createdAt: "asc" }, select: { id: true, fromStage: true, toStage: true, createdAt: true, actor: { select: { name: true } } } },
+                images: { orderBy: { createdAt: "asc" }, select: { id: true, filename: true, isCover: true, bytes: true, createdAt: true } },
               },
             },
           },
@@ -52,7 +54,13 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     createdAt: i.createdAt.toISOString(),
     severity: i.severity, recurring: i.recurring, reporterName: i.reporter?.name ?? null,
     comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: c.author?.name ?? null, createdAt: c.createdAt.toISOString() })),
-    images: i.images,
+    events: i.events.flatMap((e) => isStage(e.toStage) ? [{
+      id: e.id, actorName: e.actor?.name ?? null, fromStage: isStage(e.fromStage) ? e.fromStage : null, toStage: e.toStage, createdAt: e.createdAt.toISOString(),
+    }] : []),
+    images: i.images.map((img) => ({ ...img, createdAt: img.createdAt.toISOString() })),
+    participants: participantsFor("qa", {
+      reporterId: i.reporterId, reporterName: i.reporter?.name ?? null, assigneeId: i.assigneeId, assigneeName: i.assignee?.name ?? null,
+    }).map((p) => p.label),
   }] : []);
 
   const h = await headers();
@@ -83,8 +91,10 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
         imageBase="/api/board-image"
         onMove={moveCard}
         onSave={updateCard}
+        onPatch={patchCard}
         onComment={addComment}
         onImage={addImage}
+        onCover={setCover}
         onDelete={deleteCard}
       />
     </>

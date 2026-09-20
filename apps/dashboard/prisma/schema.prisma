@@ -155,9 +155,27 @@ model IssueComment {
   author    TeamMember? @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   authorId  String?
   body      String
+  mentions  IssueMention[]
   createdAt DateTime @default(now())
 
   @@index([issueId, createdAt])
+}
+
+// One row per person @mentioned in a comment — the structured reference the
+// spec asks for, so dispatch never re-parses a body. notifiedAt doubles as the
+// outbox: null means Slack did not confirm delivery, which is visible and
+// retriable rather than swallowed.
+model IssueMention {
+  id         String       @id @default(cuid())
+  comment    IssueComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  commentId  String
+  member     TeamMember   @relation("Mentioned", fields: [memberId], references: [id], onDelete: Cascade)
+  memberId   String
+  notifiedAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  @@unique([commentId, memberId])
+  @@index([memberId, notifiedAt])
 }
 
 // Screenshots on a card, stored as bytes like LayoutShot — the free tier has
@@ -170,6 +188,13 @@ model IssueImage {
   contentType String
   image       Bytes
   bytes       Int
+  // The upload's own name, for the attachments list. Null on images from
+  // before the column existed.
+  filename    String?
+  // At most one per card in practice — setCover clears the others in the same
+  // transaction. Not a DB constraint: a partial unique index is not additive
+  // DDL Prisma can express.
+  isCover     Boolean  @default(false)
   createdAt   DateTime @default(now())
 
   @@index([issueId])
@@ -185,6 +210,9 @@ model TeamMember {
   email        String?   @unique // null until an admin gives them a login
   passwordHash String? // scrypt; null means "cannot sign in yet"
   lastLoginAt  DateTime?
+  // Slack member id (U…), so a board @mention can ping them by name in the
+  // channel the webhook posts to. Set from the team page; null = not pinged.
+  slackUserId  String?
   active      Boolean  @default(true)
   devPages    Page[]   @relation("Dev")
   testerPages Page[]   @relation("Tester")
@@ -194,6 +222,7 @@ model TeamMember {
   reportedIssues  Issue[]        @relation("Reporter")
   issueEvents     IssueEvent[]   @relation("EventActor")
   issueComments   IssueComment[] @relation("CommentAuthor")
+  mentionedIn     IssueMention[] @relation("Mentioned")
   createdAt   DateTime @default(now())
 }
 

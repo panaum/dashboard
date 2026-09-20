@@ -76,6 +76,7 @@ export default async function TeamPage() {
       role: m.role,
       rank: ((RANKS as readonly string[]).includes(m.rank) ? m.rank : "VIEWER") as Rank,
       email: m.email,
+      slackUserId: m.slackUserId,
       hasLogin: Boolean(m.email && m.passwordHash),
       isSelf: m.id === actor.id,
       built: s?.built ?? 0,

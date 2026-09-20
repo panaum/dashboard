@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { commentWithMentions, setCoverImage, storeImage } from "@/app/dashboard/boards/actions";
 import { boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { canMove, isStage, reorder } from "@/lib/boards";
-import { storeImage } from "@/app/dashboard/boards/actions";
 import type { BoardStage } from "@/lib/constants";
 
 // The developer's side. No session: the capability link IS the credential,
@@ -65,9 +65,13 @@ export async function developerComment(formData: FormData): Promise<ActionResult
   if (!card) return { error: "Card not found on this board." };
   const parsed = parseForm(commentSchema, formData);
   if ("error" in parsed) return { error: parsed.error };
-  await db.issueComment.create({ data: { issueId, body: parsed.data.body, authorId: card.assigneeId } });
+  const assignee = card.assigneeId
+    ? await db.teamMember.findUnique({ where: { id: card.assigneeId }, select: { name: true } }) : null;
+  const r = await commentWithMentions({
+    issueId, body: parsed.data.body, authorId: card.assigneeId, authorName: assignee?.name ?? "Developer", role: "developer",
+  });
   revalidatePath(`/b/${boardShareId}`);
-  return { ok: true };
+  return r;
 }
 
 export async function developerImage(formData: FormData): Promise<ActionResult> {
@@ -83,4 +87,15 @@ export async function developerImage(formData: FormData): Promise<ActionResult> 
   if (r.error) return r;
   revalidatePath(`/b/${boardShareId}`);
   return { ok: true };
+}
+
+/** Choose the cover from the link. Same one-at-a-time write as QA's. */
+export async function developerCover(input: { boardShareId: string; issueId: string; imageId: string | null }): Promise<ActionResult> {
+  const board = await boardFor(input.boardShareId);
+  if (!board) return { error: "This link is no longer valid." };
+  const card = await cardIn(board.id, input.issueId);
+  if (!card) return { error: "Card not found on this board." };
+  const r = await setCoverImage(input.issueId, input.imageId);
+  revalidatePath(`/b/${input.boardShareId}`);
+  return r;
 }

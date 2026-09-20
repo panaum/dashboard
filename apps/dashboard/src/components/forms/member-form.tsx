@@ -6,7 +6,7 @@ import { FormFooter, useOnOk } from "@/components/forms/form-parts";
 import { saveMember } from "@/app/dashboard/team/actions";
 import { MEMBER_ROLES, label } from "@/lib/constants";
 
-type MemberInitial = { id: string; name: string; role: string };
+type MemberInitial = { id: string; name: string; role: string; slackUserId?: string | null };
 
 export function MemberForm({
   close,
@@ -39,6 +39,9 @@ export function MemberForm({
             </option>
           ))}
         </Select>
+      </Field>
+      <Field label="Slack member ID" htmlFor="slackUserId" hint="From their Slack profile → Copy member ID (starts with U). Lets a board @mention ping them.">
+        <Input id="slackUserId" name="slackUserId" defaultValue={initial?.slackUserId ?? ""} placeholder="U0123ABCD" pattern="[UW][A-Z0-9]{5,}" />
       </Field>
       <FormFooter pending={pending} error={state.error} close={close} />
     </form>
