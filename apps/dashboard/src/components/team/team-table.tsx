@@ -19,6 +19,7 @@ export type MemberRow = {
   role: string;
   rank: Rank;
   email: string | null;
+  slackUserId: string | null;
   /** Whether an admin has given this person an email + password yet. */
   hasLogin: boolean;
   /** True for the row of the person currently signed in — they may not demote
@@ -126,7 +127,7 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
                 <LoginButton
                   member={{ id: m.id, name: m.name, email: m.email, hasLogin: m.hasLogin }}
                 />
-                <EditMemberButton member={{ id: m.id, name: m.name, role: m.role }} />
+                <EditMemberButton member={{ id: m.id, name: m.name, role: m.role, slackUserId: m.slackUserId }} />
                 <ConfirmDelete
                   action={deleteMember}
                   fields={{ id: m.id }}

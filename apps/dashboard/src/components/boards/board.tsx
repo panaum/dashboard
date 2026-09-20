@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useRef, useState, useTransition } from "react";
+import { MessageSquare, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BOARD_STAGES, BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constants";
 import { canMove, inStage, type Role } from "@/lib/boards";
+import { coverOf, initials } from "@/lib/board-thread";
 import { CardDialog } from "./card-dialog";
-import type { Card, Member, MoveInput } from "./types";
+import type { Card, CommentResult, Member, MoveInput, Result } from "./types";
 
 // One board for two readers. QA and the developer see the same columns and
 // the same cards; the role decides which moves are offered and which fields
@@ -23,8 +25,6 @@ const SEVERITY_EDGE: Record<string, string> = {
   REPETITIVE: "bg-info",
 };
 
-type Result = { ok?: boolean; error?: string };
-
 export function Board({
   role,
   cards,
@@ -32,8 +32,10 @@ export function Board({
   imageBase,
   onMove,
   onSave,
+  onPatch,
   onComment,
   onImage,
+  onCover,
   onDelete,
 }: {
   role: Role;
@@ -47,8 +49,10 @@ export function Board({
   // rendered HERE rather than handed in as a render prop.
   onMove: (input: MoveInput) => Promise<Result>;
   onSave?: (fd: FormData) => Promise<Result>;
-  onComment: (fd: FormData) => Promise<Result>;
+  onPatch?: (fd: FormData) => Promise<Result>;
+  onComment: (fd: FormData) => Promise<CommentResult>;
   onImage: (fd: FormData) => Promise<Result>;
+  onCover: (input: { issueId: string; imageId: string | null }) => Promise<Result>;
   onDelete?: (input: { id: string }) => Promise<Result>;
 }) {
   const imageSrc = (id: string) => `${imageBase}${imageBase.includes("?") ? "&" : "?"}id=${id}`;
@@ -110,40 +114,71 @@ export function Board({
                 <span className="text-[11px] tabular-nums text-text-secondary">{column.length}</span>
               </h3>
               <ol className="flex flex-col gap-2">
-                {column.map((card, index) => (
-                  <li
-                    key={card.id}
-                    draggable
-                    onDragStart={(e) => { setDragging(card.id); e.dataTransfer.effectAllowed = "move"; }}
-                    onDragEnd={() => { setDragging(null); setOver(null); }}
-                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setOver({ stage, index }); }}
-                    onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragging) drop(dragging, stage, index); }}
-                    className={cn(
-                      "relative overflow-hidden rounded-lg bg-card transition-colors",
-                      dragging === card.id && "opacity-40",
-                      over?.stage === stage && over.index === index && dragging && dragging !== card.id && "ring-2 ring-accent",
-                    )}
-                  >
-                    {/* The severity edge exists only where severity was sent. */}
-                    {card.severity && (
-                      <span className={cn("absolute inset-y-0 left-0 w-[3px]", SEVERITY_EDGE[card.severity] ?? "bg-text-muted")} aria-hidden />
-                    )}
-                    <div className="flex flex-col gap-1 py-2.5 pl-4 pr-3">
-                      <CardDialog
-                        role={role} card={card} members={members} imageSrc={imageSrc}
-                        onSave={onSave} onComment={onComment} onImage={onImage}
-                        onDelete={onDelete ? () => onDelete({ id: card.id }) : undefined}
-                      />
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-secondary">
-                        {card.assigneeName && <span>{card.assigneeName}</span>}
-                        {card.recurring && <span className="rounded bg-info/[0.16] px-1.5 py-0.5 text-text-primary">recurring</span>}
-                        {card.comments.length > 0 && <span>{card.comments.length} comment{card.comments.length === 1 ? "" : "s"}</span>}
-                        {card.images.length > 0 && <span>{card.images.length} image{card.images.length === 1 ? "" : "s"}</span>}
+                {column.map((card, index) => {
+                  const cover = coverOf(card.images);
+                  return (
+                    <li
+                      key={card.id}
+                      draggable
+                      onDragStart={(e) => { setDragging(card.id); e.dataTransfer.effectAllowed = "move"; }}
+                      onDragEnd={() => { setDragging(null); setOver(null); }}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setOver({ stage, index }); }}
+                      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragging) drop(dragging, stage, index); }}
+                      className={cn(
+                        "relative overflow-hidden rounded-lg bg-card transition-colors",
+                        dragging === card.id && "opacity-40",
+                        over?.stage === stage && over.index === index && dragging && dragging !== card.id && "ring-2 ring-accent",
+                      )}
+                    >
+                      {/* The severity edge exists only where severity was sent. */}
+                      {card.severity && (
+                        <span className={cn("absolute inset-y-0 left-0 z-10 w-[3px]", SEVERITY_EDGE[card.severity] ?? "bg-text-muted")} aria-hidden />
+                      )}
+                      {/* Cover: the image flagged as such fills the top of the card. */}
+                      {cover && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={imageSrc(cover.id)} alt="" className="h-24 w-full object-cover" draggable={false} />
+                      )}
+                      <div className="flex flex-col gap-1.5 py-2.5 pl-4 pr-3">
+                        <CardDialog
+                          role={role} card={card} members={members} imageSrc={imageSrc}
+                          onMove={(to) => drop(card.id, to, 9999)}
+                          onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover}
+                          onDelete={onDelete ? () => onDelete({ id: card.id }) : undefined}
+                        />
+                        {/* Icon row: counts on the left, the assignee's initials on the right. */}
+                        <div className="flex items-end justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-text-secondary">
+                            {card.images.length > 0 && (
+                              <span className="inline-flex items-center gap-1" title={`${card.images.length} attachment${card.images.length === 1 ? "" : "s"}`}>
+                                <Paperclip className="size-3.5" strokeWidth={1.75} aria-hidden />
+                                <span className="tabular-nums">{card.images.length}</span>
+                                <span className="sr-only">attachments</span>
+                              </span>
+                            )}
+                            {card.comments.length > 0 && (
+                              <span className="inline-flex items-center gap-1" title={`${card.comments.length} comment${card.comments.length === 1 ? "" : "s"}`}>
+                                <MessageSquare className="size-3.5" strokeWidth={1.75} aria-hidden />
+                                <span className="tabular-nums">{card.comments.length}</span>
+                                <span className="sr-only">comments</span>
+                              </span>
+                            )}
+                            {card.recurring && <span className="rounded bg-info/[0.16] px-1.5 py-0.5 text-text-primary">recurring</span>}
+                          </div>
+                          {card.assigneeName && (
+                            <span
+                              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/[0.14] text-[10px] font-semibold text-accent"
+                              title={card.assigneeName} aria-label={`Assigned to ${card.assigneeName}`}
+                            >
+                              {initials(card.assigneeName)}
+                            </span>
+                          )}
+                        </div>
+                        <MoveMenu card={card} role={role} onMove={(to) => drop(card.id, to, 9999)} />
                       </div>
-                      <MoveMenu card={card} role={role} onMove={(to) => drop(card.id, to, 9999)} />
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ol>
             </section>
           );
@@ -158,7 +193,7 @@ function MoveMenu({ card, role, onMove }: { card: Card; role: Role; onMove: (to:
   const targets = BOARD_STAGES.filter((s) => canMove(role, card.boardStage, s, { assigned: !!card.assigneeId }));
   if (!targets.length) return null;
   return (
-    <label className="mt-1 flex items-center gap-1.5 text-[11px] text-text-secondary">
+    <label className="mt-0.5 flex items-center gap-1.5 text-[11px] text-text-secondary">
       <span className="sr-only">Move {card.title} to</span>
       <select
         aria-label={`Move "${card.title}" to`}

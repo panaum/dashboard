@@ -64,6 +64,12 @@ export const boardCardSchema = z.object({
 
 export const boardStageSchema = z.enum(BOARD_STAGES);
 
+// Inline edits from the card modal: only the keys present are written.
+export const boardCardPatchSchema = z.object({
+  title: z.string().trim().min(1, "Title is required").max(200).optional(),
+  description: z.string().trim().max(4000).optional(),
+});
+
 export const commentSchema = z.object({
   body: z.string().trim().min(1, "Say something").max(4000),
 });
@@ -71,6 +77,7 @@ export const commentSchema = z.object({
 export const memberSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(80),
   role: z.enum(MEMBER_ROLES),
+  slackUserId: optionalText(40),
 });
 
 export const checkResultSchema = z.enum(CHECK_RESULTS);
