@@ -69,10 +69,18 @@ export function Dialog({
                 className={size === "xl" ? "w-full max-w-[68rem]" : size === "lg" ? "w-full max-w-2xl" : "w-full max-w-md"}
                 role="dialog" aria-modal="true" aria-label={title}
               >
-                <Card className={bare ? "flex max-h-[92vh] flex-col overflow-hidden p-0 shadow-lg" : "flex max-h-[90vh] flex-col p-6 shadow-lg"}>
-                  {bare ? (
-                    <div className="overflow-y-auto">{children(close)}</div>
-                  ) : (<>
+                <Card className={bare ? "relative flex max-h-[92vh] flex-col overflow-hidden p-0 shadow-lg" : "flex max-h-[90vh] flex-col p-6 shadow-lg"}>
+                  {bare ? (<>
+                    {/* Pinned close: on the dialog, not inside the scrolling content, so it
+                        is there whatever the content's own header does. */}
+                    <button
+                      type="button" onClick={close} aria-label="Close dialog"
+                      className="absolute right-3 top-3 z-20 rounded-full bg-black/45 p-1.5 text-white shadow-sm ring-1 ring-white/30 transition-colors hover:bg-black/65 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-white"
+                    >
+                      <X className="size-4" />
+                    </button>
+                    <div className="min-h-0 overflow-y-auto">{children(close)}</div>
+                  </>) : (<>
                   <div className="mb-5 flex items-center justify-between">
                     <h2 className="text-lg font-semibold text-text-primary">
                       {title}

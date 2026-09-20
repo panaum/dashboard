@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import {
-  AlignLeft, Circle, Ellipsis, ExternalLink, Image as ImageIcon, Link2, MessageSquare, Paperclip, Plus, Repeat, Tag, Trash2, UserRound, X,
+  AlignLeft, Circle, Ellipsis, ExternalLink, Image as ImageIcon, Link2, MessageSquare, Paperclip, Plus, Repeat, Tag, Trash2, UserRound,
 } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -162,7 +162,7 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
           <div className="h-14 bg-card-soft" />
         )}
         <div className="absolute left-4 top-3">{stagePill}</div>
-        <div className="absolute right-3 top-3 flex items-center gap-1.5">
+        <div className="absolute right-14 top-3 flex items-center gap-1.5">
           {cover && (
             <button type="button" title="Remove cover" aria-label="Remove cover" disabled={pending} className={iconBtn(true)}
                     onClick={() => run(() => onCover({ issueId: card.id, imageId: null }))}>
@@ -182,7 +182,6 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
               )}
             </Popover>
           )}
-          <button type="button" onClick={close} aria-label="Close" className={iconBtn(!!cover)}><X className="size-4" /></button>
         </div>
       </div>
 
