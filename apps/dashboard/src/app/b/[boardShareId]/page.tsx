@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { Board } from "@/components/boards/board";
 import type { Card } from "@/components/boards/types";
 import { developerAuthorLabel, developerView, isStage } from "@/lib/boards";
-import { developerComment, developerCover, developerImage, developerMove } from "./actions";
+import { developerComment, developerCover, developerDeleteImage, developerImage, developerMove } from "./actions";
 import { participantsFor } from "@/lib/board-thread";
 
 // The developer's board. Outside /dashboard, so no shell, no navbar, and
@@ -82,6 +82,7 @@ export default async function DeveloperBoardPage({ params }: { params: Promise<{
           onComment={async (fd) => { "use server"; fd.set("boardShareId", boardShareId); return developerComment(fd); }}
           onImage={async (fd) => { "use server"; fd.set("boardShareId", boardShareId); return developerImage(fd); }}
           onCover={async (input) => { "use server"; return developerCover({ boardShareId, ...input }); }}
+          onDeleteImage={async (input) => { "use server"; return developerDeleteImage({ boardShareId, ...input }); }}
         />
       </div>
     </main>

@@ -15,11 +15,16 @@ export function Dialog({
   trigger,
   title,
   size = "md",
+  bare = false,
   children,
 }: {
   trigger: React.ReactNode;
   title: string;
-  size?: "md" | "lg";
+  size?: "md" | "lg" | "xl";
+  /** No header and no padding: the content owns its own chrome (the card
+   *  back's cover bleeds to the edges and carries its own close button).
+   *  `title` still labels the dialog for assistive tech. */
+  bare?: boolean;
   /** Render-prop: receives a `close` callback to dismiss the dialog. */
   children: (close: () => void) => React.ReactNode;
 }) {
@@ -58,9 +63,13 @@ export function Dialog({
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.96, y: 8 }}
                 transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                className={size === "lg" ? "w-full max-w-2xl" : "w-full max-w-md"}
+                className={size === "xl" ? "w-full max-w-[68rem]" : size === "lg" ? "w-full max-w-2xl" : "w-full max-w-md"}
+                role="dialog" aria-modal="true" aria-label={title}
               >
-                <Card className="flex max-h-[90vh] flex-col p-6 shadow-lg">
+                <Card className={bare ? "flex max-h-[92vh] flex-col overflow-hidden p-0 shadow-lg" : "flex max-h-[90vh] flex-col p-6 shadow-lg"}>
+                  {bare ? (
+                    <div className="overflow-y-auto">{children(close)}</div>
+                  ) : (<>
                   <div className="mb-5 flex items-center justify-between">
                     <h2 className="text-lg font-semibold text-text-primary">
                       {title}
@@ -77,6 +86,7 @@ export function Dialog({
                   <div className="-mx-1 overflow-y-auto px-1">
                     {children(close)}
                   </div>
+                  </>)}
                 </Card>
               </motion.div>
             </div>

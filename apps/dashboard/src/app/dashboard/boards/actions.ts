@@ -281,6 +281,21 @@ export async function setCoverImage(issueId: string, imageId: string | null): Pr
   return { ok: true };
 }
 
+/** Remove an attachment. Shared with the developer side, which scopes it. */
+export async function removeImage(issueId: string, imageId: string): Promise<ActionResult> {
+  const r = await db.issueImage.deleteMany({ where: { id: imageId, issueId } });
+  return r.count ? { ok: true } : { error: "That image is not on this card." };
+}
+
+export async function deleteImage(input: { issueId: string; imageId: string }): Promise<ActionResult> {
+  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  const projectId = await projectOf(input.issueId);
+  if (!projectId) return { error: "Card not found." };
+  const r = await removeImage(input.issueId, input.imageId);
+  revalidatePath(boardPath(projectId));
+  return r;
+}
+
 export async function setCover(input: { issueId: string; imageId: string | null }): Promise<ActionResult> {
   if (!(await guard("issue:write"))) return CANNOT_EDIT;
   const projectId = await projectOf(input.issueId);
