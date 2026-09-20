@@ -90,6 +90,20 @@ export function developerView<T extends DeveloperCard & Record<string, unknown>>
   };
 }
 
+/**
+ * The name a comment carries on the developer view. Only the card's own
+ * assignee is named; every other voice on the thread — the reporter, another
+ * QA, the shared session — is "QA". The reporter's identity never leaves the
+ * server for this view, and it holds whether or not that person has a login.
+ */
+export function developerAuthorLabel(
+  c: { authorId: string | null; authorName: string | null },
+  assigneeId: string | null,
+): string {
+  if (assigneeId && c.authorId === assigneeId) return c.authorName ?? "Developer";
+  return "QA";
+}
+
 /** Cards of one stage, in the order QA arranged them. */
 export function inStage<T extends { boardStage: string | null; boardOrder: number }>(
   cards: T[],

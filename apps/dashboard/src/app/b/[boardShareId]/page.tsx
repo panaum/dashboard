@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { Board } from "@/components/boards/board";
 import type { Card } from "@/components/boards/types";
-import { developerView, isStage } from "@/lib/boards";
+import { developerAuthorLabel, developerView, isStage } from "@/lib/boards";
 import { developerComment, developerImage, developerMove } from "./actions";
 
 // The developer's board. Outside /dashboard, so no shell, no navbar, and
@@ -30,7 +30,7 @@ export default async function DeveloperBoardPage({ params }: { params: Promise<{
               id: true, title: true, description: true, link: true,
               boardStage: true, boardOrder: true, assigneeId: true, createdAt: true,
               assignee: { select: { name: true } },
-              comments: { orderBy: { createdAt: "asc" }, select: { id: true, body: true, createdAt: true, author: { select: { name: true } } } },
+              comments: { orderBy: { createdAt: "asc" }, select: { id: true, body: true, createdAt: true, authorId: true, author: { select: { name: true } } } },
               images: { orderBy: { createdAt: "asc" }, select: { id: true } },
             },
           },
@@ -47,7 +47,7 @@ export default async function DeveloperBoardPage({ params }: { params: Promise<{
       ...safe,
       createdAt: i.createdAt.toISOString(),
       assigneeName: i.assignee?.name ?? null,
-      comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: c.author?.name ?? null, createdAt: c.createdAt.toISOString() })),
+      comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: developerAuthorLabel({ authorId: c.authorId, authorName: c.author?.name ?? null }, i.assigneeId), createdAt: c.createdAt.toISOString() })),
       images: i.images,
     }];
   });
