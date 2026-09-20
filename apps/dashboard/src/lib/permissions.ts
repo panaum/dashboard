@@ -41,7 +41,7 @@ export const CAPABILITIES = [
   "issue:write",     // log and resolve issues
   "qa:sign",         // complete a QA certificate
   "check:run",       // run a link/attribution check
-  "sharelink:mint",  // mint or revoke a public /c/[shareId] certificate link
+  "sharelink:mint",  // mint or revoke a public /c/[shareId] certificate or /b/ board link
   "registry:write",  // anything that writes to LinkSpy or the registry
   "settings:manage", // environment, integrations, destructive operations
 ] as const;

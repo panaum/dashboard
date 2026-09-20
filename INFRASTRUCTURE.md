@@ -1119,13 +1119,14 @@ move their own cards between the working stages and hand one to QA
 developer says done" and "QA confirmed" are two different people's acts, and
 the bounce-back metric lives in the gap between them.
 
-**Attribution on today's single shared session.** `Issue.reporterId` and the
-QA-side `IssueEvent.actorId` are nullable and stay null: there is no per-person
-identity to record until access control ships. The developer side is
-attributed, because the card's assignee is who acted. The access-control work
-exists as `feat/access-control`, one commit whose diff against main deletes
-most of this month's work — it needs a rebase before it can be merged, not a
-merge.
+**Attribution.** `Issue.reporterId`, `IssueEvent.actorId` and
+`IssueComment.authorId` record the signed-in member (`src/lib/auth.ts` →
+`getActor`). Two sessions cannot be attributed and write null: the shared
+team-password login (its actor is the `bootstrap` sentinel, which has no
+`TeamMember` row) and events written before per-person login landed. Neither is
+backfillable — the row does not say who held the shared cookie — so the monthly
+board metrics are only as complete as the habit of signing in as yourself. The
+developer side is attributed by construction: the card's assignee is who acted.
 
 ## 5. Runbooks
 

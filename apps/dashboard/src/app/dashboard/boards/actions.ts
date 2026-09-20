@@ -3,20 +3,35 @@
 import { revalidatePath } from "next/cache";
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { getActor } from "@/lib/auth";
+import { type Actor, type Capability, can } from "@/lib/permissions";
 import { boardCardSchema, boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { canMove, isStage, nextOrder, reorder } from "@/lib/boards";
 import type { BoardStage } from "@/lib/constants";
 
 // QA's side of the board. Every write here happens inside the app shell,
-// behind the session — today a single shared one, so reporterId and the QA
-// actorId stay null rather than pretend to be somebody. When per-person
-// sessions land, these become the member's id and nothing else changes.
+// behind the session, and is attributed to the signed-in member: reporterId on
+// the card, actorId on every stage change, authorId on every comment. The
+// shared team-password session has no TeamMember behind it, so it records as
+// null — the one write that stays unattributable, and the reason to sign in
+// as yourself before touching a board.
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
 const boardPath = (projectId: string) => `/dashboard/boards/${projectId}`;
+
+/** Same shape as the team actions: an error the form can show, not a redirect. */
+async function guard(capability: Capability): Promise<Actor | null> {
+  const actor = await getActor();
+  return can(actor, capability) ? actor! : null;
+}
+
+/** The id to write into an attribution column. The bootstrap session has no
+ *  row to point at, and a foreign key to nowhere is worse than null. */
+const memberId = (actor: Actor) => (actor.bootstrap ? null : actor.id);
+
+const CANNOT_EDIT = { error: "Your access level cannot edit boards." };
 
 async function projectOf(issueId: string): Promise<string | null> {
   const row = await db.issue.findUnique({
@@ -28,7 +43,8 @@ async function projectOf(issueId: string): Promise<string | null> {
 /** Create a card straight onto a project's board, or promote an existing
  *  page issue onto it. Creation is itself the first IssueEvent. */
 export async function createCard(formData: FormData): Promise<ActionResult> {
-  await requireAuth();
+  const actor = await guard("issue:write");
+  if (!actor) return CANNOT_EDIT;
   const projectId = String(formData.get("projectId") ?? "");
   const pageId = String(formData.get("pageId") ?? "");
   if (!projectId || !pageId) return { error: "Choose the page this issue is on." };
@@ -48,11 +64,12 @@ export async function createCard(formData: FormData): Promise<ActionResult> {
         data: {
           ...parsed.data,
           pageId,
+          reporterId: memberId(actor),
           boardStage: "NEW",
           boardOrder: nextOrder(siblings, "NEW"),
         },
       });
-      await tx.issueEvent.create({ data: { issueId: issue.id, fromStage: null, toStage: "NEW", actorId: null } });
+      await tx.issueEvent.create({ data: { issueId: issue.id, fromStage: null, toStage: "NEW", actorId: memberId(actor) } });
     });
   } catch {
     return { error: "Could not create the card." };
@@ -62,7 +79,7 @@ export async function createCard(formData: FormData): Promise<ActionResult> {
 }
 
 export async function updateCard(formData: FormData): Promise<ActionResult> {
-  await requireAuth();
+  if (!(await guard("issue:write"))) return CANNOT_EDIT;
   const id = String(formData.get("id") ?? "");
   const parsed = parseForm(boardCardSchema, formData);
   if ("error" in parsed) return { error: parsed.error };
@@ -85,7 +102,8 @@ export async function updateCard(formData: FormData): Promise<ActionResult> {
 export async function moveCard(input: {
   id: string; to: BoardStage; index: number;
 }): Promise<ActionResult> {
-  await requireAuth();
+  const actor = await guard("issue:write");
+  if (!actor) return CANNOT_EDIT;
   if (!isStage(input.to)) return { error: "Unknown stage." };
   const issue = await db.issue.findUnique({
     where: { id: input.id }, select: { boardStage: true, page: { select: { projectId: true } } },
@@ -107,7 +125,7 @@ export async function moveCard(input: {
         data: w.id === input.id ? { boardStage: input.to, boardOrder: w.boardOrder } : { boardOrder: w.boardOrder },
       })),
       ...(sameStage ? [] : [db.issueEvent.create({
-        data: { issueId: input.id, fromStage: from, toStage: input.to, actorId: null },
+        data: { issueId: input.id, fromStage: from, toStage: input.to, actorId: memberId(actor) },
       })]),
     ]);
   } catch {
@@ -118,7 +136,7 @@ export async function moveCard(input: {
 }
 
 export async function deleteCard(input: { id: string }): Promise<ActionResult> {
-  await requireAuth();
+  if (!(await guard("issue:write"))) return CANNOT_EDIT;
   const projectId = await projectOf(input.id);
   if (!projectId) return { error: "Card not found." };
   await db.issue.delete({ where: { id: input.id } });
@@ -127,13 +145,14 @@ export async function deleteCard(input: { id: string }): Promise<ActionResult> {
 }
 
 export async function addComment(formData: FormData): Promise<ActionResult> {
-  await requireAuth();
+  const actor = await guard("issue:write");
+  if (!actor) return CANNOT_EDIT;
   const issueId = String(formData.get("issueId") ?? "");
   const parsed = parseForm(commentSchema, formData);
   if ("error" in parsed) return { error: parsed.error };
   const projectId = await projectOf(issueId);
   if (!projectId) return { error: "Card not found." };
-  await db.issueComment.create({ data: { issueId, body: parsed.data.body, authorId: null } });
+  await db.issueComment.create({ data: { issueId, body: parsed.data.body, authorId: memberId(actor) } });
   revalidatePath(boardPath(projectId));
   return { ok: true };
 }
@@ -150,7 +169,7 @@ export async function storeImage(issueId: string, file: File): Promise<ActionRes
 }
 
 export async function addImage(formData: FormData): Promise<ActionResult> {
-  await requireAuth();
+  if (!(await guard("issue:write"))) return CANNOT_EDIT;
   const issueId = String(formData.get("issueId") ?? "");
   const file = formData.get("image");
   if (!(file instanceof File) || !file.size) return { error: "Choose an image." };
@@ -165,7 +184,7 @@ export async function addImage(formData: FormData): Promise<ActionResult> {
 // --- The developer link: Page.shareId's mechanism, on the project -----------
 
 export async function mintBoardLink(input: { projectId: string }): Promise<ActionResult & { boardShareId?: string }> {
-  await requireAuth();
+  if (!(await guard("sharelink:mint"))) return { error: "Your access level cannot share boards." };
   const existing = await db.project.findUnique({ where: { id: input.projectId }, select: { boardShareId: true } });
   if (!existing) return { error: "Project not found." };
   let boardShareId = existing.boardShareId ?? null;
@@ -178,7 +197,7 @@ export async function mintBoardLink(input: { projectId: string }): Promise<Actio
 }
 
 export async function revokeBoardLink(input: { projectId: string }): Promise<ActionResult> {
-  await requireAuth();
+  if (!(await guard("sharelink:mint"))) return { error: "Your access level cannot share boards." };
   await db.project.update({ where: { id: input.projectId }, data: { boardShareId: null } });
   revalidatePath(boardPath(input.projectId));
   return { ok: true };
