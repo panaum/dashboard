@@ -11,7 +11,7 @@ import type { Card } from "@/components/boards/types";
 import { isStage } from "@/lib/boards";
 import { mentionLabelsFor } from "@/lib/board-thread";
 import {
-  addComment, addImage, createCard, deleteCard, deleteImage, mintBoardLink, moveCard, patchCard, revokeBoardLink, setCover, setDates, updateCard,
+  addComment, addImage, createCard, deleteCard, deleteComment, deleteImage, mintBoardLink, moveCard, patchCard, revokeBoardLink, setCover, setDates, updateCard,
 } from "../actions";
 
 // QA's board for one project. Full fields, every move, the developer link.
@@ -54,7 +54,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     createdAt: i.createdAt.toISOString(),
     startAt: i.startAt?.toISOString() ?? null, dueAt: i.dueAt?.toISOString() ?? null, dueReminderMinutes: i.dueReminderMinutes,
     severity: i.severity, recurring: i.recurring, reporterName: i.reporter?.name ?? null,
-    comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: c.author?.name ?? null, createdAt: c.createdAt.toISOString() })),
+    comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: c.author?.name ?? null, createdAt: c.createdAt.toISOString(), deletable: true })),
     events: i.events.flatMap((e) => isStage(e.toStage) ? [{
       id: e.id, actorName: e.actor?.name ?? null, fromStage: isStage(e.fromStage) ? e.fromStage : null, toStage: e.toStage, createdAt: e.createdAt.toISOString(),
     }] : []),
@@ -100,6 +100,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
         onDates={setDates}
         viewerName={actor.bootstrap ? null : actor.name}
         onDeleteImage={deleteImage}
+        onDeleteComment={deleteComment}
         onDelete={deleteCard}
         quickAdd={{ projectId: project.id, pages: project.pages }}
         onCreate={createCard}

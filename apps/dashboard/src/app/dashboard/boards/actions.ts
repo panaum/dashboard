@@ -315,6 +315,20 @@ export async function setCoverImage(issueId: string, imageId: string | null): Pr
   return { ok: true };
 }
 
+/** Delete a comment. QA may delete any comment on a card in the project; the
+ *  developer side deletes only its own (see developerDeleteComment). The
+ *  mention rows go with it (cascade); a Slack ping already sent stays sent. */
+export async function deleteComment(input: { id: string }): Promise<ActionResult> {
+  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  const c = await db.issueComment.findUnique({ where: { id: input.id }, select: { issueId: true } });
+  if (!c) return { error: "Comment not found." };
+  const projectId = await projectOf(c.issueId);
+  if (!projectId) return { error: "Card not found." };
+  await db.issueComment.delete({ where: { id: input.id } });
+  revalidatePath(boardPath(projectId));
+  return { ok: true };
+}
+
 /** Remove an attachment. Shared with the developer side, which scopes it. */
 export async function removeImage(issueId: string, imageId: string): Promise<ActionResult> {
   const r = await db.issueImage.deleteMany({ where: { id: imageId, issueId } });

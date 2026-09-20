@@ -45,6 +45,7 @@ type Props = {
   onImage: (fd: FormData) => Promise<ImageResult>;
   onCover: (input: { issueId: string; imageId: string | null }) => Promise<Result>;
   onDeleteImage: (input: { issueId: string; imageId: string }) => Promise<Result>;
+  onDeleteComment: (input: { id: string }) => Promise<Result>;
   /** QA only: start, due and reminder. */
   onDates?: (input: DatesInput) => Promise<Result>;
   onDelete?: () => Promise<Result>;
@@ -75,7 +76,7 @@ const chip = "inline-flex items-center gap-1.5 rounded-md border border-border-s
 const heading = "flex items-center gap-2.5 text-[15px] font-semibold text-text-primary";
 const boxField = "w-full rounded-lg border border-border-soft bg-card px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
 
-function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onComment, onImage, onCover, onDeleteImage, onDates, onDelete, viewerName, close }: Props & { close: () => void }) {
+function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onComment, onImage, onCover, onDeleteImage, onDeleteComment, onDates, onDelete, viewerName, close }: Props & { close: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(true);
@@ -423,11 +424,20 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
               {feed.map((item) => {
                 const who = item.kind === "comment" ? (item.authorName ?? (qa ? "QA" : "Developer")) : (item.actorName ?? "Someone");
                 return (
-                  <li key={item.id} className="flex gap-3">
+                  <li key={item.id} className="group flex gap-3">
                     <Avatar name={who} size="sm" className="mt-0.5" />
                     <div className="min-w-0 flex-1">
                       {item.kind === "comment" ? (<>
-                        <p className="text-[12px] text-text-secondary"><span className="font-semibold text-text-primary">{who}</span> · {formatStamp(item.createdAt, tz)}</p>
+                        <p className="flex items-center gap-2 text-[12px] text-text-secondary">
+                          <span className="min-w-0 flex-1 truncate"><span className="font-semibold text-text-primary">{who}</span> · {formatStamp(item.createdAt, tz)}</span>
+                          {item.deletable && (
+                            <button type="button" aria-label="Delete comment" title="Delete comment" disabled={pending}
+                                    onClick={() => { if (confirm("Delete this comment?")) run(() => onDeleteComment({ id: item.id })); }}
+                                    className="rounded p-1 text-text-muted opacity-0 transition-opacity hover:bg-error/[0.08] hover:text-error-strong focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent group-hover:opacity-100">
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          )}
+                        </p>
                         <div
                           className="mt-1 rounded-lg border border-border-soft bg-card px-3 py-2 text-text-primary shadow-xs [&_p]:whitespace-pre-wrap"
                           // renderComment escapes the text before adding its own tags — see board-thread.ts.

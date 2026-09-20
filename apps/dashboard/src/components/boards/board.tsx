@@ -38,6 +38,7 @@ export function Board({
   onImage,
   onCover,
   onDeleteImage,
+  onDeleteComment,
   onDates,
   onDelete,
   viewerName,
@@ -60,6 +61,7 @@ export function Board({
   onImage: (fd: FormData) => Promise<ImageResult>;
   onCover: (input: { issueId: string; imageId: string | null }) => Promise<Result>;
   onDeleteImage: (input: { issueId: string; imageId: string }) => Promise<Result>;
+  onDeleteComment: (input: { id: string }) => Promise<Result>;
   onDates?: (input: DatesInput) => Promise<Result>;
   onDelete?: (input: { id: string }) => Promise<Result>;
   /** QA page: the signed-in person's name, or null on the shared team login. */
@@ -170,7 +172,7 @@ export function Board({
                           role={role} card={card} members={members} imageSrc={imageSrc}
                           initialOpen={card.id === justAdded}
                           onMove={(to) => drop(card.id, to, 9999)}
-                          onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage} onDates={onDates} viewerName={viewerName}
+                          onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage} onDeleteComment={onDeleteComment} onDates={onDates} viewerName={viewerName}
                           onDelete={onDelete ? () => onDelete({ id: card.id }) : undefined}
                         />
                         {/* Icon row: counts on the left, the assignee's initials on the right. */}
