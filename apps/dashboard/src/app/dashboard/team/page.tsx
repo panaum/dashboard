@@ -3,13 +3,19 @@ import { PageHeader } from "@/components/shared/page-header";
 import { AddMemberButton } from "@/components/forms/dialogs";
 import { TeamTable, type MemberRow } from "@/components/team/team-table";
 import { AnimatedNumber } from "@/components/shared/animated-number";
+import { BoardPerformancePanel } from "@/components/team/board-performance-panel";
+import { computeBoardPerformance, monthPeriod } from "@/lib/board-performance";
+import { isStage } from "@/lib/boards";
 
 type Stat = { built: number; tested: number; issuesBuilt: number; repetitive: number; issuesFound: number };
 
 export const metadata = { title: "Team" };
 
 export default async function TeamPage() {
-  const [members, pages] = await Promise.all([
+  // This month's board activity, for the second performance panel.
+  const month = new Date().toISOString().slice(0, 7);
+  const period = monthPeriod(month);
+  const [members, pages, boardIssues, boardEvents] = await Promise.all([
     db.teamMember.findMany({ orderBy: { name: "asc" } }),
     db.page.findMany({
       select: {
@@ -18,7 +24,21 @@ export default async function TeamPage() {
         issues: { select: { severity: true } },
       },
     }),
+    db.issue.findMany({
+      where: { boardStage: { not: null } },
+      select: { id: true, assigneeId: true, recurring: true, createdAt: true },
+    }),
+    db.issueEvent.findMany({
+      where: { createdAt: { gte: period.from, lt: period.to } },
+      select: { issueId: true, fromStage: true, toStage: true, actorId: true, createdAt: true },
+    }),
   ]);
+  const boardPerf = computeBoardPerformance(
+    boardIssues,
+    boardEvents.flatMap((e) => isStage(e.toStage)
+      ? [{ ...e, toStage: e.toStage, fromStage: isStage(e.fromStage) ? e.fromStage : null }] : []),
+    period,
+  );
 
   const stats = new Map<string, Stat>();
   const ensure = (id: string) =>
@@ -75,6 +95,7 @@ export default async function TeamPage() {
       </div>
 
       <TeamTable members={rows} />
+      <BoardPerformancePanel data={boardPerf} names={new Map(members.map((m) => [m.id, m.name]))} month={month} />
     </>
   );
 }
