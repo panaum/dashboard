@@ -205,6 +205,20 @@ pooler is the IPv4 path. The functional advice (use 5432, never 6543) still
 holds; the *wording* in the runbook is misleading. Region `ap-southeast-2`
 (Sydney) matches `vercel.json`'s `syd1` pin.
 
+#### D9 addendum (2026-09-20) — `DIRECT_URL` needs `?sslmode=require` for Prisma
+
+`prisma migrate deploy` for the boards migration failed with **P1001, cannot
+reach database server** against the same pooler host that `psql` connected to
+in the same second. The difference was SSL: `psql` took it from the
+`PGSSLMODE=require` environment variable, which Prisma's engine does not read.
+With `?sslmode=require&connect_timeout=30` appended to `DIRECT_URL`, Prisma
+connected in ten seconds and the migration applied cleanly.
+
+So the URL in Railway/Vercel and in any local `.env` should carry the
+parameter itself, rather than relying on an environment variable only one
+client honours. Without it the failure mode is a ten-minute hang followed by
+an error that reads like an outage, on a host that is up.
+
 ### D10 — Dead variables
 
 | Var | Surface | Why dead |
@@ -1080,6 +1094,38 @@ One incoming webhook (`SLACK_WEBHOOK_URL`, Railway only), five emitters:
 All best-effort — exceptions are swallowed (`spine.py:21`, `main.py:2269`).
 
 ---
+
+## 4b. Boards — the capability link, and what the developer view never receives
+
+Boards is a section of the Dashboard behind the normal session. The
+developer-facing view is the exception, reached only by a capability link:
+
+| Surface | Credential | What it serves |
+|---|---|---|
+| `/dashboard/boards`, `/dashboard/boards/[projectId]` | session | QA's board: every field, every move, the link controls |
+| `/b/[boardShareId]` | `Project.boardShareId` in the URL | one project's board, no shell, `noindex` |
+| `/api/board-image?id=…` | session **or** `&share=<boardShareId>` matching the image's project | a card image; any miss is a 404, so the route cannot be probed |
+
+`Project.boardShareId` is the same mechanism as `Page.shareId`: a random
+12-byte token on the row, `NULL` to revoke, minted from the board page. There
+is no `CapabilityLink` table; the capability is a column, on both models.
+
+**What the developer view never receives**, enforced server-side by
+`developerView()` in `src/lib/boards.ts` as a whitelist: severity, the
+recurring flag, the reporter, and the page-review `status`. Priority reaches
+the developer as card ORDER within a column and nothing else. A developer may
+move their own cards between the working stages and hand one to QA
+(`COMPLETED`); only QA closes, and only QA reopens a closed card — "the
+developer says done" and "QA confirmed" are two different people's acts, and
+the bounce-back metric lives in the gap between them.
+
+**Attribution on today's single shared session.** `Issue.reporterId` and the
+QA-side `IssueEvent.actorId` are nullable and stay null: there is no per-person
+identity to record until access control ships. The developer side is
+attributed, because the card's assignee is who acted. The access-control work
+exists as `feat/access-control`, one commit whose diff against main deletes
+most of this month's work — it needs a rebase before it can be merged, not a
+merge.
 
 ## 5. Runbooks
 

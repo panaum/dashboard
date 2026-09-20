@@ -3,6 +3,7 @@ import {
   PROJECT_TYPES,
   STATUSES,
   SEVERITIES,
+  BOARD_STAGES,
   ISSUE_STATUSES,
   MEMBER_ROLES,
   CHECK_RESULTS,
@@ -47,6 +48,24 @@ export const issueSchema = z.object({
   description: optionalText(1000),
   severity: z.enum(SEVERITIES),
   status: z.enum(ISSUE_STATUSES),
+});
+
+// A card on a board: the issue's own fields plus the board ones. `status`
+// (the page-review OPEN/FIXED) is deliberately absent — the board never
+// touches it, so the on-time metric never sees board activity.
+export const boardCardSchema = z.object({
+  title: z.string().trim().min(1, "Title is required").max(200),
+  description: optionalText(4000),
+  link: optionalText(500),
+  severity: z.enum(SEVERITIES),
+  recurring: z.coerce.boolean().default(false),
+  assigneeId: optionalText(40),
+});
+
+export const boardStageSchema = z.enum(BOARD_STAGES);
+
+export const commentSchema = z.object({
+  body: z.string().trim().min(1, "Say something").max(4000),
 });
 
 export const memberSchema = z.object({

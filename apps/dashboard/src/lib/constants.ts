@@ -41,6 +41,26 @@ export type Severity = (typeof SEVERITIES)[number];
 export const ISSUE_STATUSES = ["OPEN", "FIXED"] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 
+// Boards. Five stages, not three or four: each one says whose turn it is.
+// COMPLETED ("the developer says it is fixed") and CLOSED ("QA confirmed")
+// stay separate — that gap is what the metrics measure, and moving a card
+// backward out of either is a rejection.
+export const BOARD_STAGES = [
+  "NEW",
+  "ACTIVE",
+  "NEEDS_CLARIFICATION",
+  "COMPLETED",
+  "CLOSED",
+] as const;
+export type BoardStage = (typeof BOARD_STAGES)[number];
+export const BOARD_STAGE_LABELS: Record<BoardStage, string> = {
+  NEW: "New",
+  ACTIVE: "Active",
+  NEEDS_CLARIFICATION: "Needs clarification",
+  COMPLETED: "Completed",
+  CLOSED: "Closed",
+};
+
 export const CHECK_RESULTS = ["PASSED", "FAILED", "NA"] as const;
 export type CheckResult = (typeof CHECK_RESULTS)[number];
 

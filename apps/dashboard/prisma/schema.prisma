@@ -37,6 +37,12 @@ model Project {
   url       String?
   status    String   @default("IN_PROGRESS") // Status
   pages     Page[]
+  // Boards. A board is this project's issues that carry a boardStage, and the
+  // developer-facing view is reached by a capability link — the same
+  // mechanism as Page.shareId (random token on the row, null to revoke,
+  // minted behind a permission), scoped to this project. Nullable; unset =
+  // no developer link exists.
+  boardShareId String? @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -92,10 +98,81 @@ model Issue {
   description String?
   severity    String   @default("LOW") // Severity
   status      String   @default("OPEN") // IssueStatus
+  // ── Boards (all nullable or defaulted: an issue that predates boards is
+  //    untouched, and boardStage null means "not on a board").
+  boardStage  String? //                                 BoardStage
+  // QA arranges cards top-to-bottom within a stage; the developer works
+  // top-down. Order IS the priority signal the developer view receives, so it
+  // has to persist — the spec implies it and names no field.
+  boardOrder  Int      @default(0)
+  // Where on the site the issue is — a URL to the page or feature.
+  link        String?
+  // Separate from severity on purpose. A low-severity recurring bug is a
+  // different problem from a one-off high-severity one. (The existing
+  // REPETITIVE severity value already conflates the two; it is left alone.)
+  recurring   Boolean  @default(false)
+  assignee    TeamMember? @relation("Assignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId  String?
+  // The QA who logged it. Null on today's single shared session — there is
+  // no per-person identity to record until access control lands.
+  reporter    TeamMember? @relation("Reporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  reporterId  String?
+  events      IssueEvent[]
+  comments    IssueComment[]
+  images      IssueImage[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([pageId])
+  @@index([assigneeId])
+  @@index([boardStage])
+}
+
+// One row per stage change — the current stage alone cannot yield cycle time
+// or bounce-backs, so this is the source every board metric is computed from.
+// fromStage is null when the card is created onto the board.
+model IssueEvent {
+  id        String   @id @default(cuid())
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  issueId   String
+  fromStage String? //                                   BoardStage
+  toStage   String //                                    BoardStage
+  // The developer's TeamMember row, resolved from the capability link they
+  // used; or the QA member, once per-person sessions exist. Null = the shared
+  // QA session, which is honest rather than attributing to nobody in particular.
+  actor     TeamMember? @relation("EventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorId   String?
+  createdAt DateTime @default(now())
+
+  @@index([issueId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model IssueComment {
+  id        String   @id @default(cuid())
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  issueId   String
+  author    TeamMember? @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  authorId  String?
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([issueId, createdAt])
+}
+
+// Screenshots on a card, stored as bytes like LayoutShot — the free tier has
+// no object store to point image_urls at, and this keeps a card's evidence in
+// the same database as the card.
+model IssueImage {
+  id          String   @id @default(cuid())
+  issue       Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  issueId     String
+  contentType String
+  image       Bytes
+  bytes       Int
+  createdAt   DateTime @default(now())
+
+  @@index([issueId])
 }
 
 model TeamMember {
@@ -111,6 +188,12 @@ model TeamMember {
   active      Boolean  @default(true)
   devPages    Page[]   @relation("Dev")
   testerPages Page[]   @relation("Tester")
+  // Boards. A developer keeps a TeamMember row for assignment and attribution
+  // even with no login: their capability link resolves to it.
+  assignedIssues  Issue[]        @relation("Assignee")
+  reportedIssues  Issue[]        @relation("Reporter")
+  issueEvents     IssueEvent[]   @relation("EventActor")
+  issueComments   IssueComment[] @relation("CommentAuthor")
   createdAt   DateTime @default(now())
 }
 
