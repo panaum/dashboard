@@ -16,6 +16,7 @@ export function Dialog({
   title,
   size = "md",
   bare = false,
+  initialOpen = false,
   children,
 }: {
   trigger: React.ReactNode;
@@ -25,10 +26,12 @@ export function Dialog({
    *  back's cover bleeds to the edges and carries its own close button).
    *  `title` still labels the dialog for assistive tech. */
   bare?: boolean;
+  /** Start open — the board uses it to open a card the moment it is added. */
+  initialOpen?: boolean;
   /** Render-prop: receives a `close` callback to dismiss the dialog. */
   children: (close: () => void) => React.ReactNode;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState(initialOpen);
   const mounted = React.useSyncExternalStore(subscribeNever, () => true, () => false);
   const close = React.useCallback(() => setOpen(false), []);
 

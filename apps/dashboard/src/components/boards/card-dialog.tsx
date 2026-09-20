@@ -45,12 +45,14 @@ type Props = {
   onCover: (input: { issueId: string; imageId: string | null }) => Promise<Result>;
   onDeleteImage: (input: { issueId: string; imageId: string }) => Promise<Result>;
   onDelete?: () => Promise<Result>;
+  /** Open on mount — for the card that was just added. */
+  initialOpen?: boolean;
 };
 
 export function CardDialog(props: Props) {
   return (
     <Dialog
-      size="xl" bare
+      size="xl" bare initialOpen={props.initialOpen}
       title={props.card.title}
       trigger={
         <button type="button" className="text-left text-[13px] font-medium leading-snug text-text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
