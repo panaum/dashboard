@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState, useTransition } from "react";
-import { MessageSquare, Paperclip } from "lucide-react";
+import { MessageSquare, Paperclip, Plus, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BOARD_STAGES, BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constants";
 import { canMove, inStage, type Role } from "@/lib/boards";
@@ -36,7 +37,10 @@ export function Board({
   onComment,
   onImage,
   onCover,
+  onDeleteImage,
   onDelete,
+  quickAdd,
+  onCreate,
 }: {
   role: Role;
   cards: Card[];
@@ -53,7 +57,12 @@ export function Board({
   onComment: (fd: FormData) => Promise<CommentResult>;
   onImage: (fd: FormData) => Promise<Result>;
   onCover: (input: { issueId: string; imageId: string | null }) => Promise<Result>;
+  onDeleteImage: (input: { issueId: string; imageId: string }) => Promise<Result>;
   onDelete?: (input: { id: string }) => Promise<Result>;
+  /** QA only: "+ Add a card" at the foot of New — a title (and the page, when
+   *  the project has more than one) and nothing else; details on the card. */
+  quickAdd?: { projectId: string; pages: { id: string; name: string }[] };
+  onCreate?: (fd: FormData) => Promise<Result>;
 }) {
   const imageSrc = (id: string) => `${imageBase}${imageBase.includes("?") ? "&" : "?"}id=${id}`;
   const [dragging, setDragging] = useState<string | null>(null);
@@ -143,7 +152,7 @@ export function Board({
                         <CardDialog
                           role={role} card={card} members={members} imageSrc={imageSrc}
                           onMove={(to) => drop(card.id, to, 9999)}
-                          onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover}
+                          onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage}
                           onDelete={onDelete ? () => onDelete({ id: card.id }) : undefined}
                         />
                         {/* Icon row: counts on the left, the assignee's initials on the right. */}
@@ -180,6 +189,9 @@ export function Board({
                   );
                 })}
               </ol>
+              {stage === "NEW" && quickAdd && onCreate && (
+                <QuickAdd projectId={quickAdd.projectId} pages={quickAdd.pages} onCreate={onCreate} />
+              )}
             </section>
           );
         })}
@@ -205,5 +217,50 @@ function MoveMenu({ card, role, onMove }: { card: Card; role: Role; onMove: (to:
         {targets.map((s) => <option key={s} value={s}>{BOARD_STAGE_LABELS[s]}</option>)}
       </select>
     </label>
+  );
+}
+
+
+/** The reference's "+ Add a card": a title, Enter, done. Severity defaults to
+ *  medium and the card is unassigned; both are set from the card back. */
+function QuickAdd({ projectId, pages, onCreate }: {
+  projectId: string; pages: { id: string; name: string }[]; onCreate: (fd: FormData) => Promise<Result>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+              className="mt-1 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[13px] font-medium text-text-secondary hover:bg-card hover:text-text-primary">
+        <Plus className="size-4" /> Add a card
+      </button>
+    );
+  }
+  return (
+    <form
+      className="mt-1 grid gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const form = e.currentTarget; const fd = new FormData(form);
+        fd.set("projectId", projectId); if (pages.length === 1) fd.set("pageId", pages[0].id); fd.set("severity", "MEDIUM");
+        start(async () => { setError(null); const r = await onCreate(fd); if (r.error) setError(r.error); else { form.reset(); setOpen(false); } });
+      }}
+    >
+      {error && <p role="alert" className="rounded-lg bg-error/[0.11] px-3 py-2 text-[12px] text-error-strong">{error}</p>}
+      <textarea name="title" required maxLength={200} rows={2} autoFocus placeholder="Enter a title for this card…"
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } if (e.key === "Escape") setOpen(false); }}
+                className="w-full resize-none rounded-lg border border-border-soft bg-card px-3 py-2 text-[13px] text-text-primary shadow-xs placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent" />
+      {pages.length > 1 && (
+        <select name="pageId" required defaultValue="" aria-label="Page" className="w-full rounded-lg border border-border-soft bg-card px-2.5 py-1.5 text-[12px] text-text-primary">
+          <option value="" disabled>Which page is it on?</option>
+          {pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      )}
+      <div className="flex items-center gap-1">
+        <Button type="submit" size="sm" disabled={pending}>Add card</Button>
+        <button type="button" onClick={() => setOpen(false)} aria-label="Cancel" className="rounded-md p-1.5 text-text-secondary hover:bg-card hover:text-text-primary"><X className="size-4" /></button>
+      </div>
+    </form>
   );
 }

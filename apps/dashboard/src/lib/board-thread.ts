@@ -81,7 +81,7 @@ export type FeedComment = {
   kind: "comment"; id: string; body: string; authorName: string | null; createdAt: string;
 };
 export type FeedEvent = {
-  kind: "event"; id: string; text: string; createdAt: string;
+  kind: "event"; id: string; text: string; actorName: string | null; createdAt: string;
 };
 export type FeedItem = FeedComment | FeedEvent;
 
@@ -106,7 +106,7 @@ export function activityFeed(
 ): FeedItem[] {
   const items: FeedItem[] = [
     ...comments.map((c): FeedComment => ({ kind: "comment", id: c.id, body: c.body, authorName: c.authorName, createdAt: c.createdAt })),
-    ...events.map((e): FeedEvent => ({ kind: "event", id: e.id, text: eventLine(e), createdAt: e.createdAt })),
+    ...events.map((e): FeedEvent => ({ kind: "event", id: e.id, text: eventLine(e), actorName: e.actorName, createdAt: e.createdAt })),
   ];
   return items.sort((a, b) =>
     a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.kind === b.kind ? 0 : a.kind === "event" ? -1 : 1,
@@ -137,6 +137,16 @@ export function formatWhen(iso: string, timeZone?: string): string {
   const time = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone })
     .format(d).replace(/\s?(AM|PM)/, (m) => m.trim().toLowerCase());
   return `${day} ${month}, ${time}`;
+}
+
+/** "28 Aug 2026, 00:15" — the stamp under a comment or attachment, as the
+ *  reference writes it: day-first date with the year, 24-hour time. */
+export function formatStamp(iso: string, timeZone?: string): string {
+  const d = new Date(iso);
+  const part = (opts: Intl.DateTimeFormatOptions, type: string) =>
+    new Intl.DateTimeFormat("en-US", { ...opts, timeZone }).formatToParts(d).find((p) => p.type === type)?.value ?? "";
+  const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(d);
+  return `${part({ day: "numeric" }, "day")} ${part({ month: "short" }, "month")} ${part({ year: "numeric" }, "year")}, ${time}`;
 }
 
 /** Slack mrkdwn escaping: the three characters Slack reads as markup. */

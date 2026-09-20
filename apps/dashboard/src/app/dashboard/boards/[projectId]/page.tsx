@@ -12,7 +12,7 @@ import type { Card } from "@/components/boards/types";
 import { isStage } from "@/lib/boards";
 import { mentionLabelsFor } from "@/lib/board-thread";
 import {
-  addComment, addImage, createCard, deleteCard, mintBoardLink, moveCard, patchCard, revokeBoardLink, setCover, updateCard,
+  addComment, addImage, createCard, deleteCard, deleteImage, mintBoardLink, moveCard, patchCard, revokeBoardLink, setCover, updateCard,
 } from "../actions";
 
 // QA's board for one project. Full fields, every move, the developer link.
@@ -98,7 +98,10 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
         onComment={addComment}
         onImage={addImage}
         onCover={setCover}
+        onDeleteImage={deleteImage}
         onDelete={deleteCard}
+        quickAdd={{ projectId: project.id, pages: project.pages }}
+        onCreate={createCard}
       />
     </>
   );

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  activityFeed, coverOf, eventLine, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, slackMentionText,
+  activityFeed, coverOf, eventLine, formatStamp, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, slackMentionText,
 } from "./board-thread";
 
 const card = { reporterId: "qa-1", reporterName: "Anaum", assigneeId: "dev-1", assigneeName: "Priya Sharma" };
@@ -95,4 +95,9 @@ test("the composer never offers the viewer their own name; the shared session se
   assert.deepEqual(mentionLabelsFor("qa", card, "dev-1"), ["Anaum"]);
   assert.deepEqual(mentionLabelsFor("qa", card, "bootstrap"), ["Priya Sharma", "Anaum"]);
   assert.deepEqual(mentionLabelsFor("developer", card, "dev-1"), ["QA"]);
+});
+
+test("formatStamp writes the date the reference does: day, month, year, 24-hour time", () => {
+  assert.equal(formatStamp("2026-08-27T18:45:00.000Z", "Asia/Kolkata"), "28 Aug 2026, 00:15");
+  assert.equal(formatStamp("2026-09-12T15:04:00.000Z", "UTC"), "12 Sep 2026, 15:04");
 });

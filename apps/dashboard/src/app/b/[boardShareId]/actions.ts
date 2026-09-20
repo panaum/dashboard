@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { commentWithMentions, setCoverImage, storeImage } from "@/app/dashboard/boards/actions";
+import { commentWithMentions, removeImage, setCoverImage, storeImage } from "@/app/dashboard/boards/actions";
 import { boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { canMove, isStage, reorder } from "@/lib/boards";
 import type { BoardStage } from "@/lib/constants";
@@ -96,6 +96,17 @@ export async function developerCover(input: { boardShareId: string; issueId: str
   const card = await cardIn(board.id, input.issueId);
   if (!card) return { error: "Card not found on this board." };
   const r = await setCoverImage(input.issueId, input.imageId);
+  revalidatePath(`/b/${input.boardShareId}`);
+  return r;
+}
+
+/** Remove an attachment from the link. Same scoping as every developer write. */
+export async function developerDeleteImage(input: { boardShareId: string; issueId: string; imageId: string }): Promise<ActionResult> {
+  const board = await boardFor(input.boardShareId);
+  if (!board) return { error: "This link is no longer valid." };
+  const card = await cardIn(board.id, input.issueId);
+  if (!card) return { error: "Card not found on this board." };
+  const r = await removeImage(input.issueId, input.imageId);
   revalidatePath(`/b/${input.boardShareId}`);
   return r;
 }
