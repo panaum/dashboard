@@ -7,7 +7,7 @@ import { getActor } from "@/lib/auth";
 import { type Actor, type Capability, can } from "@/lib/permissions";
 import { headers } from "next/headers";
 import { boardCardPatchSchema, boardCardSchema, boardDatesSchema, boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
-import { parseMentions, participantsFor, slackMentionText } from "@/lib/board-thread";
+import { conversationMembers, escapeSlack, parseMentions, participantsFor, plainText, slackMentionText } from "@/lib/board-thread";
 import { postSlack } from "@/lib/slack";
 import { canMove, isStage, nextOrder, reorder } from "@/lib/boards";
 import type { BoardStage } from "@/lib/constants";
@@ -193,23 +193,26 @@ function checkImage(file: File): string | null {
 
 /** Shared by both sides: the bytes go in the same table either way. With
  *  `cover`, the new image becomes the card's cover in the same transaction. */
-export async function storeImage(issueId: string, file: File, opts: { cover?: boolean } = {}): Promise<ActionResult> {
+export type ImageResult = ActionResult & { id?: string; filename?: string | null };
+
+export async function storeImage(issueId: string, file: File, opts: { cover?: boolean } = {}): Promise<ImageResult> {
   const bad = checkImage(file);
   if (bad) return { error: bad };
   const buf = Buffer.from(await file.arrayBuffer());
   const data = { issueId, contentType: file.type, image: buf, bytes: buf.length, filename: file.name.slice(0, 200) || null };
+  let row: { id: string };
   if (opts.cover) {
-    await db.$transaction([
+    [, row] = await db.$transaction([
       db.issueImage.updateMany({ where: { issueId, isCover: true }, data: { isCover: false } }),
-      db.issueImage.create({ data: { ...data, isCover: true } }),
+      db.issueImage.create({ data: { ...data, isCover: true }, select: { id: true } }),
     ]);
   } else {
-    await db.issueImage.create({ data });
+    row = await db.issueImage.create({ data, select: { id: true } });
   }
-  return { ok: true };
+  return { ok: true, id: row.id, filename: data.filename };
 }
 
-export async function addImage(formData: FormData): Promise<ActionResult> {
+export async function addImage(formData: FormData): Promise<ImageResult> {
   if (!(await guard("issue:write"))) return CANNOT_EDIT;
   const issueId = String(formData.get("issueId") ?? "");
   const file = formData.get("image");
@@ -219,7 +222,7 @@ export async function addImage(formData: FormData): Promise<ActionResult> {
   const r = await storeImage(issueId, file, { cover: !(await hasCover(issueId)) });
   if (r.error) return r;
   revalidatePath(boardPath(projectId));
-  return { ok: true };
+  return r;
 }
 
 // --- The developer link: Page.shareId's mechanism, on the project -----------
@@ -363,6 +366,12 @@ export async function commentWithMentions(input: {
   });
   // Never ping yourself; the row would be noise.
   const mentioned = parseMentions(input.body, participants).filter((id) => id !== input.authorId);
+  // A reply: everyone already talking on this card hears it, tagged or not.
+  const prior = await db.issueComment.findMany({
+    where: { issueId: input.issueId }, select: { authorId: true, mentions: { select: { memberId: true } } },
+  });
+  const replyTo = conversationMembers(prior.map((c) => ({ authorId: c.authorId, mentionedIds: c.mentions.map((m) => m.memberId) })), input.authorId)
+    .filter((id) => !mentioned.includes(id));
 
   const comment = await db.$transaction(async (tx) => {
     const c = await tx.issueComment.create({ data: { issueId: input.issueId, body: input.body, authorId: input.authorId } });
@@ -371,10 +380,11 @@ export async function commentWithMentions(input: {
     }
     return c;
   });
-  if (!mentioned.length) return { ok: true, mentioned: 0, notified: 0 };
+  const recipients = [...mentioned, ...replyTo];
+  if (!recipients.length) return { ok: true, mentioned: 0, notified: 0 };
 
   const members = await db.teamMember.findMany({
-    where: { id: { in: mentioned } }, select: { id: true, name: true, slackUserId: true, role: true },
+    where: { id: { in: recipients } }, select: { id: true, name: true, slackUserId: true, role: true },
   });
   const h = await headers();
   const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host") ?? ""}`;
@@ -386,15 +396,19 @@ export async function commentWithMentions(input: {
     // A developer opens the card through the board link; QA through the app.
     const url = m.role === "DEVELOPER" && project.boardShareId
       ? `${origin}/b/${project.boardShareId}` : `${origin}/dashboard/boards/${project.id}`;
-    const r = await postSlack(slackMentionText({
-      slackUserId: m.slackUserId, byName: input.authorName, cardTitle: issue.title, boardName: project.name, body: input.body, url,
-    }));
+    const isMention = mentioned.includes(m.id);
+    const plain = plainText(input.body);
+    const excerpt = plain.length > 140 ? `${plain.slice(0, 139)}…` : plain;
+    const text = isMention
+      ? slackMentionText({ slackUserId: m.slackUserId, byName: input.authorName, cardTitle: issue.title, boardName: project.name, body: plain, url })
+      : `<@${m.slackUserId}> *${escapeSlack(input.authorName)}* replied on *${escapeSlack(issue.title)}* (${escapeSlack(project.name)}): "${escapeSlack(excerpt)}" — <${url}|Open card>`;
+    const r = await postSlack(text);
     if (r.sent) {
       notified++;
-      await db.issueMention.updateMany({ where: { commentId: comment.id, memberId: m.id }, data: { notifiedAt: new Date() } });
+      if (isMention) await db.issueMention.updateMany({ where: { commentId: comment.id, memberId: m.id }, data: { notifiedAt: new Date() } });
     } else {
       unnotified.push(`${m.name}: ${r.reason}`);
     }
   }
-  return { ok: true, mentioned: mentioned.length, notified, unnotified: unnotified.length ? unnotified : undefined };
+  return { ok: true, mentioned: recipients.length, notified, unnotified: unnotified.length ? unnotified : undefined };
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import {
-  AlignLeft, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Circle, Clock, Ellipsis, ExternalLink, Image as ImageIcon, Link2, MessageSquare, Paperclip, Plus, Repeat, Tag, Trash2, UserRound,
+  AlignLeft, Bold, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Circle, Clock, Ellipsis, ExternalLink, Image as ImageIcon, Italic, Link2, List, ListOrdered, MessageSquare, Paperclip, Plus, Repeat, Strikethrough, Tag, Trash2, UserRound,
 } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,9 @@ import { Popover } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { BOARD_STAGES, BOARD_STAGE_LABELS, SEVERITIES, type BoardStage } from "@/lib/constants";
 import { canMove, type Role } from "@/lib/boards";
-import { activityFeed, coverOf, formatStamp, initials } from "@/lib/board-thread";
+import { activityFeed, coverOf, formatStamp, initials, renderComment } from "@/lib/board-thread";
 import { REMINDER_OPTIONS, dayKey, dueLabel, dueStatus, monthGrid } from "@/lib/board-dates";
-import type { Card, CommentResult, DatesInput, Member, Result } from "./types";
+import type { Card, CommentResult, DatesInput, ImageResult, Member, Result } from "./types";
 
 // The card back, laid out like the reference: the cover bleeds to the edges
 // with the stage pill on it top-left and the controls top-right; below, two
@@ -42,12 +42,15 @@ type Props = {
   onSave?: (fd: FormData) => Promise<Result>;
   onPatch?: (fd: FormData) => Promise<Result>;
   onComment: (fd: FormData) => Promise<CommentResult>;
-  onImage: (fd: FormData) => Promise<Result>;
+  onImage: (fd: FormData) => Promise<ImageResult>;
   onCover: (input: { issueId: string; imageId: string | null }) => Promise<Result>;
   onDeleteImage: (input: { issueId: string; imageId: string }) => Promise<Result>;
   /** QA only: start, due and reminder. */
   onDates?: (input: DatesInput) => Promise<Result>;
   onDelete?: () => Promise<Result>;
+  /** The signed-in person's name, or null on the shared team login (whose
+   *  comments and moves have no author and read "QA"). */
+  viewerName?: string | null;
   /** Open on mount — for the card that was just added. */
   initialOpen?: boolean;
 };
@@ -72,10 +75,11 @@ const chip = "inline-flex items-center gap-1.5 rounded-md border border-border-s
 const heading = "flex items-center gap-2.5 text-[15px] font-semibold text-text-primary";
 const boxField = "w-full rounded-lg border border-border-soft bg-card px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
 
-function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onComment, onImage, onCover, onDeleteImage, onDates, onDelete, close }: Props & { close: () => void }) {
+function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onComment, onImage, onCover, onDeleteImage, onDates, onDelete, viewerName, close }: Props & { close: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(true);
+  const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
   const [tint, setTint] = useState<string | null>(null);
   // Severity ticks the moment it is chosen; the server's value replaces it on
   // the next render, so a refused write cannot leave a phantom tick behind.
@@ -382,8 +386,20 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
             <h3 className={heading}><MessageSquare className="size-5 text-text-secondary" strokeWidth={1.75} /> Comments and activity</h3>
             <button type="button" onClick={() => setShowDetails((v) => !v)} className={chip}>{showDetails ? "Hide details" : "Show details"}</button>
           </div>
+          {qa && viewerName === null && (
+            <p className="rounded-lg bg-warning/[0.14] px-3 py-2 text-[12px] text-warning-strong">
+              You are signed in with the shared team password, so your comments and moves will read “QA” and Slack cannot reach you.
+              Sign in as yourself (Team → your row → give login) to be named.
+            </p>
+          )}
           <Composer
-            participants={card.participants} pending={pending} note={note}
+            participants={card.participants} pending={pending} note={note} prefill={prefill}
+            onAttach={async (file) => {
+              const fd = new FormData(); fd.set("issueId", card.id); fd.set("image", file);
+              const r = await onImage(fd);
+              if (r.error) { setError(r.error); return null; }
+              return { id: r.id!, name: r.filename || file.name || "image" };
+            }}
             onSubmit={(body) => {
               const fd = new FormData(); fd.set("issueId", card.id); fd.set("body", body);
               setNote(null);
@@ -412,7 +428,17 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
                     <div className="min-w-0 flex-1">
                       {item.kind === "comment" ? (<>
                         <p className="text-[12px] text-text-secondary"><span className="font-semibold text-text-primary">{who}</span> · {formatStamp(item.createdAt, tz)}</p>
-                        <p className="mt-1 whitespace-pre-wrap rounded-lg border border-border-soft bg-card px-3 py-2 text-text-primary shadow-xs">{item.body}</p>
+                        <div
+                          className="mt-1 rounded-lg border border-border-soft bg-card px-3 py-2 text-text-primary shadow-xs [&_p]:whitespace-pre-wrap"
+                          // renderComment escapes the text before adding its own tags — see board-thread.ts.
+                          dangerouslySetInnerHTML={{ __html: renderComment(item.body, imageSrc, card.participants) }}
+                        />
+                        {card.participants.includes(who) && (
+                          <button type="button" className="mt-1 text-[11px] font-medium text-text-secondary hover:text-text-primary hover:underline"
+                                  onClick={() => setPrefill({ text: `@${who} `, n: Date.now() })}>
+                            Reply
+                          </button>
+                        )}
                       </>) : (<>
                         <p className="text-text-primary"><span className="font-semibold">{who}</span> {item.text.slice(who.length + 1)}</p>
                         <p className="text-[12px] text-text-secondary underline decoration-border-soft underline-offset-2">{formatStamp(item.createdAt, tz)}</p>
@@ -430,18 +456,49 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
 }
 
 /**
- * "Write a comment…" — a single line until focused, then the box and a Save
- * button. Typing "@" offers the card's participants — reporter and assignee,
- * never the whole team; the server resolves labels to ids against the same
- * list, so this is a convenience, not the authority.
+ * "Write a comment…" — a single line until focused, then the toolbar (bold,
+ * italic, strike, lists, link, attach), the box and Save. Typing "@" offers
+ * the card's participants — reporter and assignee, never the whole team; the
+ * server resolves labels to ids against the same list, so this is a
+ * convenience, not the authority. "Reply" on a comment prefills "@Name ".
  */
-function Composer({ participants, pending, note, onSubmit }: {
-  participants: string[]; pending: boolean; note: string | null; onSubmit: (body: string) => Promise<boolean>;
+function Composer({ participants, pending, note, prefill, onAttach, onSubmit }: {
+  participants: string[]; pending: boolean; note: string | null;
+  prefill: { text: string; n: number } | null;
+  onAttach: (file: File) => Promise<{ id: string; name: string } | null>;
+  onSubmit: (body: string) => Promise<boolean>;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState("");
   const [active, setActive] = useState(false);
   const [menu, setMenu] = useState<{ start: number; query: string; index: number } | null>(null);
+  useEffect(() => {
+    if (!prefill) return;
+    setValue((v) => (v.trim() ? `${v.replace(/\s+$/, "")} ${prefill.text}` : prefill.text)); setActive(true);
+    requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
+  }, [prefill]);
+
+  /** Wrap the selection (or insert a placeholder) with markup. */
+  const wrap = (before: string, after = before, placeholder = "text") => {
+    const el = ref.current; if (!el) return;
+    const s = el.selectionStart ?? value.length, e = el.selectionEnd ?? s;
+    const sel = value.slice(s, e) || placeholder;
+    const next = `${value.slice(0, s)}${before}${sel}${after}${value.slice(e)}`;
+    setValue(next); setActive(true);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(s + before.length, s + before.length + sel.length); });
+  };
+  /** Prefix each selected line (or the current one). */
+  const prefixLines = (prefix: (i: number) => string) => {
+    const el = ref.current; if (!el) return;
+    const s = el.selectionStart ?? value.length, e = el.selectionEnd ?? s;
+    const lineStart = value.lastIndexOf("\n", s - 1) + 1;
+    const lineEnd = value.indexOf("\n", e) === -1 ? value.length : value.indexOf("\n", e);
+    const block = value.slice(lineStart, lineEnd).split("\n").map((l, i) => `${prefix(i)}${l}`).join("\n");
+    const next = `${value.slice(0, lineStart)}${block}${value.slice(lineEnd)}`;
+    setValue(next); setActive(true);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart, lineStart + block.length); });
+  };
+  const insertAtEnd = (text: string) => { setValue((v) => `${v.replace(/\s+$/, "")}${v.trim() ? "\n" : ""}${text}`); setActive(true); };
 
   const detect = (el: HTMLTextAreaElement) => {
     const caret = el.selectionStart ?? el.value.length;
@@ -462,26 +519,56 @@ function Composer({ participants, pending, note, onSubmit }: {
   };
   useEffect(() => { if (menu && options.length === 0) setMenu(null); }, [menu, options.length]);
 
+  const tool = "rounded p-1.5 text-text-secondary hover:bg-card-soft hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
+  const open = active || !!value;
   return (
     <form
       className="relative grid gap-2"
       onSubmit={async (e) => { e.preventDefault(); const body = value.trim(); if (!body) return; if (await onSubmit(body)) { setValue(""); setActive(false); } }}
+      onPaste={async (e) => {
+        // An image pasted INTO the box becomes an attachment referenced from
+        // the comment; the card-level paste listener is told to stand down.
+        const f = Array.from(e.clipboardData.files).find((x) => x.type.startsWith("image/"));
+        if (!f) return;
+        e.preventDefault(); e.stopPropagation();
+        const r = await onAttach(f); if (r) insertAtEnd(`![${r.name}](img:${r.id})`);
+      }}
     >
-      <textarea
-        ref={ref} name="body" rows={active || value ? 3 : 1} required value={value}
-        placeholder="Write a comment…"
-        onFocus={() => setActive(true)}
-        onChange={(e) => { setValue(e.target.value); detect(e.target); }}
-        onKeyDown={(e) => {
-          if (!menu || !options.length) return;
-          if (e.key === "ArrowDown") { e.preventDefault(); setMenu({ ...menu, index: (menu.index + 1) % options.length }); }
-          else if (e.key === "ArrowUp") { e.preventDefault(); setMenu({ ...menu, index: (menu.index - 1 + options.length) % options.length }); }
-          else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pick(options[menu.index]); }
-          else if (e.key === "Escape") { setMenu(null); }
-        }}
-        aria-autocomplete="list" aria-expanded={!!menu && options.length > 0} aria-controls="mention-menu"
-        className={cn(boxField, "resize-none shadow-xs")}
-      />
+      <div className="rounded-lg border border-border-soft bg-card shadow-xs focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-accent">
+        {open && (
+          <div className="flex flex-wrap items-center gap-0.5 border-b border-border-soft px-1.5 py-1" role="toolbar" aria-label="Formatting">
+            <button type="button" className={tool} title="Bold" aria-label="Bold" onClick={() => wrap("**")}><Bold className="size-4" /></button>
+            <button type="button" className={tool} title="Italic" aria-label="Italic" onClick={() => wrap("_")}><Italic className="size-4" /></button>
+            <button type="button" className={tool} title="Strikethrough" aria-label="Strikethrough" onClick={() => wrap("~~")}><Strikethrough className="size-4" /></button>
+            <span className="mx-1 h-4 w-px bg-border-soft" aria-hidden />
+            <button type="button" className={tool} title="Bullet list" aria-label="Bullet list" onClick={() => prefixLines(() => "- ")}><List className="size-4" /></button>
+            <button type="button" className={tool} title="Numbered list" aria-label="Numbered list" onClick={() => prefixLines((i) => `${i + 1}. `)}><ListOrdered className="size-4" /></button>
+            <span className="mx-1 h-4 w-px bg-border-soft" aria-hidden />
+            <button type="button" className={tool} title="Link" aria-label="Link" onClick={() => wrap("", "", "https://")}><Link2 className="size-4" /></button>
+            <label className={cn(tool, "cursor-pointer")} title="Attach an image" aria-label="Attach an image">
+              <Paperclip className="size-4" />
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only"
+                     onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (!f) return; const r = await onAttach(f); if (r) insertAtEnd(`![${r.name}](img:${r.id})`); }} />
+            </label>
+          </div>
+        )}
+        <textarea
+          ref={ref} name="body" rows={open ? 3 : 1} required value={value}
+          placeholder="Write a comment…"
+          onFocus={() => setActive(true)}
+          onChange={(e) => { setValue(e.target.value); detect(e.target); }}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); e.currentTarget.form?.requestSubmit(); return; }
+            if (!menu || !options.length) return;
+            if (e.key === "ArrowDown") { e.preventDefault(); setMenu({ ...menu, index: (menu.index + 1) % options.length }); }
+            else if (e.key === "ArrowUp") { e.preventDefault(); setMenu({ ...menu, index: (menu.index - 1 + options.length) % options.length }); }
+            else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pick(options[menu.index]); }
+            else if (e.key === "Escape") { setMenu(null); }
+          }}
+          aria-autocomplete="list" aria-expanded={!!menu && options.length > 0} aria-controls="mention-menu"
+          className="w-full resize-none bg-transparent px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted focus:outline-none"
+        />
+      </div>
       {menu && options.length > 0 && (
         <ul id="mention-menu" role="listbox" className="absolute left-2 top-full z-10 -mt-1 min-w-40 rounded-lg border border-border-soft bg-card p-1 shadow-md">
           {options.map((p, i) => (
@@ -495,10 +582,10 @@ function Composer({ participants, pending, note, onSubmit }: {
           ))}
         </ul>
       )}
-      {(active || value) && (
+      {open && (
         <div className="flex items-center justify-between gap-3">
           <span className="text-[11px] text-text-secondary" aria-live="polite">
-            {note ?? (participants.length ? `@ to mention ${participants.join(" or ")}` : "")}
+            {note ?? (participants.length ? `@ to mention ${participants.join(" or ")} · ⌘↵ to save` : "⌘↵ to save")}
           </span>
           <div className="flex gap-1">
             <Button type="button" variant="ghost" size="sm" onClick={() => { setValue(""); setActive(false); }}>Cancel</Button>
@@ -506,11 +593,10 @@ function Composer({ participants, pending, note, onSubmit }: {
           </div>
         </div>
       )}
-      {!active && !value && note && <span className="text-[11px] text-text-secondary" aria-live="polite">{note}</span>}
+      {!open && note && <span className="text-[11px] text-text-secondary" aria-live="polite">{note}</span>}
     </form>
   );
 }
-
 
 const STATUS_TONE: Record<string, string> = {
   overdue: "bg-error text-white",

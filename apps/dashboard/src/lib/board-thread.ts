@@ -162,3 +162,83 @@ export function slackMentionText(input: {
   const excerpt = input.body.length > 140 ? `${input.body.slice(0, 139)}…` : input.body;
   return `<@${input.slackUserId}> *${escapeSlack(input.byName)}* mentioned you on *${escapeSlack(input.cardTitle)}* (${escapeSlack(input.boardName)}): "${escapeSlack(excerpt)}" — <${input.url}|Open card>`;
 }
+
+
+// ── comment markup ──────────────────────────────────────────────────────────
+//
+// A comment is plain text with a little markup, the subset of the reference's
+// toolbar that a QA thread actually uses: **bold**, _italic_, ~~struck~~,
+// `code`, "- " bullet lists, "1. " numbered lists, bare URLs, and an image
+// attached from the composer as ![name](img:ID). Rendered by escaping the
+// text FIRST and then adding tags of our own, so nothing typed can become
+// markup. No dependency.
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+function inline(text: string, imageSrc: (id: string) => string, mentions: string[]): string {
+  let t = escapeHtml(text);
+  t = t.replace(/!\[([^\]]*)\]\(img:([A-Za-z0-9_-]+)\)/g, (_m, name, id) =>
+    `<a href="${imageSrc(id)}" target="_blank" rel="noopener" class="block"><img src="${imageSrc(id)}" alt="${name}" class="mt-1 max-h-48 rounded-md ring-1 ring-inset ring-border-soft" /></a>`);
+  t = t.replace(/`([^`\n]+)`/g, '<code class="rounded bg-card-soft px-1 font-mono text-[12px]">$1</code>');
+  t = t.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/(^|[^\w])_([^_\n]+)_(?=$|[^\w])/g, "$1<em>$2</em>");
+  t = t.replace(/~~([^~\n]+)~~/g, "<s>$1</s>");
+  t = t.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)"'])/g, '<a href="$1" target="_blank" rel="noopener" class="text-accent underline underline-offset-2 break-all">$1</a>');
+  for (const label of [...mentions].sort((a, b) => b.length - a.length)) {
+    const re = new RegExp(`(^|[^\\w])@(${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?![\\p{L}\\p{N}_])`, "giu");
+    t = t.replace(re, '$1<span class="rounded bg-accent/[0.12] px-1 font-medium text-accent">@$2</span>');
+  }
+  return t;
+}
+
+/** Comment body → HTML. `mentions` are the labels to highlight as chips. */
+export function renderComment(body: string, imageSrc: (id: string) => string, mentions: string[] = []): string {
+  const lines = body.replace(/\r\n?/g, "\n").split("\n");
+  const out: string[] = [];
+  let list: "ul" | "ol" | null = null;
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const raw of lines) {
+    const bullet = /^\s*[-*]\s+(.*)$/.exec(raw);
+    const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(raw);
+    if (bullet || numbered) {
+      const kind = bullet ? "ul" : "ol";
+      if (list !== kind) { closeList(); list = kind; out.push(kind === "ul" ? '<ul class="my-1 list-disc pl-5">' : '<ol class="my-1 list-decimal pl-5">'); }
+      out.push(`<li>${inline((bullet ?? numbered)![1], imageSrc, mentions)}</li>`);
+      continue;
+    }
+    closeList();
+    if (raw.trim() === "") { out.push('<div class="h-2"></div>'); continue; }
+    out.push(`<p>${inline(raw, imageSrc, mentions)}</p>`);
+  }
+  closeList();
+  return out.join("");
+}
+
+/** The comment as plain words, for a Slack excerpt: markup marks dropped,
+ *  an attached image becomes "[image]", list markers kept as "• ". */
+export function plainText(body: string): string {
+  return body
+    .replace(/\r\n?/g, "\n")
+    .replace(/!\[[^\]]*\]\(img:[A-Za-z0-9_-]+\)/g, "[image]")
+    .replace(/\*\*([^*\n]+)\*\*/g, "$1").replace(/~~([^~\n]+)~~/g, "$1").replace(/`([^`\n]+)`/g, "$1")
+    .replace(/(^|[^\w])_([^_\n]+)_(?=$|[^\w])/g, "$1$2")
+    .replace(/^\s*[-*]\s+/gm, "• ").replace(/^\s*(\d+)[.)]\s+/gm, "$1. ")
+    .replace(/\n{2,}/g, "\n").trim();
+}
+
+/**
+ * Who is in this card's conversation: everyone who has commented and everyone
+ * who has been mentioned, minus the person speaking now. A new comment pings
+ * them all — that is what "reply" means on a thread with no reply button:
+ * once two people are talking on a card, each hears the other.
+ */
+export function conversationMembers(
+  prior: { authorId: string | null; mentionedIds: string[] }[],
+  authorId: string | null,
+): string[] {
+  const ids = new Set<string>();
+  for (const c of prior) { if (c.authorId) ids.add(c.authorId); for (const m of c.mentionedIds) ids.add(m); }
+  if (authorId) ids.delete(authorId);
+  return [...ids];
+}

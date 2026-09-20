@@ -45,3 +45,4 @@ export type DatesInput = { id: string; startAt: string | null; dueAt: string | n
 
 export type Result = { ok?: boolean; error?: string };
 export type CommentResult = Result & { mentioned?: number; notified?: number; unnotified?: string[] };
+export type ImageResult = Result & { id?: string; filename?: string | null };

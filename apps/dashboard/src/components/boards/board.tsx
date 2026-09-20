@@ -8,7 +8,7 @@ import { BOARD_STAGES, BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constan
 import { canMove, inStage, type Role } from "@/lib/boards";
 import { coverOf, initials } from "@/lib/board-thread";
 import { CardDialog, DueChip } from "./card-dialog";
-import type { Card, CommentResult, DatesInput, Member, MoveInput, Result } from "./types";
+import type { Card, CommentResult, DatesInput, ImageResult, Member, MoveInput, Result } from "./types";
 
 // One board for two readers. QA and the developer see the same columns and
 // the same cards; the role decides which moves are offered and which fields
@@ -40,6 +40,7 @@ export function Board({
   onDeleteImage,
   onDates,
   onDelete,
+  viewerName,
   quickAdd,
   onCreate,
 }: {
@@ -56,11 +57,13 @@ export function Board({
   onSave?: (fd: FormData) => Promise<Result>;
   onPatch?: (fd: FormData) => Promise<Result>;
   onComment: (fd: FormData) => Promise<CommentResult>;
-  onImage: (fd: FormData) => Promise<Result>;
+  onImage: (fd: FormData) => Promise<ImageResult>;
   onCover: (input: { issueId: string; imageId: string | null }) => Promise<Result>;
   onDeleteImage: (input: { issueId: string; imageId: string }) => Promise<Result>;
   onDates?: (input: DatesInput) => Promise<Result>;
   onDelete?: (input: { id: string }) => Promise<Result>;
+  /** QA page: the signed-in person's name, or null on the shared team login. */
+  viewerName?: string | null;
   /** QA only: "+ Add a card" at the foot of New — a title (and the page, when
    *  the project has more than one) and nothing else; details on the card. */
   quickAdd?: { projectId: string; pages: { id: string; name: string }[] };
@@ -167,7 +170,7 @@ export function Board({
                           role={role} card={card} members={members} imageSrc={imageSrc}
                           initialOpen={card.id === justAdded}
                           onMove={(to) => drop(card.id, to, 9999)}
-                          onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage} onDates={onDates}
+                          onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage} onDates={onDates} viewerName={viewerName}
                           onDelete={onDelete ? () => onDelete({ id: card.id }) : undefined}
                         />
                         {/* Icon row: counts on the left, the assignee's initials on the right. */}

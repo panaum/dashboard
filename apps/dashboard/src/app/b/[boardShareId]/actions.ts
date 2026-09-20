@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { commentWithMentions, hasCover, removeImage, setCoverImage, storeImage } from "@/app/dashboard/boards/actions";
+import { commentWithMentions, hasCover, removeImage, setCoverImage, storeImage, type ImageResult } from "@/app/dashboard/boards/actions";
 import { boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { canMove, isStage, reorder } from "@/lib/boards";
 import type { BoardStage } from "@/lib/constants";
@@ -74,7 +74,7 @@ export async function developerComment(formData: FormData): Promise<ActionResult
   return r;
 }
 
-export async function developerImage(formData: FormData): Promise<ActionResult> {
+export async function developerImage(formData: FormData): Promise<ImageResult> {
   const boardShareId = String(formData.get("boardShareId") ?? "");
   const issueId = String(formData.get("issueId") ?? "");
   const board = await boardFor(boardShareId);
@@ -86,7 +86,7 @@ export async function developerImage(formData: FormData): Promise<ActionResult> 
   const r = await storeImage(issueId, file, { cover: !(await hasCover(issueId)) });
   if (r.error) return r;
   revalidatePath(`/b/${boardShareId}`);
-  return { ok: true };
+  return r;
 }
 
 /** Choose the cover from the link. Same one-at-a-time write as QA's. */
