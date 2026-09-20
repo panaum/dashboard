@@ -6,7 +6,6 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
 import { Board } from "@/components/boards/board";
-import { NewCardForm } from "@/components/boards/new-card-form";
 import { BoardLinkControls } from "@/components/boards/board-link-controls";
 import type { Card } from "@/components/boards/types";
 import { isStage } from "@/lib/boards";
@@ -75,7 +74,6 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
       <PageHeader
         title={project.name}
         subtitle={`${project.client.name} · ${cards.filter((c) => c.boardStage !== "CLOSED").length} open`}
-        action={<NewCardForm projectId={project.id} pages={project.pages} members={members} onCreate={createCard} />}
       />
       <div className="mb-5">
         <BoardLinkControls

@@ -62,12 +62,15 @@ export function Board({
   /** QA only: "+ Add a card" at the foot of New — a title (and the page, when
    *  the project has more than one) and nothing else; details on the card. */
   quickAdd?: { projectId: string; pages: { id: string; name: string }[] };
-  onCreate?: (fd: FormData) => Promise<Result>;
+  onCreate?: (fd: FormData) => Promise<Result & { id?: string }>;
 }) {
   const imageSrc = (id: string) => `${imageBase}${imageBase.includes("?") ? "&" : "?"}id=${id}`;
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<{ stage: BoardStage; index: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The card just added opens itself — Trello's "+ Add a card" is the only
+  // way in, and everything else is set on the card's back.
+  const [justAdded, setJustAdded] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const byId = useRef(new Map(cards.map((c) => [c.id, c])));
   byId.current = new Map(cards.map((c) => [c.id, c]));
@@ -151,6 +154,7 @@ export function Board({
                       <div className="flex flex-col gap-1.5 py-2.5 pl-4 pr-3">
                         <CardDialog
                           role={role} card={card} members={members} imageSrc={imageSrc}
+                          initialOpen={card.id === justAdded}
                           onMove={(to) => drop(card.id, to, 9999)}
                           onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage}
                           onDelete={onDelete ? () => onDelete({ id: card.id }) : undefined}
@@ -190,7 +194,7 @@ export function Board({
                 })}
               </ol>
               {stage === "NEW" && quickAdd && onCreate && (
-                <QuickAdd projectId={quickAdd.projectId} pages={quickAdd.pages} onCreate={onCreate} />
+                <QuickAdd projectId={quickAdd.projectId} pages={quickAdd.pages} onCreate={onCreate} onAdded={setJustAdded} />
               )}
             </section>
           );
@@ -223,8 +227,9 @@ function MoveMenu({ card, role, onMove }: { card: Card; role: Role; onMove: (to:
 
 /** The reference's "+ Add a card": a title, Enter, done. Severity defaults to
  *  medium and the card is unassigned; both are set from the card back. */
-function QuickAdd({ projectId, pages, onCreate }: {
-  projectId: string; pages: { id: string; name: string }[]; onCreate: (fd: FormData) => Promise<Result>;
+function QuickAdd({ projectId, pages, onCreate, onAdded }: {
+  projectId: string; pages: { id: string; name: string }[];
+  onCreate: (fd: FormData) => Promise<Result & { id?: string }>; onAdded: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -244,7 +249,7 @@ function QuickAdd({ projectId, pages, onCreate }: {
         e.preventDefault();
         const form = e.currentTarget; const fd = new FormData(form);
         fd.set("projectId", projectId); if (pages.length === 1) fd.set("pageId", pages[0].id); fd.set("severity", "MEDIUM");
-        start(async () => { setError(null); const r = await onCreate(fd); if (r.error) setError(r.error); else { form.reset(); setOpen(false); } });
+        start(async () => { setError(null); const r = await onCreate(fd); if (r.error) setError(r.error); else { form.reset(); setOpen(false); if (r.id) onAdded(r.id); } });
       }}
     >
       {error && <p role="alert" className="rounded-lg bg-error/[0.11] px-3 py-2 text-[12px] text-error-strong">{error}</p>}

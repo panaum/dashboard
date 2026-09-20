@@ -45,7 +45,7 @@ async function projectOf(issueId: string): Promise<string | null> {
 
 /** Create a card straight onto a project's board, or promote an existing
  *  page issue onto it. Creation is itself the first IssueEvent. */
-export async function createCard(formData: FormData): Promise<ActionResult> {
+export async function createCard(formData: FormData): Promise<ActionResult & { id?: string }> {
   const actor = await guard("issue:write");
   if (!actor) return CANNOT_EDIT;
   const projectId = String(formData.get("projectId") ?? "");
@@ -94,7 +94,7 @@ export async function createCard(formData: FormData): Promise<ActionResult> {
     if (r.error) { revalidatePath(boardPath(projectId)); return { error: `Card added, but the screenshot failed: ${r.error}` }; }
   }
   revalidatePath(boardPath(projectId));
-  return { ok: true };
+  return { ok: true, id: issueId };
 }
 
 export async function updateCard(formData: FormData): Promise<ActionResult> {
