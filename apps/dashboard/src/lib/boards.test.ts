@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  canMove, developerView, inStage, isBounceBack, nextOrder, reorder,
+  canMove, developerView, developerAuthorLabel, inStage, isBounceBack, nextOrder, reorder,
 } from "./boards";
 
 // ── the quality signal ──────────────────────────────────────────────────────
@@ -89,4 +89,20 @@ test("dropping a card at an index re-numbers the stage densely", () => {
     [{ id: "a", boardOrder: 0 }, { id: "z", boardOrder: 1 }, { id: "b", boardOrder: 2 }, { id: "c", boardOrder: 3 }]);
   // An index past the end clamps to the bottom rather than leaving a gap.
   assert.deepEqual(reorder(cards, "NEW", "a", 99).map((r) => r.id), ["b", "c", "a"]);
+});
+
+// ── the thread, as the developer may see it ─────────────────────────────────
+
+test("developer view names only the card's own assignee on the thread", () => {
+  const dev = "dev-1";
+  // The developer's own words carry their name.
+  assert.equal(developerAuthorLabel({ authorId: dev, authorName: "Priya" }, dev), "Priya");
+  // The reporter's name never crosses — that is the whole point of this view.
+  assert.equal(developerAuthorLabel({ authorId: "qa-1", authorName: "Anaum" }, dev), "QA");
+  // A comment from the shared session has no author; it is still "QA", never "Developer".
+  assert.equal(developerAuthorLabel({ authorId: null, authorName: null }, dev), "QA");
+  // Unassigned card: nobody is "the developer", so nobody is named.
+  assert.equal(developerAuthorLabel({ authorId: dev, authorName: "Priya" }, null), "QA");
+  // Assignee row gone (SetNull) but id still matches: a label, not a leak.
+  assert.equal(developerAuthorLabel({ authorId: dev, authorName: null }, dev), "Developer");
 });

@@ -126,10 +126,10 @@ function Body({ role, card, members, imageSrc, onSave, onComment, onImage, onDel
           </ul>
         )}
         <form
-          className="flex items-center gap-2"
+          className="flex flex-wrap items-center gap-2"
           onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget; const fd = new FormData(f); fd.set("issueId", card.id); run(() => onImage(fd), () => f.reset()); }}
         >
-          <input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/gif" required className="text-[12px] text-text-secondary" />
+          <input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/gif" required className="min-w-0 max-w-full text-[12px] text-text-secondary" />
           <Button type="submit" variant="ghost" disabled={pending}>Upload</Button>
         </form>
       </section>
