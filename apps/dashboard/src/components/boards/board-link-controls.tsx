@@ -8,10 +8,13 @@ import { Button } from "@/components/ui/button";
 // exactly what they are handing over.
 
 export function BoardLinkControls({
-  boardShareId, origin, onMint, onRevoke,
+  boardShareId, origin, createdBy, createdAt, onMint, onRevoke,
 }: {
   boardShareId: string | null;
   origin: string;
+  /** Who minted the live link and when — null minter means the shared session. */
+  createdBy?: string | null;
+  createdAt?: string | null;
   onMint: () => Promise<{ ok?: boolean; error?: string; boardShareId?: string }>;
   onRevoke: () => Promise<{ ok?: boolean; error?: string }>;
 }) {
@@ -31,6 +34,11 @@ export function BoardLinkControls({
                   onClick={() => { if (confirm("Revoke the developer link? It stops working immediately.")) start(async () => { await onRevoke(); }); }}>
             Revoke
           </Button>
+          {createdAt && (
+            <span className="basis-full text-[11px] text-text-secondary">
+              Created {createdBy ? `by ${createdBy}, ` : "by the shared login, "}{createdAt}
+            </span>
+          )}
         </>
       ) : (
         <>

@@ -10,7 +10,7 @@ import { NewCardForm } from "@/components/boards/new-card-form";
 import { BoardLinkControls } from "@/components/boards/board-link-controls";
 import type { Card } from "@/components/boards/types";
 import { isStage } from "@/lib/boards";
-import { participantsFor } from "@/lib/board-thread";
+import { mentionLabelsFor } from "@/lib/board-thread";
 import {
   addComment, addImage, createCard, deleteCard, mintBoardLink, moveCard, patchCard, revokeBoardLink, setCover, updateCard,
 } from "../actions";
@@ -18,13 +18,14 @@ import {
 // QA's board for one project. Full fields, every move, the developer link.
 
 export default async function ProjectBoardPage({ params }: { params: Promise<{ projectId: string }> }) {
-  await requireAuth();
+  const actor = await requireAuth();
   const { projectId } = await params;
   const [project, members] = await Promise.all([
     db.project.findUnique({
       where: { id: projectId },
       select: {
-        id: true, name: true, boardShareId: true, client: { select: { name: true } },
+        id: true, name: true, boardShareId: true, boardShareCreatedAt: true,
+        boardShareCreatedBy: { select: { name: true } }, client: { select: { name: true } },
         pages: {
           select: {
             id: true, name: true,
@@ -58,9 +59,9 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
       id: e.id, actorName: e.actor?.name ?? null, fromStage: isStage(e.fromStage) ? e.fromStage : null, toStage: e.toStage, createdAt: e.createdAt.toISOString(),
     }] : []),
     images: i.images.map((img) => ({ ...img, createdAt: img.createdAt.toISOString() })),
-    participants: participantsFor("qa", {
+    participants: mentionLabelsFor("qa", {
       reporterId: i.reporterId, reporterName: i.reporter?.name ?? null, assigneeId: i.assigneeId, assigneeName: i.assignee?.name ?? null,
-    }).map((p) => p.label),
+    }, actor.id),
   }] : []);
 
   const h = await headers();
@@ -79,6 +80,8 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
       <div className="mb-5">
         <BoardLinkControls
           boardShareId={project.boardShareId}
+          createdBy={project.boardShareCreatedBy?.name ?? null}
+          createdAt={project.boardShareCreatedAt ? mintedOn(project.boardShareCreatedAt) : null}
           origin={origin}
           onMint={async () => { "use server"; return mintBoardLink({ projectId }); }}
           onRevoke={async () => { "use server"; return revokeBoardLink({ projectId }); }}
@@ -99,4 +102,11 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
       />
     </>
   );
+}
+
+/** "20 Sep 2026" — en-US month parts, since en-GB abbreviates September as "Sept". */
+function mintedOn(d: Date): string {
+  const part = (opts: Intl.DateTimeFormatOptions, type: string) =>
+    new Intl.DateTimeFormat("en-US", { ...opts, timeZone: "UTC" }).formatToParts(d).find((p) => p.type === type)?.value ?? "";
+  return `${part({ day: "numeric" }, "day")} ${part({ month: "short" }, "month")} ${part({ year: "numeric" }, "year")}`;
 }
