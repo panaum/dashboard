@@ -43,6 +43,11 @@ model Project {
   // minted behind a permission), scoped to this project. Nullable; unset =
   // no developer link exists.
   boardShareId String? @unique
+  // Who minted the developer link and when — set with the token, cleared
+  // with it. Null minter = the shared session, like every other attribution.
+  boardShareCreatedBy   TeamMember? @relation("BoardLinkMinter", fields: [boardShareCreatedById], references: [id], onDelete: SetNull)
+  boardShareCreatedById String?
+  boardShareCreatedAt   DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -223,6 +228,7 @@ model TeamMember {
   issueEvents     IssueEvent[]   @relation("EventActor")
   issueComments   IssueComment[] @relation("CommentAuthor")
   mentionedIn     IssueMention[] @relation("Mentioned")
+  mintedBoardLinks Project[]      @relation("BoardLinkMinter")
   createdAt   DateTime @default(now())
 }
 

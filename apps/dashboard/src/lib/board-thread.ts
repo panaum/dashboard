@@ -69,6 +69,14 @@ export function parseMentions(body: string, participants: Participant[]): string
   return hits.sort((a, b) => a.at - b.at).map((h) => h.id);
 }
 
+/** The labels a viewer's composer offers after "@": the card's participants
+ *  minus the viewer. The server still resolves whatever is typed against the
+ *  full list and drops self-mentions; this only keeps your own name out of the
+ *  menu. The shared session has no id on the card, so it sees everyone. */
+export function mentionLabelsFor(role: Role, card: Parameters<typeof participantsFor>[1], viewerId: string | null): string[] {
+  return participantsFor(role, card).filter((p) => p.id !== viewerId).map((p) => p.label);
+}
+
 export type FeedComment = {
   kind: "comment"; id: string; body: string; authorName: string | null; createdAt: string;
 };

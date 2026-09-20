@@ -189,13 +189,19 @@ export async function addImage(formData: FormData): Promise<ActionResult> {
 // --- The developer link: Page.shareId's mechanism, on the project -----------
 
 export async function mintBoardLink(input: { projectId: string }): Promise<ActionResult & { boardShareId?: string }> {
-  if (!(await guard("sharelink:mint"))) return { error: "Your access level cannot share boards." };
+  const actor = await guard("sharelink:mint");
+  if (!actor) return { error: "Your access level cannot share boards." };
   const existing = await db.project.findUnique({ where: { id: input.projectId }, select: { boardShareId: true } });
   if (!existing) return { error: "Project not found." };
   let boardShareId = existing.boardShareId ?? null;
   if (!boardShareId) {
     boardShareId = randomBytes(12).toString("base64url");
-    await db.project.update({ where: { id: input.projectId }, data: { boardShareId } });
+    // The token and its attribution are one write: a link that exists
+    // without a minter is exactly the state this column removes.
+    await db.project.update({
+      where: { id: input.projectId },
+      data: { boardShareId, boardShareCreatedById: memberId(actor), boardShareCreatedAt: new Date() },
+    });
   }
   revalidatePath(boardPath(input.projectId));
   return { ok: true, boardShareId };
@@ -203,7 +209,10 @@ export async function mintBoardLink(input: { projectId: string }): Promise<Actio
 
 export async function revokeBoardLink(input: { projectId: string }): Promise<ActionResult> {
   if (!(await guard("sharelink:mint"))) return { error: "Your access level cannot share boards." };
-  await db.project.update({ where: { id: input.projectId }, data: { boardShareId: null } });
+  await db.project.update({
+    where: { id: input.projectId },
+    data: { boardShareId: null, boardShareCreatedById: null, boardShareCreatedAt: null },
+  });
   revalidatePath(boardPath(input.projectId));
   return { ok: true };
 }

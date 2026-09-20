@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  activityFeed, coverOf, eventLine, formatWhen, initials, parseMentions, participantsFor, slackMentionText,
+  activityFeed, coverOf, eventLine, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, slackMentionText,
 } from "./board-thread";
 
 const card = { reporterId: "qa-1", reporterName: "Anaum", assigneeId: "dev-1", assigneeName: "Priya Sharma" };
@@ -88,4 +88,11 @@ test("the Slack line pings by id, escapes markup, and truncates long bodies", ()
   });
   assert.ok(t.startsWith("<@U0AB> *Anaum &lt;QA&gt;* mentioned you on *A &amp; B* (LP): \"" + "x".repeat(139) + "…\""));
   assert.ok(t.endsWith("<https://d.example/b/t|Open card>"));
+});
+
+test("the composer never offers the viewer their own name; the shared session sees everyone", () => {
+  assert.deepEqual(mentionLabelsFor("qa", card, "qa-1"), ["Priya Sharma"]);
+  assert.deepEqual(mentionLabelsFor("qa", card, "dev-1"), ["Anaum"]);
+  assert.deepEqual(mentionLabelsFor("qa", card, "bootstrap"), ["Priya Sharma", "Anaum"]);
+  assert.deepEqual(mentionLabelsFor("developer", card, "dev-1"), ["QA"]);
 });

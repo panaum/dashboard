@@ -68,6 +68,24 @@ browser tests, PageSpeed).
   math in these: `deliveryMonth` is a stored `"2026-01"` string (sort lexically) and
   `delayDays` is a stored integer — no clock reads, so results are deterministic.
 
+## Verifying uploads and rendering
+
+DB and DOM assertions have twice been green while the rendered output was
+broken (a dev server that never hydrated under Playwright; a hand-encoded test
+PNG with bad CRCs that the browser refused to paint). So, for any change that
+touches uploads, images, or rendered UI:
+
+- Verify against a **production build** (`npm run build && next start`), never
+  `next dev` — under Playwright the dev server can serve pages whose client
+  components never hydrate, and clicks silently do nothing.
+- Make test images by **screenshotting a rendered element**; never hand-encode
+  bytes. Assert `naturalWidth > 0` on every `<img>` under test.
+- Take real screenshots at **1280 and 390**, open them, and look. The DOM
+  check is necessary, not sufficient.
+- Say in the PR which screenshots were inspected.
+- Never write test rows into production for this. Use a scratch Postgres with
+  the repo's migrations applied via `prisma migrate deploy` (never `db push`).
+
 ## Public QA certificates
 
 - `Page.shareId` (nullable, unique) is an opt-in token. The page-detail `actions.ts`
