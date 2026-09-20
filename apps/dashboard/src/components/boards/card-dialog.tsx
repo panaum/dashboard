@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import {
-  AlignLeft, Circle, Ellipsis, ExternalLink, Image as ImageIcon, Link2, MessageSquare, Paperclip, Plus, Repeat, Tag, Trash2, UserRound,
+  AlignLeft, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Circle, Clock, Ellipsis, ExternalLink, Image as ImageIcon, Link2, MessageSquare, Paperclip, Plus, Repeat, Tag, Trash2, UserRound,
 } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 import { BOARD_STAGES, BOARD_STAGE_LABELS, SEVERITIES, type BoardStage } from "@/lib/constants";
 import { canMove, type Role } from "@/lib/boards";
 import { activityFeed, coverOf, formatStamp, initials } from "@/lib/board-thread";
-import type { Card, CommentResult, Member, Result } from "./types";
+import { REMINDER_OPTIONS, dayKey, dueLabel, dueStatus, monthGrid } from "@/lib/board-dates";
+import type { Card, CommentResult, DatesInput, Member, Result } from "./types";
 
 // The card back, laid out like the reference: the cover bleeds to the edges
 // with the stage pill on it top-left and the controls top-right; below, two
@@ -44,6 +45,8 @@ type Props = {
   onImage: (fd: FormData) => Promise<Result>;
   onCover: (input: { issueId: string; imageId: string | null }) => Promise<Result>;
   onDeleteImage: (input: { issueId: string; imageId: string }) => Promise<Result>;
+  /** QA only: start, due and reminder. */
+  onDates?: (input: DatesInput) => Promise<Result>;
   onDelete?: () => Promise<Result>;
   /** Open on mount — for the card that was just added. */
   initialOpen?: boolean;
@@ -69,7 +72,7 @@ const chip = "inline-flex items-center gap-1.5 rounded-md border border-border-s
 const heading = "flex items-center gap-2.5 text-[15px] font-semibold text-text-primary";
 const boxField = "w-full rounded-lg border border-border-soft bg-card px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
 
-function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onComment, onImage, onCover, onDeleteImage, onDelete, close }: Props & { close: () => void }) {
+function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onComment, onImage, onCover, onDeleteImage, onDates, onDelete, close }: Props & { close: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(true);
@@ -164,10 +167,17 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
         <div className="absolute left-4 top-3">{stagePill}</div>
         <div className="absolute right-14 top-3 flex items-center gap-1.5">
           {cover && (
-            <button type="button" title="Remove cover" aria-label="Remove cover" disabled={pending} className={iconBtn(true)}
-                    onClick={() => run(() => onCover({ issueId: card.id, imageId: null }))}>
-              <ImageIcon className="size-4" />
-            </button>
+            <Popover align="end" width="w-48" title="Cover"
+              trigger={({ toggle }) => (
+                <button type="button" aria-label="Cover" onClick={toggle} className={iconBtn(true)}><ImageIcon className="size-4" /></button>
+              )}>
+              {(closeMenu) => (
+                <button type="button" disabled={pending} className="w-full rounded-md border border-border-soft bg-card px-3 py-2 text-left font-medium text-text-primary hover:bg-card-soft"
+                        onClick={() => { closeMenu(); run(() => onCover({ issueId: card.id, imageId: null })); }}>
+                  Remove cover
+                </button>
+              )}
+            </Popover>
           )}
           {qa && onDelete && (
             <Popover align="end" width="w-56" title="Card actions"
@@ -256,6 +266,16 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
                   </div>
                 )}
               </Popover>
+              {onDates && (
+                <Popover title="Dates" width="w-[22rem]"
+                  trigger={({ toggle }) => <button type="button" onClick={toggle} className={chip}><Clock className="size-4" /> Dates</button>}>
+                  {(closeMenu) => (
+                    <DatesForm card={card} tz={tz} pending={pending}
+                      onSave={(input) => run(() => onDates({ id: card.id, ...input }), closeMenu)}
+                      onRemove={() => run(() => onDates({ id: card.id, startAt: null, dueAt: null, dueReminderMinutes: null }), closeMenu)} />
+                  )}
+                </Popover>
+              )}
               <button type="button" aria-pressed={!!card.recurring} onClick={() => saveDetails({ recurring: !card.recurring })}
                       className={cn(chip, card.recurring && "border-info/40 bg-info/[0.14]")}>
                 <Repeat className="size-4" /> Recurring
@@ -264,8 +284,13 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
           </div>
 
           {/* What is set: the reference's Labels / Members blocks under the title. */}
-          {(sev || card.assigneeName || card.link) && (
+          {(sev || card.assigneeName || card.link || card.dueAt || card.startAt) && (
             <div className="ml-8 flex flex-wrap gap-x-6 gap-y-3">
+              {(card.dueAt || card.startAt) && (
+                <div className="grid gap-1"><span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">{card.dueAt && card.startAt ? "Dates" : card.dueAt ? "Due date" : "Start date"}</span>
+                  <DueChip card={card} tz={tz} large />
+                </div>
+              )}
               {sev && (
                 <div className="grid gap-1"><span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">Severity</span>
                   <span className={cn("inline-flex h-7 items-center rounded-md px-2.5 text-[12px] font-medium text-white", sev.bar)}>{sev.label}</span></div>
@@ -482,6 +507,140 @@ function Composer({ participants, pending, note, onSubmit }: {
         </div>
       )}
       {!active && !value && note && <span className="text-[11px] text-text-secondary" aria-live="polite">{note}</span>}
+    </form>
+  );
+}
+
+
+const STATUS_TONE: Record<string, string> = {
+  overdue: "bg-error text-white",
+  "due-soon": "bg-warning text-text-primary",
+  done: "bg-success/[0.18] text-success-strong",
+  scheduled: "bg-card-soft text-text-primary",
+  none: "",
+};
+
+/** "21 Sep, 4:28pm" with the status colour: red past due, amber within a day,
+ *  green once the card is completed or closed. Exported for the board face. */
+export function DueChip({ card, tz, large }: { card: { startAt: string | null; dueAt: string | null; boardStage: BoardStage }; tz?: string; large?: boolean }) {
+  const status = dueStatus(card.dueAt, card.boardStage, new Date());
+  const text = card.dueAt
+    ? `${card.startAt ? `${dueLabel(card.startAt, tz).split(",")[0]} – ` : ""}${dueLabel(card.dueAt, tz)}`
+    : card.startAt ? `Starts ${dueLabel(card.startAt, tz).split(",")[0]}` : "";
+  if (!text) return null;
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 rounded-md font-medium", large ? "h-7 px-2.5 text-[12px]" : "px-1.5 py-0.5 text-[11px]", STATUS_TONE[status] || "bg-card-soft text-text-primary")}
+          title={status === "overdue" ? "Past due" : status === "due-soon" ? "Due within a day" : status === "done" ? "Complete" : undefined}>
+      <Clock className={large ? "size-3.5" : "size-3"} aria-hidden />
+      {text}{status === "overdue" && large ? " · Overdue" : ""}{status === "done" && large ? " · Complete" : ""}
+    </span>
+  );
+}
+
+/** Local "2026-09-21" and "16:28" for an ISO instant, in the viewer's zone. */
+function localParts(iso: string | null): { date: string; time: string } {
+  if (!iso) return { date: "", time: "" };
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return { date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
+}
+const toIso = (date: string, time: string) => (date ? new Date(`${date}T${time || "12:00"}`).toISOString() : null);
+
+/**
+ * The reference's Dates popover: a month calendar, an optional start date,
+ * an optional due date with a time, a reminder, Save and Remove. Picking a
+ * day on the calendar sets the due date (or the start date while its box is
+ * focused). Everything is local time in the viewer's browser and stored as
+ * an instant.
+ */
+function DatesForm({ card, tz, pending, onSave, onRemove }: {
+  card: Card; tz?: string; pending: boolean;
+  onSave: (input: { startAt: string | null; dueAt: string | null; dueReminderMinutes: number | null }) => void;
+  onRemove: () => void;
+}) {
+  const initialDue = localParts(card.dueAt); const initialStart = localParts(card.startAt);
+  const [hasStart, setHasStart] = useState(!!card.startAt);
+  const [start, setStart] = useState(initialStart.date);
+  const [hasDue, setHasDue] = useState(!!card.dueAt || !card.startAt);
+  const [due, setDue] = useState(initialDue.date || localParts(new Date(Date.now() + 86400000).toISOString()).date);
+  const [time, setTime] = useState(initialDue.time || "12:00");
+  const [reminder, setReminder] = useState<number | null>(card.dueReminderMinutes ?? (card.dueAt ? null : 60 * 24));
+  const [picking, setPicking] = useState<"due" | "start">("due");
+  const anchor = new Date(`${(picking === "start" ? start : due) || localParts(new Date().toISOString()).date}T12:00`);
+  const [view, setView] = useState({ y: anchor.getFullYear(), m: anchor.getMonth() });
+  const todayKey = localParts(new Date().toISOString()).date;
+  const grid = monthGrid(view.y, view.m);
+  const monthName = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(view.y, view.m, 1));
+  const pick = (d: Date) => {
+    const key = dayKey(d);
+    if (picking === "start") { setStart(key); setHasStart(true); } else { setDue(key); setHasDue(true); }
+  };
+  const field = "rounded-md border border-border-soft bg-card px-2 py-1.5 text-[13px] text-text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
+  return (
+    <form className="grid gap-3" onSubmit={(e) => {
+      e.preventDefault();
+      onSave({ startAt: hasStart && start ? toIso(start, "09:00") : null, dueAt: hasDue && due ? toIso(due, time) : null, dueReminderMinutes: hasDue ? reminder : null });
+    }}>
+      <div className="grid gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className="flex gap-0.5">
+            <button type="button" aria-label="Previous year" onClick={() => setView({ y: view.y - 1, m: view.m })} className="rounded p-1 hover:bg-card-soft"><ChevronsLeft className="size-4" /></button>
+            <button type="button" aria-label="Previous month" onClick={() => setView(view.m === 0 ? { y: view.y - 1, m: 11 } : { y: view.y, m: view.m - 1 })} className="rounded p-1 hover:bg-card-soft"><ChevronLeft className="size-4" /></button>
+          </span>
+          <span className="font-semibold text-text-primary">{monthName}</span>
+          <span className="flex gap-0.5">
+            <button type="button" aria-label="Next month" onClick={() => setView(view.m === 11 ? { y: view.y + 1, m: 0 } : { y: view.y, m: view.m + 1 })} className="rounded p-1 hover:bg-card-soft"><ChevronRight className="size-4" /></button>
+            <button type="button" aria-label="Next year" onClick={() => setView({ y: view.y + 1, m: view.m })} className="rounded p-1 hover:bg-card-soft"><ChevronsRight className="size-4" /></button>
+          </span>
+        </div>
+        <div className="grid grid-cols-7 text-center text-[11px] font-semibold text-text-secondary">
+          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <span key={d} className="py-1">{d}</span>)}
+        </div>
+        <div className="grid grid-cols-7 gap-y-0.5 text-center" role="grid" aria-label="Calendar">
+          {grid.flat().map((d) => {
+            const key = dayKey(d); const inMonth = d.getUTCMonth() === view.m;
+            const selected = key === (picking === "start" ? start : due) && (picking === "start" ? hasStart : hasDue);
+            const other = key === (picking === "start" ? due : start) && (picking === "start" ? hasDue : hasStart);
+            return (
+              <button key={key} type="button" onClick={() => pick(d)} aria-label={key} aria-pressed={selected}
+                      className={cn("mx-auto flex size-8 items-center justify-center rounded-md text-[13px]",
+                        inMonth ? "text-text-primary" : "text-text-muted",
+                        key === todayKey && "font-semibold text-accent underline underline-offset-4",
+                        other && "bg-card-soft",
+                        selected && "bg-accent/[0.14] text-accent ring-1 ring-inset ring-accent/40",
+                        "hover:bg-card-soft")}>
+                {d.getUTCDate()}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <label className="grid gap-1">
+        <span className="text-[12px] font-semibold text-text-secondary">Start date</span>
+        <span className="flex items-center gap-2">
+          <input type="checkbox" checked={hasStart} onChange={(e) => { setHasStart(e.target.checked); if (e.target.checked) { setPicking("start"); if (!start) setStart(todayKey); } }} className="size-4 accent-accent" aria-label="Has start date" />
+          <input type="date" value={start} disabled={!hasStart} onFocus={() => setPicking("start")} onChange={(e) => setStart(e.target.value)} className={cn(field, "w-40 disabled:opacity-50")} aria-label="Start date" />
+        </span>
+      </label>
+      <label className="grid gap-1">
+        <span className="text-[12px] font-semibold text-text-secondary">Due date</span>
+        <span className="flex items-center gap-2">
+          <input type="checkbox" checked={hasDue} onChange={(e) => { setHasDue(e.target.checked); if (e.target.checked) setPicking("due"); }} className="size-4 accent-accent" aria-label="Has due date" />
+          <input type="date" value={due} disabled={!hasDue} onFocus={() => setPicking("due")} onChange={(e) => setDue(e.target.value)} className={cn(field, "w-40 disabled:opacity-50")} aria-label="Due date" />
+          <input type="time" value={time} disabled={!hasDue} onChange={(e) => setTime(e.target.value)} className={cn(field, "w-28 disabled:opacity-50")} aria-label="Due time" />
+        </span>
+      </label>
+      <label className="grid gap-1">
+        <span className="text-[12px] font-semibold text-text-secondary">Set due date reminder</span>
+        <select value={reminder === null ? "" : String(reminder)} disabled={!hasDue} onChange={(e) => setReminder(e.target.value === "" ? null : Number(e.target.value))} className={cn(field, "w-full disabled:opacity-50")} aria-label="Reminder">
+          {REMINDER_OPTIONS.map((o) => <option key={String(o.value)} value={o.value === null ? "" : o.value}>{o.label}</option>)}
+        </select>
+        <span className="text-[11px] text-text-secondary">Reminders go to the assignee and the reporter on Slack{tz ? ` · times in ${tz}` : ""}.</span>
+      </label>
+      <div className="grid gap-1.5">
+        <Button type="submit" size="sm" disabled={pending}>Save</Button>
+        <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={onRemove}>Remove</Button>
+      </div>
     </form>
   );
 }

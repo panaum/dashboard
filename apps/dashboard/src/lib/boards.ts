@@ -65,6 +65,8 @@ export type DeveloperCard = {
   boardOrder: number;
   assigneeId: string | null;
   createdAt: Date | string;
+  startAt: Date | string | null;
+  dueAt: Date | string | null;
 };
 
 /**
@@ -87,6 +89,8 @@ export function developerView<T extends DeveloperCard & Record<string, unknown>>
     boardOrder: card.boardOrder,
     assigneeId: card.assigneeId ?? null,
     createdAt: card.createdAt,
+    startAt: card.startAt ?? null,
+    dueAt: card.dueAt ?? null,
   };
 }
 

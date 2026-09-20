@@ -70,6 +70,14 @@ export const boardCardPatchSchema = z.object({
   description: z.string().trim().max(4000).optional(),
 });
 
+// Dates from the card's Dates popover. ISO strings or null; the reminder is
+// minutes before the due date, from the fixed list in board-dates.ts.
+export const boardDatesSchema = z.object({
+  startAt: z.string().datetime().nullable(),
+  dueAt: z.string().datetime().nullable(),
+  dueReminderMinutes: z.number().int().min(0).max(60 * 24 * 14).nullable(),
+});
+
 export const commentSchema = z.object({
   body: z.string().trim().min(1, "Say something").max(4000),
 });

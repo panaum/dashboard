@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
 import { BOARD_STAGES, BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constants";
 import { canMove, inStage, type Role } from "@/lib/boards";
 import { coverOf, initials } from "@/lib/board-thread";
-import { CardDialog } from "./card-dialog";
-import type { Card, CommentResult, Member, MoveInput, Result } from "./types";
+import { CardDialog, DueChip } from "./card-dialog";
+import type { Card, CommentResult, DatesInput, Member, MoveInput, Result } from "./types";
 
 // One board for two readers. QA and the developer see the same columns and
 // the same cards; the role decides which moves are offered and which fields
@@ -38,6 +38,7 @@ export function Board({
   onImage,
   onCover,
   onDeleteImage,
+  onDates,
   onDelete,
   quickAdd,
   onCreate,
@@ -58,6 +59,7 @@ export function Board({
   onImage: (fd: FormData) => Promise<Result>;
   onCover: (input: { issueId: string; imageId: string | null }) => Promise<Result>;
   onDeleteImage: (input: { issueId: string; imageId: string }) => Promise<Result>;
+  onDates?: (input: DatesInput) => Promise<Result>;
   onDelete?: (input: { id: string }) => Promise<Result>;
   /** QA only: "+ Add a card" at the foot of New — a title (and the page, when
    *  the project has more than one) and nothing else; details on the card. */
@@ -165,12 +167,13 @@ export function Board({
                           role={role} card={card} members={members} imageSrc={imageSrc}
                           initialOpen={card.id === justAdded}
                           onMove={(to) => drop(card.id, to, 9999)}
-                          onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage}
+                          onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage} onDates={onDates}
                           onDelete={onDelete ? () => onDelete({ id: card.id }) : undefined}
                         />
                         {/* Icon row: counts on the left, the assignee's initials on the right. */}
                         <div className="flex items-end justify-between gap-2">
                           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-text-secondary">
+                            {(card.dueAt || card.startAt) && <DueChip card={card} />}
                             {card.images.length > 0 && (
                               <span className="inline-flex items-center gap-1" title={`${card.images.length} attachment${card.images.length === 1 ? "" : "s"}`}>
                                 <Paperclip className="size-3.5" strokeWidth={1.75} aria-hidden />
