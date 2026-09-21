@@ -13,6 +13,7 @@ import { BOARD_STAGES, BOARD_STAGE_LABELS, SEVERITIES, type BoardStage } from "@
 import { canMove, type Role } from "@/lib/boards";
 import { activityFeed, coverOf, formatStamp, initials, renderComment } from "@/lib/board-thread";
 import { REMINDER_OPTIONS, dayKey, dueLabel, dueStatus, monthGrid } from "@/lib/board-dates";
+import { prepareImage } from "./image-prep";
 import type { Card, CommentResult, DatesInput, ImageResult, Member, Result } from "./types";
 
 // The card back, laid out like the reference: the cover bleeds to the edges
@@ -112,8 +113,11 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
     run(() => onPatch(fd));
   };
   const upload = (file: File) => {
-    const fd = new FormData(); fd.set("issueId", card.id); fd.set("image", file);
-    run(() => onImage(fd));
+    run(async () => {
+      const ready = await prepareImage(file);
+      const fd = new FormData(); fd.set("issueId", card.id); fd.set("image", ready);
+      return onImage(fd);
+    });
   };
   // The banner takes its colour from the image, like the reference — the
   // image is same-origin (our own /api route), so a 1×1 canvas can read it.
@@ -396,10 +400,11 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
           <Composer
             participants={card.participants} pending={pending} note={note} prefill={prefill}
             onAttach={async (file) => {
-              const fd = new FormData(); fd.set("issueId", card.id); fd.set("image", file);
+              const ready = await prepareImage(file);
+              const fd = new FormData(); fd.set("issueId", card.id); fd.set("image", ready);
               const r = await onImage(fd);
               if (r.error) { setError(r.error); return null; }
-              return { id: r.id!, name: r.filename || file.name || "image" };
+              return { id: r.id!, name: r.filename || ready.name || "image" };
             }}
             onSubmit={(body) => {
               const fd = new FormData(); fd.set("issueId", card.id); fd.set("body", body);

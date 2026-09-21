@@ -8,6 +8,7 @@ import { BOARD_STAGES, BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constan
 import { canMove, inStage, type Role } from "@/lib/boards";
 import { coverOf, initials } from "@/lib/board-thread";
 import { CardDialog, DueChip } from "./card-dialog";
+import { prepareImage } from "./image-prep";
 import type { Card, CommentResult, DatesInput, ImageResult, Member, MoveInput, Result } from "./types";
 
 // One board for two readers. QA and the developer see the same columns and
@@ -255,6 +256,10 @@ function QuickAdd({ projectId, pages, onCreate, onAdded }: {
   // the file's name as the title, and it opens itself. Only when the project
   // has several pages does the image wait, as a preview, for the page pick.
   const [shot, setShot] = useState<File | null>(null);
+  // The name the person pasted, kept for the card's title: the stored file is
+  // re-encoded to .webp, and a card called "screenshot.webp" reads like a
+  // machine named it.
+  const [shotName, setShotName] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, start] = useTransition();
@@ -264,25 +269,32 @@ function QuickAdd({ projectId, pages, onCreate, onAdded }: {
     return () => URL.revokeObjectURL(url);
   }, [shot]);
 
-  const submit = (file: File | null) => {
+  // `name` is passed explicitly by the paste path: it submits from inside a
+  // promise, where the captured shotName is still the value from the render
+  // that started the paste (null).
+  const submit = (file: File | null, name?: string | null) => {
     const form = formRef.current; if (!form) return;
     const fd = new FormData(form);
     const title = String(fd.get("title") ?? "").trim();
     if (!title && !file) return;
-    if (!title) fd.set("title", file!.name || "Screenshot");
+    if (!title) fd.set("title", name || shotName || file!.name || "Screenshot");
     if (file) fd.set("image", file, file.name || "screenshot.png");
     fd.set("projectId", projectId); if (pages.length === 1) fd.set("pageId", pages[0].id); fd.set("severity", "MEDIUM");
     if (!fd.get("pageId")) { setError("Choose the page this issue is on."); return; }
     start(async () => {
       setError(null); const r = await onCreate(fd);
-      if (r.error) setError(r.error); else { form.reset(); setShot(null); setOpen(false); if (r.id) onAdded(r.id); }
+      if (r.error) setError(r.error); else { form.reset(); setShot(null); setShotName(null); setOpen(false); if (r.id) onAdded(r.id); }
     });
   };
   const takeImage = (files: FileList | File[] | null | undefined) => {
     const f = Array.from(files ?? []).find((x) => x.type.startsWith("image/"));
     if (!f) return false;
-    setShot(f);
-    if (pages.length === 1) submit(f); // one page: the paste is the submit
+    setShot(f); // show the preview at once; the re-encode takes a moment
+    setShotName(f.name);
+    void prepareImage(f).then((ready) => {
+      setShot(ready);
+      if (pages.length === 1) submit(ready, f.name); // one page: the paste is the submit
+    });
     return true;
   };
 
@@ -310,14 +322,14 @@ function QuickAdd({ projectId, pages, onCreate, onAdded }: {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={preview} alt="" className="max-h-40 w-full object-cover" data-testid="pasted-preview" />
           {!pending && (
-            <button type="button" onClick={() => setShot(null)} aria-label="Remove screenshot"
+            <button type="button" onClick={() => { setShot(null); setShotName(null); }} aria-label="Remove screenshot"
                     className="absolute right-1.5 top-1.5 rounded-full bg-black/45 p-1 text-white hover:bg-black/60"><X className="size-3.5" /></button>
           )}
-          <p className="truncate px-2 py-1 text-[11px] text-text-secondary">{pending ? "Adding card…" : `${shot?.name || "Screenshot"} · becomes the cover`}</p>
+          <p className="truncate px-2 py-1 text-[11px] text-text-secondary">{pending ? "Adding card…" : `${shotName || shot?.name || "Screenshot"} · becomes the cover`}</p>
         </div>
       )}
       <textarea name="title" maxLength={200} rows={2} autoFocus placeholder="Enter a title or paste a screenshot…"
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(shot); } if (e.key === "Escape") { setShot(null); setOpen(false); } }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(shot); } if (e.key === "Escape") { setShot(null); setShotName(null); setOpen(false); } }}
                 className="w-full resize-none rounded-lg border border-border-soft bg-card px-3 py-2 text-[13px] text-text-primary shadow-xs placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent" />
       {pages.length > 1 && (
         <select name="pageId" required defaultValue="" aria-label="Page" className="w-full rounded-lg border border-border-soft bg-card px-2.5 py-1.5 text-[12px] text-text-primary">
@@ -327,7 +339,7 @@ function QuickAdd({ projectId, pages, onCreate, onAdded }: {
       )}
       <div className="flex items-center gap-1">
         <Button type="submit" size="sm" disabled={pending}>Add card</Button>
-        <button type="button" onClick={() => { setShot(null); setOpen(false); }} aria-label="Cancel" className="rounded-md p-1.5 text-text-secondary hover:bg-card hover:text-text-primary"><X className="size-4" /></button>
+        <button type="button" onClick={() => { setShot(null); setShotName(null); setOpen(false); }} aria-label="Cancel" className="rounded-md p-1.5 text-text-secondary hover:bg-card hover:text-text-primary"><X className="size-4" /></button>
       </div>
     </form>
   );
