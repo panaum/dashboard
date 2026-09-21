@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  canMove, developerView, developerAuthorLabel, inStage, isBounceBack, nextOrder, reorder,
+  canMove, developerView, inStage, isBounceBack, nextOrder, reorder,
+  threadAuthorLabel,
 } from "./boards";
 
 // ── the quality signal ──────────────────────────────────────────────────────
@@ -94,16 +95,14 @@ test("dropping a card at an index re-numbers the stage densely", () => {
 
 // ── the thread, as the developer may see it ─────────────────────────────────
 
-test("developer view names only the card's own assignee on the thread", () => {
-  const dev = "dev-1";
-  // The developer's own words carry their name.
-  assert.equal(developerAuthorLabel({ authorId: dev, authorName: "Priya" }, dev), "Priya");
-  // The reporter's name never crosses — that is the whole point of this view.
-  assert.equal(developerAuthorLabel({ authorId: "qa-1", authorName: "Anaum" }, dev), "QA");
-  // A comment from the shared session has no author; it is still "QA", never "Developer".
-  assert.equal(developerAuthorLabel({ authorId: null, authorName: null }, dev), "QA");
-  // Unassigned card: nobody is "the developer", so nobody is named.
-  assert.equal(developerAuthorLabel({ authorId: dev, authorName: "Priya" }, null), "QA");
-  // Assignee row gone (SetNull) but id still matches: a label, not a leak.
-  assert.equal(developerAuthorLabel({ authorId: dev, authorName: null }, dev), "Developer");
+test("a thread names whoever spoke, and the shared login is nobody in particular", () => {
+  // Both sides see real names now — the developer is no longer shown "QA" in
+  // place of the reporter (operator's call, 2026-09-21).
+  assert.equal(threadAuthorLabel({ authorId: "dev-1", authorName: "Priya" }), "Priya");
+  assert.equal(threadAuthorLabel({ authorId: "qa-1", authorName: "Anaum" }), "Anaum");
+  // No row behind the author: the shared team password. Not "Developer", not
+  // a guess — "QA", the same as the QA side shows.
+  assert.equal(threadAuthorLabel({ authorId: null, authorName: null }), "QA");
+  // An author whose row was deleted (SetNull leaves the id, name is gone).
+  assert.equal(threadAuthorLabel({ authorId: "gone", authorName: null }), "QA");
 });

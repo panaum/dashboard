@@ -14,9 +14,10 @@ export type Participant = { id: string; label: string };
  * Who a comment on this card may @mention. The spec scopes it to the card's
  * two people — reporter and assignee — never the whole team.
  *
- * The developer view names the reporter "QA": the label is what appears in
- * the composer and the body, and the reporter's name must not leave the
- * server for that view. The id still resolves, so the ping reaches them.
+ * Both sides see real names (operator's call, 2026-09-21). A reporter with no
+ * row behind them — the shared team login — has no name to show, so that side
+ * reads "QA": honest about there being nobody in particular, rather than
+ * inventing an attribution.
  */
 export function participantsFor(
   role: Role,
@@ -32,7 +33,7 @@ export function participantsFor(
       out.push({ id: card.reporterId, label: card.reporterName ?? "Reporter" });
     }
   } else if (card.reporterId) {
-    out.push({ id: card.reporterId, label: "QA" });
+    out.push({ id: card.reporterId, label: card.reporterName ?? "QA" });
   }
   return out;
 }
@@ -168,7 +169,7 @@ export function escapeSlack(s: string): string {
 //
 // That is deliberate, not an inconsistency waiting to be tidied up. The card
 // anonymises the reporter because the developer view is a whitelist of what a
-// capability link may carry (developerView / developerAuthorLabel). A direct
+// capability link may carry (developerView). A direct
 // message is the opposite situation: it is one person writing to another, and
 // a notification that will not say who wants you is not worth sending. Do NOT
 // reuse the card's anonymisation here.
