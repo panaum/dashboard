@@ -14,6 +14,7 @@ import { canMove, type Role } from "@/lib/boards";
 import { activityFeed, coverOf, formatStamp, initials, renderComment } from "@/lib/board-thread";
 import { REMINDER_OPTIONS, dayKey, dueLabel, dueStatus, monthGrid } from "@/lib/board-dates";
 import { prepareImage } from "./image-prep";
+import { ImageLightbox } from "./image-lightbox";
 import type { Card, CommentResult, DatesInput, ImageResult, Member, Result } from "./types";
 
 // The card back, laid out like the reference: the cover bleeds to the edges
@@ -90,6 +91,8 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
   const [note, setNote] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(true);
   const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
+  // Which image is open full size, if any.
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   // Opening the card is what marks it read; closing it gives up the typing
   // claim, so a card abandoned mid-sentence stops saying so.
@@ -181,12 +184,28 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
 
   return (
     <div className="flex flex-col text-[13px]">
+      {lightbox && card.images.length > 0 && (
+        <ImageLightbox
+          images={card.images.map((i) => ({ id: i.id, filename: i.filename }))}
+          startId={lightbox}
+          src={imageSrc}
+          onClose={() => setLightbox(null)}
+        />
+      )}
       {/* Header: the cover, or a plain bar when there is none. */}
       <div className="relative" style={cover ? { background: tint ?? "var(--color-card-soft)" } : undefined}>
         {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={imageSrc(cover.id)} alt="" crossOrigin="anonymous" onLoad={(e) => tintFrom(e.currentTarget)}
-               className="mx-auto block h-56 max-w-full object-contain" />
+          <button
+            type="button"
+            onClick={() => setLightbox(cover.id)}
+            aria-label={`Open ${cover.filename ?? "the cover"} full size`}
+            title="Open full size"
+            className="block w-full cursor-zoom-in"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imageSrc(cover.id)} alt="" crossOrigin="anonymous" onLoad={(e) => tintFrom(e.currentTarget)}
+                 className="mx-auto block h-56 max-w-full object-contain" />
+          </button>
         ) : (
           <div className="h-14 bg-card-soft" />
         )}
@@ -365,10 +384,16 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
                 <ul className="grid gap-2">
                   {card.images.map((img) => (
                     <li key={img.id} className="flex items-center gap-3">
-                      <a href={imageSrc(img.id)} target="_blank" rel="noopener" className="shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setLightbox(img.id)}
+                        aria-label={`Open ${img.filename ?? "image"} full size`}
+                        title="Open full size"
+                        className="shrink-0 cursor-zoom-in"
+                      >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={imageSrc(img.id)} alt="" className="h-14 w-20 rounded-md bg-card-soft object-cover ring-1 ring-inset ring-border-soft" />
-                      </a>
+                      </button>
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold text-text-primary">{img.filename ?? "Image"}</p>
                         <p className="flex flex-wrap items-center gap-x-1.5 text-[12px] text-text-secondary">
