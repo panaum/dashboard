@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  activityFeed, conversationMembers, coverOf, eventLine, formatStamp, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, plainText, renderComment, slackMentionText,
+  activityFeed, conversationMembers, coverOf, dmText, eventLine, formatStamp, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, plainText, renderComment, slackMentionText,
 } from "./board-thread";
 
 const card = { reporterId: "qa-1", reporterName: "Anaum", assigneeId: "dev-1", assigneeName: "Priya Sharma" };
@@ -143,4 +143,19 @@ test("a comment pings everyone already in the conversation, never the speaker", 
 
 test("plainText strips markup for the Slack excerpt", () => {
   assert.equal(plainText("**Fixed** the _label_\n- one\n\n![shot.png](img:abc)"), "Fixed the label\n• one\n[image]");
+});
+
+// ── a DM does not need to address its own recipient ─────────────────────────
+
+test("dmText drops a leading mention, and touches nothing else", () => {
+  assert.equal(
+    dmText("<@U0A0PMUE9RQ> *Anaum* mentioned you on *image.png* — <https://x|Open card>"),
+    "*Anaum* mentioned you on *image.png* — <https://x|Open card>",
+  );
+  assert.equal(dmText("<@WABC123> due today"), "due today");
+  assert.equal(dmText("*Anaum* replied on *card*"), "*Anaum* replied on *card*");
+  // A mention inside the sentence is part of the message, not an address.
+  assert.equal(dmText("ping <@U123456> about this"), "ping <@U123456> about this");
+  // A channel reference is not a member id.
+  assert.equal(dmText("<#C123456> has it"), "<#C123456> has it");
 });

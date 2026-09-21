@@ -8,7 +8,7 @@ import { type Actor, type Capability, can } from "@/lib/permissions";
 import { headers } from "next/headers";
 import { boardCardPatchSchema, boardCardSchema, boardDatesSchema, boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { conversationMembers, escapeSlack, parseMentions, participantsFor, plainText, slackMentionText } from "@/lib/board-thread";
-import { postSlack } from "@/lib/slack";
+import { notifySlack } from "@/lib/slack";
 import { canMove, isStage, nextOrder, reorder } from "@/lib/boards";
 import type { BoardStage } from "@/lib/constants";
 
@@ -353,7 +353,10 @@ export async function setCover(input: { issueId: string; imageId: string | null 
   return r;
 }
 
-export type CommentResult = ActionResult & { mentioned?: number; notified?: number; unnotified?: string[] };
+/** `notes` carries anything the sender should know: who could not be reached
+ *  and why, and also a delivery that only half-worked — a DM that failed and
+ *  fell back to the webhook channel is reported, not passed off as a ping. */
+export type CommentResult = ActionResult & { mentioned?: number; notified?: number; notes?: string[] };
 
 /**
  * Write a comment and the structured mention rows in one transaction, then
@@ -403,10 +406,10 @@ export async function commentWithMentions(input: {
   const h = await headers();
   const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host") ?? ""}`;
   const project = issue.page.project;
-  const unnotified: string[] = [];
+  const notes: string[] = [];
   let notified = 0;
   for (const m of members) {
-    if (!m.slackUserId) { unnotified.push(`${m.name} has no Slack id`); continue; }
+    if (!m.slackUserId) { notes.push(`${m.name} has no Slack id`); continue; }
     // A developer opens the card through the board link; QA through the app.
     const url = m.role === "DEVELOPER" && project.boardShareId
       ? `${origin}/b/${project.boardShareId}` : `${origin}/dashboard/boards/${project.id}`;
@@ -416,13 +419,14 @@ export async function commentWithMentions(input: {
     const text = isMention
       ? slackMentionText({ slackUserId: m.slackUserId, byName: input.authorName, cardTitle: issue.title, boardName: project.name, body: plain, url })
       : `<@${m.slackUserId}> *${escapeSlack(input.authorName)}* replied on *${escapeSlack(issue.title)}* (${escapeSlack(project.name)}): "${escapeSlack(excerpt)}" — <${url}|Open card>`;
-    const r = await postSlack(text);
+    const r = await notifySlack(m.slackUserId, text);
     if (r.sent) {
       notified++;
+      if (r.reason) notes.push(`${m.name}: ${r.reason}`); // reached, but not the way we meant to
       if (isMention) await db.issueMention.updateMany({ where: { commentId: comment.id, memberId: m.id }, data: { notifiedAt: new Date() } });
     } else {
-      unnotified.push(`${m.name}: ${r.reason}`);
+      notes.push(`${m.name}: ${r.reason}`);
     }
   }
-  return { ok: true, mentioned: recipients.length, notified, unnotified: unnotified.length ? unnotified : undefined };
+  return { ok: true, mentioned: recipients.length, notified, notes: notes.length ? notes : undefined };
 }

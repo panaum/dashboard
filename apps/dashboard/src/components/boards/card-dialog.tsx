@@ -414,8 +414,8 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
                 const r = await onComment(fd);
                 if (r.error) { setError(r.error); resolve(false); return; }
                 if (r.mentioned) {
-                  setNote(r.unnotified?.length
-                    ? `Mentioned ${r.mentioned}, pinged ${r.notified ?? 0} — ${r.unnotified.join("; ")}`
+                  setNote(r.notes?.length
+                    ? `Mentioned ${r.mentioned}, pinged ${r.notified ?? 0} — ${r.notes.join("; ")}`
                     : `Pinged ${r.notified} on Slack`);
                 }
                 resolve(true);
