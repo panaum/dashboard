@@ -21,6 +21,12 @@ export type Card = {
   assigneeId: string | null;
   assigneeName: string | null;
   createdAt: string;
+  /** When this card entered the stage it is in — its newest IssueEvent. Drives
+   *  the aging glow; null only for a card with no events at all. */
+  stageSince: string | null;
+  /** Something has happened here since this viewer last opened it. Computed on
+   *  the server, per viewer — the client is told, never asked to work it out. */
+  unread: boolean;
   startAt: string | null;
   dueAt: string | null;
   /** QA only: minutes before dueAt to ping; absent on the developer view. */

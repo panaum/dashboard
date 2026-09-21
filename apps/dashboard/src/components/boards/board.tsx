@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { MessageSquare, Paperclip, Plus, X } from "lucide-react";
+import { Inbox, MessageSquare, Paperclip, Plus, Volume2, VolumeX, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BOARD_STAGES, BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constants";
 import { canMove, inStage, type Role } from "@/lib/boards";
 import { coverOf, initials } from "@/lib/board-thread";
+import { agingLabel, agingLevel } from "@/lib/board-alive";
+import { CountUp } from "./count-up";
+import { playAssignedChime, useBoardPulse, useSoundPreference } from "./use-pulse";
 import { CardDialog, DueChip } from "./card-dialog";
 import { prepareImage } from "./image-prep";
 import type { Card, CommentResult, DatesInput, ImageResult, Member, MoveInput, Result } from "./types";
@@ -43,6 +46,10 @@ export function Board({
   onDates,
   onDelete,
   viewerName,
+  viewerId,
+  projectId,
+  boardShareId,
+  onMarkViewed,
   quickAdd,
   onCreate,
 }: {
@@ -67,6 +74,13 @@ export function Board({
   onDelete?: (input: { id: string }) => Promise<Result>;
   /** QA page: the signed-in person's name, or null on the shared team login. */
   viewerName?: string | null;
+  /** The viewer's TeamMember id, when they are a person: used to notice a card
+   *  that has just become theirs, and to leave themselves out of presence. */
+  viewerId?: string | null;
+  /** One of these identifies the board to the pulse endpoint. */
+  projectId?: string;
+  boardShareId?: string;
+  onMarkViewed: (input: { issueId: string }) => Promise<Result>;
   /** QA only: "+ Add a card" at the foot of New — a title (and the page, when
    *  the project has more than one) and nothing else; details on the card. */
   quickAdd?: { projectId: string; pages: { id: string; name: string }[] };
@@ -89,6 +103,41 @@ export function Board({
     }
   }, [justAdded, cards]);
   const [pending, start] = useTransition();
+
+  // Presence, typing and "has anything changed" all come from one poll.
+  const { present, typingLine, setOpenIssue, setTyping } = useBoardPulse({ projectId, boardShareId });
+  const presentIds = new Set(present.map((p) => p.memberId));
+  const [soundOn, setSoundOn] = useSoundPreference();
+
+  // A card that has just moved settles; one that has just landed in Closed
+  // pulses once. Both are derived by comparing renders, so neither needs a
+  // remount — remounting a card would close a dialog somebody had open.
+  const stages = useRef(new Map(cards.map((c) => [c.id, c.boardStage])));
+  const [settling, setSettling] = useState<Record<string, "move" | "closed">>({});
+  useEffect(() => {
+    const next: Record<string, "move" | "closed"> = {};
+    for (const c of cards) {
+      const before = stages.current.get(c.id);
+      if (before && before !== c.boardStage) next[c.id] = c.boardStage === "CLOSED" ? "closed" : "move";
+    }
+    stages.current = new Map(cards.map((c) => [c.id, c.boardStage]));
+    if (Object.keys(next).length === 0) return;
+    setSettling((s) => ({ ...s, ...next }));
+    const t = setTimeout(() => setSettling({}), 700);
+    return () => clearTimeout(t);
+  }, [cards]);
+
+  // A card becoming yours is the one board event worth a sound — and only for
+  // the person it became. Off unless this browser opted in.
+  const mine = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const now = new Set(cards.filter((c) => viewerId && c.assigneeId === viewerId).map((c) => c.id));
+    const before = mine.current;
+    mine.current = now;
+    if (!before) return; // first render is not news
+    if (soundOn && [...now].some((id) => !before.has(id))) playAssignedChime();
+  }, [cards, viewerId, soundOn]);
+
   const byId = useRef(new Map(cards.map((c) => [c.id, c])));
   byId.current = new Map(cards.map((c) => [c.id, c]));
 
@@ -117,6 +166,35 @@ export function Board({
           {error}
         </p>
       )}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-h-6 items-center gap-1.5" aria-live="polite">
+          {present.length > 0 && (
+            <>
+              <span className="text-[11px] text-text-secondary">Here now</span>
+              {present.slice(0, 5).map((p) => (
+                <span
+                  key={p.memberId}
+                  title={`${p.name} has this board open`}
+                  className="flex size-5 items-center justify-center rounded-full bg-success/[0.16] text-[9px] font-semibold text-success-strong ring-1 ring-success/30"
+                >
+                  {initials(p.name)}
+                </span>
+              ))}
+              {present.length > 5 && <span className="text-[11px] text-text-secondary">+{present.length - 5}</span>}
+            </>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setSoundOn(!soundOn)}
+          aria-pressed={soundOn}
+          title={soundOn ? "Sound on — a chime when a card becomes yours" : "Sound off"}
+          className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary"
+        >
+          {soundOn ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+          {soundOn ? "Sound on" : "Sound off"}
+        </button>
+      </div>
       <div
         className={cn("grid gap-3 md:grid-cols-5", pending && "opacity-70 transition-opacity")}
         aria-busy={pending}
@@ -140,11 +218,13 @@ export function Board({
                 <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
                   {BOARD_STAGE_LABELS[stage]}
                 </span>
-                <span className="text-[11px] tabular-nums text-text-secondary">{column.length}</span>
+                <span className="text-[11px] tabular-nums text-text-secondary"><CountUp value={column.length} /></span>
               </h3>
               <ol className="flex flex-col gap-2">
                 {column.map((card, index) => {
                   const cover = coverOf(card.images);
+                  const aging = agingLevel(card.stageSince, card.boardStage, new Date());
+                  const settle = settling[card.id];
                   return (
                     <li
                       key={card.id}
@@ -153,11 +233,26 @@ export function Board({
                       onDragEnd={() => { setDragging(null); setOver(null); }}
                       onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setOver({ stage, index }); }}
                       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragging) drop(dragging, stage, index); }}
+                      title={card.stageSince ? agingLabel(card.stageSince, BOARD_STAGE_LABELS[card.boardStage], new Date()) : undefined}
                       className={cn(
-                        "relative overflow-hidden rounded-lg bg-card transition-colors",
-                        dragging === card.id && "opacity-40",
+                        "relative overflow-hidden rounded-lg bg-card transition-[transform,box-shadow,opacity] duration-150 ease-out",
+                        // Lift: the card being dragged rises off the column.
+                        dragging === card.id && "scale-[1.03] opacity-60 shadow-lg",
                         over?.stage === stage && over.index === index && dragging && dragging !== card.id && "ring-2 ring-accent",
+                        // Unread is a ring, not a left border: the left edge is
+                        // already the severity strip on the QA view.
+                        card.unread && "ring-1 ring-inset ring-accent/45",
+                        // Aging: a faint amber that deepens the longer a card
+                        // sits in one stage. Never on Completed or Closed.
+                        aging === 1 && "shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-warning)_35%,transparent)]",
+                        aging === 2 && "shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-warning)_60%,transparent)]",
+                        aging === 3 && "shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-warning)_80%,transparent)]",
                       )}
+                      style={settle === "closed"
+                        ? { animation: "closed-pulse 600ms ease-out" }
+                        : settle === "move"
+                          ? { animation: "card-settle 420ms cubic-bezier(.34,1.56,.64,1)" }
+                          : undefined}
                     >
                       {/* The severity edge exists only where severity was sent. */}
                       {card.severity && (
@@ -174,6 +269,7 @@ export function Board({
                           initialOpen={card.id === justAdded}
                           onMove={(to) => drop(card.id, to, 9999)}
                           onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage} onDeleteComment={onDeleteComment} onDates={onDates} viewerName={viewerName}
+                          onMarkViewed={onMarkViewed} onOpen={setOpenIssue} onTyping={setTyping} typingLine={typingLine}
                           onDelete={onDelete ? () => onDelete({ id: card.id }) : undefined}
                         />
                         {/* Icon row: counts on the left, the assignee's initials on the right. */}
@@ -197,11 +293,20 @@ export function Board({
                             {card.recurring && <span className="rounded bg-info/[0.16] px-1.5 py-0.5 text-text-primary">recurring</span>}
                           </div>
                           {card.assigneeName && (
-                            <span
-                              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/[0.14] text-[10px] font-semibold text-accent"
-                              title={card.assigneeName} aria-label={`Assigned to ${card.assigneeName}`}
-                            >
-                              {initials(card.assigneeName)}
+                            <span className="relative shrink-0">
+                              <span
+                                className="flex size-6 items-center justify-center rounded-full bg-accent/[0.14] text-[10px] font-semibold text-accent"
+                                title={card.assigneeName} aria-label={`Assigned to ${card.assigneeName}`}
+                              >
+                                {initials(card.assigneeName)}
+                              </span>
+                              {card.assigneeId && presentIds.has(card.assigneeId) && (
+                                <span
+                                  className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-success ring-2 ring-card"
+                                  title={`${card.assigneeName} has this board open`}
+                                  aria-label={`${card.assigneeName} is here`}
+                                />
+                              )}
                             </span>
                           )}
                         </div>
@@ -211,6 +316,12 @@ export function Board({
                   );
                 })}
               </ol>
+              {column.length === 0 && (
+                <div className="flex flex-col items-center gap-1 px-2 py-6 text-center">
+                  <Inbox className="size-5 text-text-muted/50" strokeWidth={1.5} aria-hidden />
+                  <span className="text-[11px] text-text-muted">Nothing here yet</span>
+                </div>
+              )}
               {stage === "NEW" && quickAdd && onCreate && (
                 <QuickAdd projectId={quickAdd.projectId} pages={quickAdd.pages} onCreate={onCreate} onAdded={setJustAdded} />
               )}

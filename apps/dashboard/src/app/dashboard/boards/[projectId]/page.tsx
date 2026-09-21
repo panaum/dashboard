@@ -10,8 +10,11 @@ import { BoardLinkControls } from "@/components/boards/board-link-controls";
 import type { Card } from "@/components/boards/types";
 import { isStage } from "@/lib/boards";
 import { mentionLabelsFor } from "@/lib/board-thread";
+import { closedThisWeekLine, isUnread, weekWindow } from "@/lib/board-alive";
+import { BoardGreeting } from "@/components/boards/board-greeting";
+import { AccentPicker } from "@/components/boards/accent-picker";
 import {
-  addComment, addImage, createCard, deleteCard, deleteComment, deleteImage, mintBoardLink, moveCard, patchCard, revokeBoardLink, setCover, setDates, updateCard,
+  addComment, addImage, createCard, deleteCard, deleteComment, deleteImage, markCardViewed, mintBoardLink, moveCard, patchCard, revokeBoardLink, setAccent, setCover, setDates, updateCard,
 } from "../actions";
 
 // QA's board for one project. Full fields, every move, the developer link.
@@ -23,7 +26,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     db.project.findUnique({
       where: { id: projectId },
       select: {
-        id: true, name: true, boardShareId: true, boardShareCreatedAt: true,
+        id: true, name: true, boardShareId: true, boardShareCreatedAt: true, accentColor: true,
         boardShareCreatedBy: { select: { name: true } }, client: { select: { name: true } },
         pages: {
           select: {
@@ -37,6 +40,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
                 comments: { orderBy: { createdAt: "asc" }, select: { id: true, body: true, createdAt: true, author: { select: { name: true } } } },
                 events: { orderBy: { createdAt: "asc" }, select: { id: true, fromStage: true, toStage: true, createdAt: true, actor: { select: { name: true } } } },
                 images: { orderBy: { createdAt: "asc" }, select: { id: true, filename: true, isCover: true, bytes: true, createdAt: true } },
+                views: { where: { viewerId: actor.bootstrap ? "" : actor.id }, select: { viewedAt: true }, take: 1 },
               },
             },
           },
@@ -52,6 +56,10 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     boardStage: i.boardStage, boardOrder: i.boardOrder,
     assigneeId: i.assigneeId, assigneeName: i.assignee?.name ?? null,
     createdAt: i.createdAt.toISOString(),
+    stageSince: i.events.at(-1)?.createdAt.toISOString() ?? null,
+    // The shared login has no row to hang a view on, so nothing is unread for
+    // it — better than marking everything unread for everyone sharing it.
+    unread: actor.bootstrap ? false : isUnread(i.events.at(-1)?.createdAt ?? null, i.views[0]?.viewedAt ?? null),
     startAt: i.startAt?.toISOString() ?? null, dueAt: i.dueAt?.toISOString() ?? null, dueReminderMinutes: i.dueReminderMinutes,
     severity: i.severity, recurring: i.recurring, reporterName: i.reporter?.name ?? null,
     comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: c.author?.name ?? null, createdAt: c.createdAt.toISOString(), deletable: true })),
@@ -64,6 +72,12 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     }, actor.id),
   }] : []);
 
+  const { from } = weekWindow(new Date());
+  const closedThisWeek = await db.issueEvent.count({
+    where: { toStage: "CLOSED", createdAt: { gte: from }, issue: { page: { projectId } } },
+  });
+  const weekly = closedThisWeekLine(closedThisWeek);
+
   const h = await headers();
   const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host") ?? ""}`;
 
@@ -72,6 +86,22 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
       <Link href="/dashboard/boards" className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-text-secondary hover:text-text-primary">
         <ArrowLeft className="size-3.5" /> All boards
       </Link>
+      <div
+        className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3"
+        style={{ background: `color-mix(in oklab, ${project.accentColor ?? "var(--color-accent)"} 10%, transparent)` }}
+      >
+        <p className="text-[13px] font-medium text-text-primary">
+          <BoardGreeting name={actor.bootstrap ? null : actor.name} />
+        </p>
+        <div className="flex items-center gap-3">
+          {weekly && <span className="text-[12px] text-text-secondary">{weekly}</span>}
+          <AccentPicker
+            projectId={project.id}
+            color={project.accentColor}
+            onPick={async (color) => { "use server"; return setAccent({ projectId, color }); }}
+          />
+        </div>
+      </div>
       <PageHeader
         title={project.name}
         subtitle={`${project.client.name} · ${cards.filter((c) => c.boardStage !== "CLOSED").length} open`}
@@ -99,6 +129,9 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
         onCover={setCover}
         onDates={setDates}
         viewerName={actor.bootstrap ? null : actor.name}
+        viewerId={actor.bootstrap ? null : actor.id}
+        projectId={project.id}
+        onMarkViewed={markCardViewed}
         onDeleteImage={deleteImage}
         onDeleteComment={deleteComment}
         onDelete={deleteCard}

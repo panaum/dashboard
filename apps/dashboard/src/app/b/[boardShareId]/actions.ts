@@ -126,3 +126,20 @@ export async function developerDeleteComment(input: { boardShareId: string; id: 
   revalidatePath(`/b/${input.boardShareId}`);
   return { ok: true };
 }
+
+/** Remember that the card's assignee has seen it. The link is not a person, so
+ *  this can only be attributed on a card they are assigned — the same rule as
+ *  every other developer action. On an unassigned card it is a no-op rather
+ *  than an invented attribution. */
+export async function developerMarkViewed(input: { boardShareId: string; issueId: string }): Promise<ActionResult> {
+  const board = await boardFor(input.boardShareId);
+  if (!board) return { error: "This link is no longer valid." };
+  const card = await cardIn(board.id, input.issueId);
+  if (!card?.assigneeId) return { ok: true };
+  await db.issueView.upsert({
+    where: { issueId_viewerId: { issueId: input.issueId, viewerId: card.assigneeId } },
+    create: { issueId: input.issueId, viewerId: card.assigneeId, viewedAt: new Date() },
+    update: { viewedAt: new Date() },
+  });
+  return { ok: true };
+}
