@@ -33,24 +33,35 @@ const SIZES = {
 
 export function Avatar({
   name,
+  src,
   size = "md",
   className,
 }: {
   name: string;
+  /** Profile photo. Absent → initials. Present but broken (the photo was
+   *  removed between render and load) → the initials underneath show through,
+   *  because the image sits on top with an empty alt and a failed one with an
+   *  empty alt renders nothing. No event handler, so this stays usable from a
+   *  Server Component. */
+  src?: string | null;
   size?: keyof typeof SIZES;
   className?: string;
 }) {
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full font-semibold",
+        "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold",
         SIZES[size],
         PALETTE[hash(name) % PALETTE.length],
         className,
       )}
-      aria-hidden
+      title={src ? name : undefined}
     >
-      {initials(name)}
+      <span aria-hidden>{initials(name)}</span>
+      {src && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="absolute inset-0 size-full object-cover" />
+      )}
     </span>
   );
 }

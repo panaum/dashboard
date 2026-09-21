@@ -67,11 +67,15 @@ export type CheckResult = (typeof CHECK_RESULTS)[number];
 export const CERT_STATUSES = ["IN_PROGRESS", "PASS", "FAIL"] as const;
 export type CertStatus = (typeof CERT_STATUSES)[number];
 
-export const MEMBER_ROLES = ["DEVELOPER", "TESTER", "BOTH"] as const;
+// The WORK someone does — what they can be assigned. MANAGER is for people
+// who are on the team but take neither role (a CEO, a project manager): they
+// hold a row for attribution and @mentions, and appear in no assignment list.
+export const MEMBER_ROLES = ["DEVELOPER", "TESTER", "BOTH", "MANAGER"] as const;
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 
 // Human labels
 export const LABELS: Record<string, string> = {
+  MANAGER: "Manager",
   WEBSITE: "Website",
   LANDING_PAGE: "Landing page",
   IN_PROGRESS: "In progress",

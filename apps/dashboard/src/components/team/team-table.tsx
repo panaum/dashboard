@@ -20,6 +20,10 @@ export type MemberRow = {
   rank: Rank;
   email: string | null;
   slackUserId: string | null;
+  /** What it says on their card — shown under the name when set. */
+  title: string | null;
+  /** ISO timestamp of the current photo, or null. Doubles as the cache key. */
+  avatarUpdatedAt: string | null;
   /** Whether an admin has given this person an email + password yet. */
   hasLogin: boolean;
   /** True for the row of the person currently signed in — they may not demote
@@ -85,18 +89,29 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
                 href={`/dashboard/team/${m.id}`}
                 className="group flex min-w-0 items-center gap-3"
               >
-                <Avatar name={m.name} />
+                <Avatar
+                  name={m.name}
+                  src={m.avatarUpdatedAt ? `/api/team-avatar?id=${m.id}&v=${encodeURIComponent(m.avatarUpdatedAt)}` : null}
+                />
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-sm font-medium text-text-primary group-hover:underline">
                     {m.name}
                   </span>
                   <div className="flex items-center gap-1.5">
-                    <Badge
-                      tone={m.role === "TESTER" ? "info" : "neutral"}
-                      className="w-fit"
-                    >
-                      {label(m.role)}
-                    </Badge>
+                    {m.title ? (
+                      <span className="truncate text-[12px] text-text-secondary">{m.title}</span>
+                    ) : null}
+                    {/* The role badge is what assignment reads; a designation
+                        does not replace it, except for a manager, where
+                        "Manager · CEO" would say the same thing twice. */}
+                    {(!m.title || m.role !== "MANAGER") && (
+                      <Badge
+                        tone={m.role === "TESTER" ? "info" : "neutral"}
+                        className="w-fit"
+                      >
+                        {label(m.role)}
+                      </Badge>
+                    )}
                     {!m.hasLogin && (
                       <span className="text-[11px] text-text-muted">no login</span>
                     )}
@@ -127,7 +142,7 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
                 <LoginButton
                   member={{ id: m.id, name: m.name, email: m.email, hasLogin: m.hasLogin }}
                 />
-                <EditMemberButton member={{ id: m.id, name: m.name, role: m.role, slackUserId: m.slackUserId }} />
+                <EditMemberButton member={{ id: m.id, name: m.name, role: m.role, title: m.title, slackUserId: m.slackUserId, avatarUpdatedAt: m.avatarUpdatedAt }} />
                 <ConfirmDelete
                   action={deleteMember}
                   fields={{ id: m.id }}

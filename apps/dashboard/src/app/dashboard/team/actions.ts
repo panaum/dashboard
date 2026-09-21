@@ -39,6 +39,34 @@ export async function saveMember(
   return { ok: true };
 }
 
+const AVATAR_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const MAX_AVATAR_BYTES = 512 * 1024; // the browser resizes to 256px first; this is the backstop
+
+/** Set or replace a member's photo. The browser sends a 256×256 crop, so the
+ *  cap is generous rather than load-bearing. Passing no file clears it. */
+export async function setAvatar(formData: FormData): Promise<ActionResult> {
+  if (!(await guard("team:manage"))) return { error: "You cannot manage the team." };
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { error: "Missing member." };
+  const file = formData.get("avatar");
+
+  if (!(file instanceof File) || !file.size) {
+    await db.teamMember.update({ where: { id }, data: { avatar: null, avatarType: null, avatarUpdatedAt: null } });
+    revalidatePath("/dashboard/team");
+    return { ok: true };
+  }
+  if (!AVATAR_TYPES.has(file.type)) return { error: "PNG, JPEG or WebP only." };
+  if (file.size > MAX_AVATAR_BYTES) return { error: "That photo is too large even after resizing — try another." };
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  await db.teamMember.update({
+    where: { id },
+    data: { avatar: buf, avatarType: file.type, avatarUpdatedAt: new Date() },
+  });
+  revalidatePath("/dashboard/team");
+  return { ok: true };
+}
+
 export async function deleteMember(formData: FormData): Promise<void> {
   if (!(await guard("team:manage"))) return;
   const id = String(formData.get("id") ?? "");

@@ -22,7 +22,7 @@ export default async function TeamPage() {
   const month = new Date().toISOString().slice(0, 7);
   const period = monthPeriod(month);
   const [members, pages, boardIssues, boardEvents] = await Promise.all([
-    db.teamMember.findMany({ orderBy: { name: "asc" } }),
+    db.teamMember.findMany({ omit: { avatar: true }, orderBy: { name: "asc" } }),
     db.page.findMany({
       select: {
         developerId: true,
@@ -77,6 +77,8 @@ export default async function TeamPage() {
       rank: ((RANKS as readonly string[]).includes(m.rank) ? m.rank : "VIEWER") as Rank,
       email: m.email,
       slackUserId: m.slackUserId,
+      title: m.title,
+      avatarUpdatedAt: m.avatarUpdatedAt?.toISOString() ?? null,
       hasLogin: Boolean(m.email && m.passwordHash),
       isSelf: m.id === actor.id,
       built: s?.built ?? 0,

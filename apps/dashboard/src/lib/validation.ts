@@ -85,6 +85,7 @@ export const commentSchema = z.object({
 export const memberSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(80),
   role: z.enum(MEMBER_ROLES),
+  title: optionalText(60),
   slackUserId: optionalText(40),
 });
 

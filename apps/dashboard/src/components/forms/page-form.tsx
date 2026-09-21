@@ -36,8 +36,10 @@ export function PageForm({
   const [state, action, pending] = useActionState(savePage, {});
   useOnOk(state, close);
 
-  const developers = members.filter((m) => m.role !== "TESTER");
-  const testers = members.filter((m) => m.role !== "DEVELOPER");
+  // Whitelist, not blacklist: with `!== "TESTER"` every role added later — the
+  // first was MANAGER — silently appeared in both pickers.
+  const developers = members.filter((m) => m.role === "DEVELOPER" || m.role === "BOTH");
+  const testers = members.filter((m) => m.role === "TESTER" || m.role === "BOTH");
 
   return (
     <form action={action} className="flex flex-col gap-4">
