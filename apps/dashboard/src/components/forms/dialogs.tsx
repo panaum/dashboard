@@ -11,7 +11,7 @@ import { MemberForm } from "@/components/forms/member-form";
 const iconBtn =
   "rounded-md p-1.5 text-text-secondary hover:bg-card-soft hover:text-text-primary";
 
-type Member = { id: string; name: string; role: string };
+type Member = { id: string; name: string; role: string; title?: string | null; avatarUpdatedAt?: string | null };
 
 export function AddMemberButton() {
   return (
@@ -31,7 +31,7 @@ export function AddMemberButton() {
 export function EditMemberButton({
   member,
 }: {
-  member: { id: string; name: string; role: string; slackUserId?: string | null };
+  member: { id: string; name: string; role: string; title?: string | null; slackUserId?: string | null; avatarUpdatedAt?: string | null };
 }) {
   return (
     <Dialog

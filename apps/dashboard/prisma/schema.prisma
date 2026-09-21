@@ -226,6 +226,16 @@ model TeamMember {
   // Slack member id (U…), so a board @mention can ping them by name in the
   // channel the webhook posts to. Set from the team page; null = not pinged.
   slackUserId  String?
+  // What it says on their card: "CEO", "Project Manager", "QA Lead". Free text,
+  // independent of `role` (the work) and `rank` (the access), because a title
+  // is neither of those and pretending otherwise corrupts both.
+  title        String?
+  // Profile photo, stored like every other image here — bytes in the row, no
+  // object store on the free tier. Resized to 256×256 in the browser before
+  // upload, so these stay a few KB. avatarUpdatedAt busts the cache.
+  avatar          Bytes?
+  avatarType      String?
+  avatarUpdatedAt DateTime?
   active      Boolean  @default(true)
   devPages    Page[]   @relation("Dev")
   testerPages Page[]   @relation("Tester")

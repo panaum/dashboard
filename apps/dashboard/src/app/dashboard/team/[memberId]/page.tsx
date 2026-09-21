@@ -80,6 +80,9 @@ export default async function MemberDetailPage({
   const { memberId } = await params;
   const member = await db.teamMember.findUnique({
     where: { id: memberId },
+    // The photo's bytes are served by /api/team-avatar; they have no business
+    // being fetched into a page render.
+    omit: { avatar: true },
     include: {
       devPages: { include: pageInclude, orderBy: { deliveryMonth: "asc" } },
       testerPages: { include: pageInclude, orderBy: { deliveryMonth: "asc" } },
@@ -111,17 +114,26 @@ export default async function MemberDetailPage({
     <>
       <Breadcrumbs items={[{ label: "Team", href: "/dashboard/team" }, { label: member.name }]} />
       <div className="mb-7 flex items-center gap-4">
-        <Avatar name={member.name} size="lg" />
+        <Avatar
+          name={member.name}
+          src={member.avatarUpdatedAt ? `/api/team-avatar?id=${member.id}&v=${member.avatarUpdatedAt.toISOString()}` : null}
+          size="lg"
+        />
         <div className="flex flex-col gap-1.5">
           <h1 className="text-[28px] font-semibold leading-none tracking-tight text-text-primary">
             {member.name}
           </h1>
-          <Badge
-            tone={member.role === "TESTER" ? "info" : "neutral"}
-            className="w-fit"
-          >
-            {label(member.role)}
-          </Badge>
+          {member.title && (
+            <p className="text-sm text-text-secondary">{member.title}</p>
+          )}
+          {(!member.title || member.role !== "MANAGER") && (
+            <Badge
+              tone={member.role === "TESTER" ? "info" : "neutral"}
+              className="w-fit"
+            >
+              {label(member.role)}
+            </Badge>
+          )}
         </div>
       </div>
 
