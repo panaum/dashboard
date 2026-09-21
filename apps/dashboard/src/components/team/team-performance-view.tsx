@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { ArrowDown, ArrowUp } from "lucide-react";
@@ -233,16 +235,20 @@ export function TeamPerformanceView({
                     size="sm"
                     className="hidden sm:inline-flex"
                   />
-                  <span
+                  {/* The other half of the hop: Insights says how the work is
+                      going, Team says who the person is. */}
+                  <Link
+                    href={`/dashboard/team/${d.id}`}
+                    title={`${d.name} — open their team page`}
                     className={cn(
-                      "truncate text-[13px]",
+                      "truncate text-[13px] hover:underline",
                       isHighlight
                         ? "font-semibold text-accent"
-                        : "text-text-secondary",
+                        : "text-text-secondary hover:text-text-primary",
                     )}
                   >
                     {d.name}
-                  </span>
+                  </Link>
                 </div>
 
                 <span

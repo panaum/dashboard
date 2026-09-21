@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { BoardPerformance } from "@/lib/board-performance";
 
 // The second panel: how each developer handles the faults QA finds, from the
@@ -30,7 +31,11 @@ export function BoardPerformancePanel({ data, names, month }: {
             <tbody>
               {data.devs.map((d) => (
                 <tr key={d.id} className="border-t border-border-soft tabular-nums">
-                  <td className="px-4 py-2.5 pl-5 font-medium text-text-primary">{names.get(d.id) ?? d.id}</td>
+                  <td className="px-4 py-2.5 pl-5 font-medium text-text-primary">
+                    <Link href={`/dashboard/team/${d.id}`} className="hover:underline">
+                      {names.get(d.id) ?? d.id}
+                    </Link>
+                  </td>
                   <td className="px-4 py-2.5">{d.assigned}</td>
                   <td className="px-4 py-2.5">{d.completed}</td>
                   <td className="px-4 py-2.5">{d.closed}</td>
