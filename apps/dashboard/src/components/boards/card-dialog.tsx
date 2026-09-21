@@ -47,6 +47,14 @@ type Props = {
   onCover: (input: { issueId: string; imageId: string | null }) => Promise<Result>;
   onDeleteImage: (input: { issueId: string; imageId: string }) => Promise<Result>;
   onDeleteComment: (input: { id: string }) => Promise<Result>;
+  /** Called once when the card is opened — unread is derived from it. */
+  onMarkViewed: (input: { issueId: string }) => Promise<Result>;
+  /** Tell the board which card is open, so its poll asks about this one. */
+  onOpen: (issueId: string | null) => void;
+  /** Claim or release "typing" on the open card. */
+  onTyping: (active: boolean) => void;
+  /** "Priya is typing…", already composed by the board from the same poll. */
+  typingLine?: string | null;
   /** QA only: start, due and reminder. */
   onDates?: (input: DatesInput) => Promise<Result>;
   onDelete?: () => Promise<Result>;
@@ -77,11 +85,20 @@ const chip = "inline-flex items-center gap-1.5 rounded-md border border-border-s
 const heading = "flex items-center gap-2.5 text-[15px] font-semibold text-text-primary";
 const boxField = "w-full rounded-lg border border-border-soft bg-card px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
 
-function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onComment, onImage, onCover, onDeleteImage, onDeleteComment, onDates, onDelete, viewerName, close }: Props & { close: () => void }) {
+function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onComment, onImage, onCover, onDeleteImage, onDeleteComment, onDates, onDelete, viewerName, onMarkViewed, onOpen, onTyping, typingLine, close }: Props & { close: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(true);
   const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
+
+  // Opening the card is what marks it read; closing it gives up the typing
+  // claim, so a card abandoned mid-sentence stops saying so.
+  useEffect(() => {
+    void onMarkViewed({ issueId: card.id });
+    onOpen(card.id);
+    return () => { onTyping(false); onOpen(null); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.id]);
   const [tint, setTint] = useState<string | null>(null);
   // Severity ticks the moment it is chosen; the server's value replaces it on
   // the next render, so a refused write cannot leave a phantom tick behind.
@@ -399,6 +416,8 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
           )}
           <Composer
             participants={card.participants} pending={pending} note={note} prefill={prefill}
+            typingLine={typingLine}
+            onTyping={onTyping}
             onAttach={async (file) => {
               const ready = await prepareImage(file);
               const fd = new FormData(); fd.set("issueId", card.id); fd.set("image", ready);
@@ -477,9 +496,11 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
  * server resolves labels to ids against the same list, so this is a
  * convenience, not the authority. "Reply" on a comment prefills "@Name ".
  */
-function Composer({ participants, pending, note, prefill, onAttach, onSubmit }: {
+function Composer({ participants, pending, note, prefill, typingLine, onTyping, onAttach, onSubmit }: {
   participants: string[]; pending: boolean; note: string | null;
   prefill: { text: string; n: number } | null;
+  typingLine?: string | null;
+  onTyping: (active: boolean) => void;
   onAttach: (file: File) => Promise<{ id: string; name: string } | null>;
   onSubmit: (body: string) => Promise<boolean>;
 }) {
@@ -533,6 +554,15 @@ function Composer({ participants, pending, note, prefill, onAttach, onSubmit }: 
     requestAnimationFrame(() => { el.focus(); const pos = menu.start + labelText.length + 2; el.setSelectionRange(pos, pos); });
   };
   useEffect(() => { if (menu && options.length === 0) setMenu(null); }, [menu, options.length]);
+
+  // "Typing" is simply "there is text in the box", debounced so a claim is not
+  // made and dropped on every keystroke. The server expires it on its own
+  // after a few seconds, so a closed laptop stops claiming it without help.
+  useEffect(() => {
+    const active = value.trim().length > 0;
+    const t = setTimeout(() => onTyping(active), active ? 250 : 1200);
+    return () => clearTimeout(t);
+  }, [value, onTyping]);
 
   const tool = "rounded p-1.5 text-text-secondary hover:bg-card-soft hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
   const open = active || !!value;
@@ -596,6 +626,16 @@ function Composer({ participants, pending, note, prefill, onAttach, onSubmit }: 
             </li>
           ))}
         </ul>
+      )}
+      {typingLine && (
+        <span className="flex items-center gap-1.5 text-[11px] italic text-text-secondary" aria-live="polite">
+          <span className="flex gap-0.5" aria-hidden>
+            <span className="size-1 animate-pulse rounded-full bg-text-muted" />
+            <span className="size-1 animate-pulse rounded-full bg-text-muted [animation-delay:150ms]" />
+            <span className="size-1 animate-pulse rounded-full bg-text-muted [animation-delay:300ms]" />
+          </span>
+          {typingLine}
+        </span>
       )}
       {open && (
         <div className="flex items-center justify-between gap-3">

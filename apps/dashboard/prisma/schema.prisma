@@ -43,6 +43,9 @@ model Project {
   // minted behind a permission), scoped to this project. Nullable; unset =
   // no developer link exists.
   boardShareId String? @unique
+  // The board's accent, as a hex string. Null = the app's default purple; a
+  // board never requires one and nothing blocks on it being unset.
+  accentColor  String?
   // Who minted the developer link and when — set with the token, cleared
   // with it. Null minter = the shared session, like every other attribution.
   boardShareCreatedBy   TeamMember? @relation("BoardLinkMinter", fields: [boardShareCreatedById], references: [id], onDelete: SetNull)
@@ -132,6 +135,7 @@ model Issue {
   events      IssueEvent[]
   comments    IssueComment[]
   images      IssueImage[]
+  views       IssueView[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -194,6 +198,37 @@ model IssueMention {
 // Screenshots on a card, stored as bytes like LayoutShot — the free tier has
 // no object store to point image_urls at, and this keeps a card's evidence in
 // the same database as the card.
+// One row per person per card: the last time they looked at it. Unread is
+// derived, not stored — a card is unread for someone when its newest
+// IssueEvent is younger than their row (or they have no row at all) — so
+// nothing has to be marked read, and a new event makes it unread again.
+model IssueView {
+  id       String   @id @default(cuid())
+  issue    Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  issueId  String
+  viewer   TeamMember @relation("Viewer", fields: [viewerId], references: [id], onDelete: Cascade)
+  viewerId String
+  viewedAt DateTime @default(now())
+
+  @@unique([issueId, viewerId])
+  @@index([viewerId])
+}
+
+// Who is looking at a board right now, and who is mid-sentence on a card.
+// Deliberately its own table rather than columns on TeamMember: this is
+// high-churn ephemeral data written every few seconds, and it has no business
+// touching the canonical row for a person. One row per member, upserted.
+model BoardPresence {
+  memberId      String   @id
+  member        TeamMember @relation("Presence", fields: [memberId], references: [id], onDelete: Cascade)
+  projectId     String?
+  seenAt        DateTime @default(now())
+  typingIssueId String?
+  typingAt      DateTime?
+
+  @@index([projectId, seenAt])
+}
+
 model IssueImage {
   id          String   @id @default(cuid())
   issue       Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
@@ -246,6 +281,8 @@ model TeamMember {
   issueEvents     IssueEvent[]   @relation("EventActor")
   issueComments   IssueComment[] @relation("CommentAuthor")
   mentionedIn     IssueMention[] @relation("Mentioned")
+  issueViews      IssueView[]    @relation("Viewer")
+  presence        BoardPresence? @relation("Presence")
   mintedBoardLinks Project[]      @relation("BoardLinkMinter")
   createdAt   DateTime @default(now())
 }

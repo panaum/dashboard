@@ -22,7 +22,7 @@ const NAV = [
   { href: "/dashboard/insights", label: "Insights", icon: Sparkles },
 ];
 
-export function Sidebar({ actor }: { actor?: Actor | null }) {
+export function Sidebar({ actor, boardsUnread = 0 }: { actor?: Actor | null; boardsUnread?: number }) {
   const pathname = usePathname();
   // Hiding an unreachable link is a courtesy to the reader. The control is
   // `requireCapability` on the route and the guard inside each server action —
@@ -87,6 +87,16 @@ export function Sidebar({ actor }: { actor?: Actor | null }) {
                 strokeWidth={active ? 2 : 1.5}
               />
               <span className="relative z-10">{item.label}</span>
+              {/* The badge lives at the entry point, not on every card: a tag
+                  on each card is the nagging "New" label this replaced. */}
+              {item.href === "/dashboard/boards" && boardsUnread > 0 && (
+                <span
+                  className="relative z-10 ml-auto min-w-5 rounded-full bg-accent px-1.5 py-0.5 text-center text-[10px] font-semibold tabular-nums text-text-on-dark"
+                  title={`${boardsUnread} card${boardsUnread === 1 ? "" : "s"} with something new`}
+                >
+                  {boardsUnread}
+                </span>
+              )}
             </Link>
           );
         })}

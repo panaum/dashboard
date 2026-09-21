@@ -59,6 +59,7 @@ const PUBLIC_BY_DESIGN: Record<string, string> = {
   // Session OR the board capability token, checked in the handler; a miss is a
   // 404 either way so the route cannot be used to probe for images.
   "src/app/api/board-image/route.ts": "session or board share-token route",
+  "src/app/api/boards/pulse/route.ts": "session or board share-token route",
   // Documented in INFRASTRUCTURE.md as no-auth; emits only emit-flag + counts.
   "src/app/api/spine/health/route.ts": "operational health probe",
 };

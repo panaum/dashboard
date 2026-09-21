@@ -275,6 +275,30 @@ export async function patchCard(formData: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
+/** Remember that this person has now seen this card. Called when a card is
+ *  opened; unread is derived from it, so there is nothing to "mark read". */
+export async function markCardViewed(input: { issueId: string }): Promise<ActionResult> {
+  const actor = await getActor();
+  // The shared login is nobody in particular and has no row to hang a view on.
+  if (!actor || actor.bootstrap) return { ok: true };
+  await db.issueView.upsert({
+    where: { issueId_viewerId: { issueId: input.issueId, viewerId: actor.id } },
+    create: { issueId: input.issueId, viewerId: actor.id, viewedAt: new Date() },
+    update: { viewedAt: new Date() },
+  });
+  return { ok: true };
+}
+
+/** The board's accent. Null puts it back to the app's default purple. */
+export async function setAccent(input: { projectId: string; color: string | null }): Promise<ActionResult> {
+  if (!(await guard("client:edit"))) return { error: "Your access level cannot change this board." };
+  const color = input.color?.trim() ?? null;
+  if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) return { error: "Use a six-digit hex colour." };
+  await db.project.update({ where: { id: input.projectId }, data: { accentColor: color } });
+  revalidatePath(boardPath(input.projectId));
+  return { ok: true };
+}
+
 /** Start, due and reminder from the Dates popover. Changing the due date
  *  re-arms the reminder: dueRemindedAt is cleared so the sweep sends again. */
 export async function setDates(input: { id: string; startAt: string | null; dueAt: string | null; dueReminderMinutes: number | null }): Promise<ActionResult> {
