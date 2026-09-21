@@ -161,6 +161,104 @@ export function escapeSlack(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// ── Slack notifications ─────────────────────────────────────────────────────
+//
+// THE SENDER IS NAMED, ALWAYS — including when the recipient is a developer
+// who sees that same person as "QA" on the card itself.
+//
+// That is deliberate, not an inconsistency waiting to be tidied up. The card
+// anonymises the reporter because the developer view is a whitelist of what a
+// capability link may carry (developerView / developerAuthorLabel). A direct
+// message is the opposite situation: it is one person writing to another, and
+// a notification that will not say who wants you is not worth sending. Do NOT
+// reuse the card's anonymisation here.
+
+export type SlackBlock = Record<string, unknown>;
+/** `text` is Slack's notification preview and the fallback for anything that
+ *  cannot render blocks; both are required on every message we send. */
+export type SlackMessage = { text: string; blocks?: SlackBlock[] };
+
+const SLACK_SECTION_LIMIT = 1000; // Slack's own limit is 3000; this is taste
+
+/** Quote a comment the way Slack renders a blockquote: per line, or the
+ *  second line escapes the quote. */
+function quote(body: string): string {
+  const trimmed = body.length > SLACK_SECTION_LIMIT
+    ? `${body.slice(0, SLACK_SECTION_LIMIT - 1)}…`
+    : body;
+  return trimmed.split("\n").map((l) => `> ${escapeSlack(l)}`).join("\n");
+}
+
+/**
+ * A mention or a reply, as Block Kit. Read-only by design: the button is a
+ * link out, and nothing here posts back to Slack.
+ *
+ * `coverUrl` is attached as an accessory on the lead block when the card has a
+ * cover AND that image is reachable without a session — Slack fetches it from
+ * its own servers. No cover, or no reachable URL, means no accessory rather
+ * than a placeholder.
+ */
+export function mentionMessage(input: {
+  kind: "mention" | "reply";
+  slackUserId: string;
+  byName: string;
+  cardTitle: string;
+  boardName: string;
+  /** Already plain text — see plainText(). */
+  body: string;
+  url: string;
+  coverUrl?: string | null;
+}): SlackMessage {
+  const lead: SlackBlock = {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: input.kind === "mention"
+        ? "💬 *You were mentioned on a card*"
+        : "↩️ *New reply on a card*",
+    },
+  };
+  if (input.coverUrl) {
+    lead.accessory = { type: "image", image_url: input.coverUrl, alt_text: `Cover of ${input.cardTitle}` };
+  }
+
+  const blocks: SlackBlock[] = [
+    lead,
+    {
+      type: "context",
+      elements: [{
+        type: "mrkdwn",
+        text: `${escapeSlack(input.byName)} · ${escapeSlack(input.boardName)} · ${escapeSlack(input.cardTitle)}`,
+      }],
+    },
+    { type: "section", text: { type: "mrkdwn", text: quote(input.body) } },
+    { type: "divider" },
+    {
+      type: "actions",
+      elements: [{
+        type: "button",
+        text: { type: "plain_text", text: "Open card →", emoji: true },
+        url: input.url,
+        style: "primary",
+      }],
+    },
+  ];
+
+  return { text: notificationText(input), blocks };
+}
+
+/** The one-line form: Slack's notification preview, the accessible fallback,
+ *  and what the webhook path sends. The leading `<@U…>` is what makes a
+ *  CHANNEL post notify a person; a DM strips it (dmText) because there the
+ *  recipient is already the conversation. */
+function notificationText(input: {
+  kind: "mention" | "reply"; slackUserId: string; byName: string; cardTitle: string; boardName: string; body: string; url: string;
+}): string {
+  const excerpt = input.body.length > 140 ? `${input.body.slice(0, 139)}…` : input.body;
+  const verb = input.kind === "mention" ? "mentioned you on" : "replied on";
+  return `<@${input.slackUserId}> *${escapeSlack(input.byName)}* ${verb} *${escapeSlack(input.cardTitle)}* (${escapeSlack(input.boardName)}): "${escapeSlack(excerpt)}" — <${input.url}|Open card>`;
+}
+
 /** The ping. One line, the person's Slack handle first so it notifies, then
  *  who said what on which card, and a link. */
 export function slackMentionText(input: {

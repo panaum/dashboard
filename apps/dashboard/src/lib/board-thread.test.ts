@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  activityFeed, conversationMembers, coverOf, dmText, eventLine, formatStamp, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, plainText, renderComment, slackMentionText,
+  activityFeed, conversationMembers, coverOf, dmText, eventLine, mentionMessage, formatStamp, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, plainText, renderComment, slackMentionText,
 } from "./board-thread";
 
 const card = { reporterId: "qa-1", reporterName: "Anaum", assigneeId: "dev-1", assigneeName: "Priya Sharma" };
@@ -158,4 +158,67 @@ test("dmText drops a leading mention, and touches nothing else", () => {
   assert.equal(dmText("ping <@U123456> about this"), "ping <@U123456> about this");
   // A channel reference is not a member id.
   assert.equal(dmText("<#C123456> has it"), "<#C123456> has it");
+});
+
+// ── Slack Block Kit ─────────────────────────────────────────────────────────
+
+const msgInput = {
+  kind: "mention" as const,
+  slackUserId: "U0DEV",
+  byName: "Anaum",
+  cardTitle: "image.png",
+  boardName: "24 Hours AR Hubspot LP",
+  body: "@Tajamul Hi",
+  url: "https://d.example/b/tok",
+};
+
+test("a mention renders as the five blocks the notification needs", () => {
+  const m = mentionMessage(msgInput);
+  assert.deepEqual(m.blocks!.map((b) => b.type), ["section", "context", "section", "divider", "actions"]);
+  assert.equal((m.blocks![0] as any).text.text, "💬 *You were mentioned on a card*");
+  assert.equal((m.blocks![1] as any).elements[0].text, "Anaum · 24 Hours AR Hubspot LP · image.png");
+  assert.equal((m.blocks![2] as any).text.text, "> @Tajamul Hi");
+  const button = (m.blocks![4] as any).elements[0];
+  assert.equal(button.type, "button");
+  assert.equal(button.text.text, "Open card →");
+  assert.equal(button.url, "https://d.example/b/tok");
+  assert.equal(button.style, "primary");
+  // Read-only: a link button, never an action_id that posts back.
+  assert.ok(!("action_id" in button));
+});
+
+test("a reply says so, and keeps the same shape", () => {
+  const m = mentionMessage({ ...msgInput, kind: "reply", body: "fixed it" });
+  assert.equal((m.blocks![0] as any).text.text, "↩️ *New reply on a card*");
+  assert.match(m.text, /replied on \*image\.png\*/);
+});
+
+test("the cover becomes an accessory, and no cover means no block at all", () => {
+  const withCover = mentionMessage({ ...msgInput, coverUrl: "https://d.example/api/board-image?id=i1&share=tok" });
+  const accessory = (withCover.blocks![0] as any).accessory;
+  assert.equal(accessory.type, "image");
+  assert.equal(accessory.image_url, "https://d.example/api/board-image?id=i1&share=tok");
+  assert.equal(accessory.alt_text, "Cover of image.png");
+  // Absent, not a placeholder.
+  assert.ok(!("accessory" in (mentionMessage(msgInput).blocks![0] as any)));
+  assert.ok(!("accessory" in (mentionMessage({ ...msgInput, coverUrl: null }).blocks![0] as any)));
+});
+
+test("every line of a multi-line comment is quoted, and the text is escaped", () => {
+  const m = mentionMessage({ ...msgInput, body: "line one\nline <two>\nline & three" });
+  assert.equal((m.blocks![2] as any).text.text, "> line one\n> line &lt;two&gt;\n> line &amp; three");
+});
+
+test("a very long comment is cut in the block and in the preview", () => {
+  const m = mentionMessage({ ...msgInput, body: "x".repeat(2000) });
+  const quoted = (m.blocks![2] as any).text.text as string;
+  assert.ok(quoted.length < 1100 && quoted.endsWith("…"));
+  assert.ok(m.text.includes(`${"x".repeat(139)}…`));
+});
+
+test("the fallback text keeps the leading mention — a channel post needs it to notify", () => {
+  const m = mentionMessage(msgInput);
+  assert.ok(m.text.startsWith("<@U0DEV> *Anaum* mentioned you on *image.png*"));
+  // …and the DM drops it, because there the recipient is the conversation.
+  assert.ok(dmText(m.text).startsWith("*Anaum* mentioned you on"));
 });

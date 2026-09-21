@@ -7,7 +7,7 @@ import { getActor } from "@/lib/auth";
 import { type Actor, type Capability, can } from "@/lib/permissions";
 import { headers } from "next/headers";
 import { boardCardPatchSchema, boardCardSchema, boardDatesSchema, boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
-import { conversationMembers, escapeSlack, parseMentions, participantsFor, plainText, slackMentionText } from "@/lib/board-thread";
+import { conversationMembers, mentionMessage, parseMentions, participantsFor, plainText } from "@/lib/board-thread";
 import { notifySlack } from "@/lib/slack";
 import { canMove, isStage, nextOrder, reorder } from "@/lib/boards";
 import type { BoardStage } from "@/lib/constants";
@@ -373,6 +373,7 @@ export async function commentWithMentions(input: {
     select: {
       title: true, reporterId: true, assigneeId: true,
       reporter: { select: { name: true } }, assignee: { select: { name: true } },
+      images: { where: { isCover: true }, select: { id: true }, take: 1 },
       page: { select: { project: { select: { id: true, name: true, boardShareId: true } } } },
     },
   });
@@ -406,6 +407,14 @@ export async function commentWithMentions(input: {
   const h = await headers();
   const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host") ?? ""}`;
   const project = issue.page.project;
+  // Slack fetches an accessory image from its own servers, with no session, so
+  // the only reachable form is the board's capability link — which the
+  // recipients of these messages already hold. No cover or no minted link
+  // means no accessory at all.
+  const cover = issue.images[0];
+  const coverUrl = cover && project.boardShareId
+    ? `${origin}/api/board-image?id=${cover.id}&share=${project.boardShareId}`
+    : null;
   const notes: string[] = [];
   let notified = 0;
   for (const m of members) {
@@ -414,12 +423,18 @@ export async function commentWithMentions(input: {
     const url = m.role === "DEVELOPER" && project.boardShareId
       ? `${origin}/b/${project.boardShareId}` : `${origin}/dashboard/boards/${project.id}`;
     const isMention = mentioned.includes(m.id);
-    const plain = plainText(input.body);
-    const excerpt = plain.length > 140 ? `${plain.slice(0, 139)}…` : plain;
-    const text = isMention
-      ? slackMentionText({ slackUserId: m.slackUserId, byName: input.authorName, cardTitle: issue.title, boardName: project.name, body: plain, url })
-      : `<@${m.slackUserId}> *${escapeSlack(input.authorName)}* replied on *${escapeSlack(issue.title)}* (${escapeSlack(project.name)}): "${escapeSlack(excerpt)}" — <${url}|Open card>`;
-    const r = await notifySlack(m.slackUserId, text);
+    // input.authorName is the person's REAL name, on purpose, even when the
+    // recipient sees them as "QA" on the card — see board-thread.ts.
+    const r = await notifySlack(m.slackUserId, mentionMessage({
+      kind: isMention ? "mention" : "reply",
+      slackUserId: m.slackUserId,
+      byName: input.authorName,
+      cardTitle: issue.title,
+      boardName: project.name,
+      body: plainText(input.body),
+      url,
+      coverUrl,
+    }));
     if (r.sent) {
       notified++;
       if (r.reason) notes.push(`${m.name}: ${r.reason}`); // reached, but not the way we meant to

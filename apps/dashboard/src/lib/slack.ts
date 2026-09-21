@@ -18,7 +18,7 @@ import "server-only";
 // Never throws — the caller records the outcome (IssueMention.notifiedAt), so
 // an unset token, a Slack error or a refusal is visible in the data.
 
-import { dmText } from "./board-thread";
+import { dmText, type SlackMessage } from "./board-thread";
 
 export type SlackResult = { sent: boolean; via?: "dm" | "channel"; reason?: string };
 
@@ -27,7 +27,7 @@ export type SlackResult = { sent: boolean; via?: "dm" | "channel"; reason?: stri
 const apiBase = () => process.env.SLACK_API_BASE ?? "https://slack.com/api";
 
 /** Direct message one person. `slackUserId` is a member id (U… or W…). */
-async function postDirect(slackUserId: string, text: string): Promise<SlackResult> {
+async function postDirect(slackUserId: string, msg: SlackMessage): Promise<SlackResult> {
   const token = process.env.SLACK_BOT_TOKEN;
   if (!token) return { sent: false, reason: "SLACK_BOT_TOKEN is not set" };
   try {
@@ -37,7 +37,14 @@ async function postDirect(slackUserId: string, text: string): Promise<SlackResul
         "content-type": "application/json; charset=utf-8",
         authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ channel: slackUserId, text: dmText(text), unfurl_links: false }),
+      body: JSON.stringify({
+        channel: slackUserId,
+        // `text` stays as the notification preview and the fallback for
+        // clients that cannot render blocks; Slack requires it either way.
+        text: dmText(msg.text),
+        ...(msg.blocks ? { blocks: msg.blocks } : {}),
+        unfurl_links: false,
+      }),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return { sent: false, reason: `Slack answered ${res.status}` };
@@ -72,17 +79,22 @@ async function postWebhook(text: string): Promise<SlackResult> {
  * Reach one person: a direct message when a bot token exists, otherwise the
  * webhook's conversation. A DM failure falls back rather than going silent —
  * except when the token is simply absent, where there is nothing to report.
+ *
+ * Blocks go to the DM only. The webhook is the degraded path and keeps the
+ * one-line form it has always sent, whose leading `<@U…>` is the only thing
+ * that notifies anyone in a channel.
  */
-export async function notifySlack(slackUserId: string, text: string): Promise<SlackResult> {
+export async function notifySlack(slackUserId: string, msg: SlackMessage | string): Promise<SlackResult> {
+  const message: SlackMessage = typeof msg === "string" ? { text: msg } : msg;
   if (process.env.SLACK_BOT_TOKEN) {
-    const dm = await postDirect(slackUserId, text);
+    const dm = await postDirect(slackUserId, message);
     if (dm.sent) return dm;
-    const fallback = await postWebhook(text);
+    const fallback = await postWebhook(message.text);
     return fallback.sent
       ? { ...fallback, reason: `DM failed (${dm.reason}) — posted to the webhook channel instead` }
       : { sent: false, reason: `${dm.reason}; webhook also failed (${fallback.reason})` };
   }
-  return postWebhook(text);
+  return postWebhook(message.text);
 }
 
 /** For messages addressed to nobody in particular. */
