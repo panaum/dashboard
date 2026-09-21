@@ -9,7 +9,7 @@ import { canMove, inStage, type Role } from "@/lib/boards";
 import { coverOf, initials } from "@/lib/board-thread";
 import { agingLabel, agingLevel } from "@/lib/board-alive";
 import { CountUp } from "./count-up";
-import { playAssignedChime, useBoardPulse, useSoundPreference } from "./use-pulse";
+import { playBoardChime, useBoardPulse, useSoundPreference } from "./use-pulse";
 import { CardDialog, DueChip } from "./card-dialog";
 import { prepareImage } from "./image-prep";
 import type { Card, CommentResult, DatesInput, ImageResult, Member, MoveInput, Result } from "./types";
@@ -104,10 +104,18 @@ export function Board({
   }, [justAdded, cards]);
   const [pending, start] = useTransition();
 
-  // Presence, typing and "has anything changed" all come from one poll.
-  const { present, typingLine, setOpenIssue, setTyping } = useBoardPulse({ projectId, boardShareId });
-  const presentIds = new Set(present.map((p) => p.memberId));
   const [soundOn, setSoundOn] = useSoundPreference();
+
+  // Presence, typing, "has anything changed", and "somebody else just did
+  // something" all come from one poll. onNews is re-read each render, so
+  // flipping the switch takes effect without restarting the heartbeat.
+  const { present, typingLine, setOpenIssue, setTyping } = useBoardPulse({
+    projectId,
+    boardShareId,
+    viewerId,
+    onNews: () => { if (soundOn) playBoardChime(); },
+  });
+  const presentIds = new Set(present.map((p) => p.memberId));
 
   // A card that has just moved settles; one that has just landed in Closed
   // pulses once. Both are derived by comparing renders, so neither needs a
@@ -126,17 +134,6 @@ export function Board({
     const t = setTimeout(() => setSettling({}), 700);
     return () => clearTimeout(t);
   }, [cards]);
-
-  // A card becoming yours is the one board event worth a sound — and only for
-  // the person it became. Off unless this browser opted in.
-  const mine = useRef<Set<string> | null>(null);
-  useEffect(() => {
-    const now = new Set(cards.filter((c) => viewerId && c.assigneeId === viewerId).map((c) => c.id));
-    const before = mine.current;
-    mine.current = now;
-    if (!before) return; // first render is not news
-    if (soundOn && [...now].some((id) => !before.has(id))) playAssignedChime();
-  }, [cards, viewerId, soundOn]);
 
   const byId = useRef(new Map(cards.map((c) => [c.id, c])));
   byId.current = new Map(cards.map((c) => [c.id, c]));
@@ -184,16 +181,33 @@ export function Board({
             </>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setSoundOn(!soundOn)}
-          aria-pressed={soundOn}
-          title={soundOn ? "Sound on — a chime when a card becomes yours" : "Sound off"}
-          className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary"
-        >
-          {soundOn ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
-          {soundOn ? "Sound on" : "Sound off"}
-        </button>
+        {/* Offered only to someone the board can name. On a developer link the
+            viewer is anonymous by design, so their own move cannot be told
+            from anybody else's — and a chime that answers your own clicks is
+            worse than no chime. Same limitation as presence, same reason. */}
+        {viewerId && (
+          <button
+            type="button"
+            onClick={() => {
+              const next = !soundOn;
+              setSoundOn(next);
+              // Ring once on the way on. Two jobs: you hear what you just
+              // switched on instead of trusting a label, and the click itself
+              // is the gesture that lets the browser play audio later.
+              if (next) playBoardChime();
+            }}
+            aria-pressed={soundOn}
+            title={
+              soundOn
+                ? "Sound on — a chime when somebody else moves a card or comments"
+                : "Sound off — turn it on to hear when somebody else moves a card or comments"
+            }
+            className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary"
+          >
+            {soundOn ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+            {soundOn ? "Sound on" : "Sound off"}
+          </button>
+        )}
       </div>
       <div
         className={cn("grid gap-3 md:grid-cols-5", pending && "opacity-70 transition-opacity")}
