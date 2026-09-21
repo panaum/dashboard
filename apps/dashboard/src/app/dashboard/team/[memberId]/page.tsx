@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { Card } from "@/components/ui/card";
@@ -113,7 +114,7 @@ export default async function MemberDetailPage({
   return (
     <>
       <Breadcrumbs items={[{ label: "Team", href: "/dashboard/team" }, { label: member.name }]} />
-      <div className="mb-7 flex items-center gap-4">
+      <div className="mb-7 flex flex-wrap items-center gap-4">
         <Avatar
           name={member.name}
           src={member.avatarUpdatedAt ? `/api/team-avatar?id=${member.id}&v=${member.avatarUpdatedAt.toISOString()}` : null}
@@ -135,6 +136,18 @@ export default async function MemberDetailPage({
             </Badge>
           )}
         </div>
+        {/* Team answers "who is this person"; Insights answers "how is the
+            work going". This is the hop between them, pre-filtered so the
+            question carries over instead of being re-typed. */}
+        {member.role !== "TESTER" && (
+          <Link
+            href={`/dashboard/insights?developerId=${member.id}&scope=all`}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border-soft bg-card px-4 py-2 text-[13px] font-medium text-text-primary shadow-xs transition-colors hover:border-accent/50 hover:bg-accent/[0.06]"
+          >
+            <Sparkles className="size-4" strokeWidth={1.75} />
+            See their trend in Insights
+          </Link>
+        )}
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
