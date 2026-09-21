@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { remindersDue } from "@/lib/board-dates";
 import { escapeSlack } from "@/lib/board-thread";
-import { postSlack } from "@/lib/slack";
+import { notifySlack } from "@/lib/slack";
 
 // The due-date reminder sweep. Hit on a schedule by cron-job.org, the same
 // way /api/spine/drain is:
@@ -53,8 +53,9 @@ export async function POST(req: NextRequest) {
     if (!targets.length) { skipped.push(`${c.title}: nobody on the card has a Slack id`); continue; }
     let delivered = 0;
     for (const t of targets) {
-      const r = await postSlack(`<@${t.id}> *${escapeSlack(c.title)}* (${escapeSlack(project.name)}) is due ${when.slice(0, 16).replace("T", " ")} UTC — <${t.url}|Open card>`);
-      if (r.sent) delivered++; else skipped.push(`${c.title} → <@${t.id}>: ${r.reason}`);
+      const r = await notifySlack(t.id, `<@${t.id}> *${escapeSlack(c.title)}* (${escapeSlack(project.name)}) is due ${when.slice(0, 16).replace("T", " ")} UTC — <${t.url}|Open card>`);
+      if (r.sent) { delivered++; if (r.reason) skipped.push(`${c.title} → <@${t.id}>: ${r.reason}`); }
+      else skipped.push(`${c.title} → <@${t.id}>: ${r.reason}`);
     }
     if (delivered) {
       await db.issue.update({ where: { id: c.id }, data: { dueRemindedAt: now } });

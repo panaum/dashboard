@@ -44,5 +44,5 @@ export type MoveInput = { id: string; to: BoardStage; index: number };
 export type DatesInput = { id: string; startAt: string | null; dueAt: string | null; dueReminderMinutes: number | null };
 
 export type Result = { ok?: boolean; error?: string };
-export type CommentResult = Result & { mentioned?: number; notified?: number; unnotified?: string[] };
+export type CommentResult = Result & { mentioned?: number; notified?: number; notes?: string[] };
 export type ImageResult = Result & { id?: string; filename?: string | null };

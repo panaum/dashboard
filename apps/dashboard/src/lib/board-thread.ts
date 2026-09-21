@@ -149,6 +149,13 @@ export function formatStamp(iso: string, timeZone?: string): string {
   return `${part({ day: "numeric" }, "day")} ${part({ month: "short" }, "month")} ${part({ year: "numeric" }, "year")}, ${time}`;
 }
 
+/** In a direct message the recipient IS the conversation, so the leading
+ *  `<@U…>` that makes a channel post notify them is just noise. One string is
+ *  built for both paths; this trims it for the one that does not need it. */
+export function dmText(text: string): string {
+  return text.replace(/^<@[UW][A-Z0-9]+>\s*/, "");
+}
+
 /** Slack mrkdwn escaping: the three characters Slack reads as markup. */
 export function escapeSlack(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
