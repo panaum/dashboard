@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getActor } from "@/lib/auth";
-import { presentOn, typingOn, typingLine } from "@/lib/board-alive";
+import { latestActivity, presentOn, typingOn, typingLine } from "@/lib/board-alive";
 
 // THE BOARD'S HEARTBEAT — and the reason it is a heartbeat rather than a socket.
 //
@@ -92,14 +92,26 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const [rows, issueAgg, eventAgg, commentAgg] = await Promise.all([
+  const [rows, issueAgg, lastMove, lastComment] = await Promise.all([
     db.boardPresence.findMany({
       where: { projectId },
       select: { memberId: true, projectId: true, seenAt: true, typingIssueId: true, typingAt: true, member: { select: { name: true } } },
     }),
     db.issue.aggregate({ where: { page: { projectId }, boardStage: { not: null } }, _max: { updatedAt: true }, _count: true }),
-    db.issueEvent.aggregate({ where: { issue: { page: { projectId } } }, _max: { createdAt: true } }),
-    db.issueComment.aggregate({ where: { issue: { page: { projectId } } }, _max: { createdAt: true } }),
+    // The newest move and the newest comment, each WITH the person who did it.
+    // The actor is what lets the client tell "somebody did something" from
+    // "you did something", which is the difference between a useful chime and
+    // one that gets muted.
+    db.issueEvent.findFirst({
+      where: { issue: { page: { projectId } } },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true, actorId: true },
+    }),
+    db.issueComment.findFirst({
+      where: { issue: { page: { projectId } } },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true, authorId: true },
+    }),
   ]);
 
   const presence = rows.map((r) => ({
@@ -114,12 +126,18 @@ export async function POST(req: NextRequest) {
   const version = [
     issueAgg._count,
     issueAgg._max.updatedAt?.getTime() ?? 0,
-    eventAgg._max.createdAt?.getTime() ?? 0,
-    commentAgg._max.createdAt?.getTime() ?? 0,
+    lastMove?.createdAt.getTime() ?? 0,
+    lastComment?.createdAt.getTime() ?? 0,
   ].join("-");
+
+  const activity = latestActivity([
+    lastMove && { at: lastMove.createdAt.toISOString(), actorId: lastMove.actorId },
+    lastComment && { at: lastComment.createdAt.toISOString(), actorId: lastComment.authorId },
+  ]);
 
   return NextResponse.json({
     version,
+    activity,
     present: presentOn(presence, projectId, now, viewerId),
     typing: body.issueId
       ? typingLine(typingOn(presence, body.issueId, now, viewerId))

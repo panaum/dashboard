@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   AGING_THRESHOLD_MS, agingLabel, agingLevel, closedThisWeekLine, greeting,
-  isUnread, presentOn, typingLine, typingOn, unreadCount, weekWindow,
+  isNews, isUnread, latestActivity, presentOn, typingLine, typingOn, unreadCount,
+  weekWindow,
 } from "./board-alive";
 
 const now = new Date("2026-09-21T12:00:00.000Z");
@@ -112,4 +113,34 @@ test("the weekly line is ambient, plural-correct, and silent at zero", () => {
   assert.equal(closedThisWeekLine(0), null);
   assert.equal(closedThisWeekLine(-3), null);
   assert.equal(weekWindow(now).from.toISOString(), "2026-09-14T12:00:00.000Z");
+});
+
+// ── activity / news ─────────────────────────────────────────────────────────
+
+test("the newest activity wins, and an empty board has none", () => {
+  const move = { at: ago(5_000), actorId: "dev-1" };
+  const talk = { at: ago(1_000), actorId: "qa-1" };
+  assert.deepEqual(latestActivity([move, talk]), talk);
+  assert.deepEqual(latestActivity([talk, move]), talk);
+  assert.deepEqual(latestActivity([null, move, undefined]), move);
+  assert.equal(latestActivity([null, undefined]), null);
+});
+
+test("news is newer than what you were told, and done by someone else", () => {
+  const seen = ago(10_000);
+  assert.equal(isNews(seen, { at: ago(1_000), actorId: "dev-1" }, "qa-1"), true);
+  // Your own move is not news to you — this is the whole reason the actor is
+  // carried across the wire at all.
+  assert.equal(isNews(seen, { at: ago(1_000), actorId: "qa-1" }, "qa-1"), false);
+  // Older than the last thing you heard, or exactly it: already delivered.
+  assert.equal(isNews(seen, { at: ago(30_000), actorId: "dev-1" }, "qa-1"), false);
+  assert.equal(isNews(seen, { at: seen, actorId: "dev-1" }, "qa-1"), false);
+  // The first beat after a page load tells you nothing: the board you are
+  // looking at is not an event.
+  assert.equal(isNews(null, { at: ago(1_000), actorId: "dev-1" }, "qa-1"), false);
+  assert.equal(isNews(seen, null, "qa-1"), false);
+  // The shared login is nobody in particular: news to a person, and not news
+  // to the shared login, which may well have been the one who did it.
+  assert.equal(isNews(seen, { at: ago(1_000), actorId: null }, "qa-1"), true);
+  assert.equal(isNews(seen, { at: ago(1_000), actorId: null }, null), false);
 });

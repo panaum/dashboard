@@ -137,3 +137,38 @@ export function closedThisWeekLine(count: number): string | null {
 export function weekWindow(now: Date): { from: Date } {
   return { from: new Date(now.getTime() - 7 * 86_400_000) };
 }
+
+// ── activity, and what counts as news ───────────────────────────────────────
+
+/** The newest thing that happened on a board: a card moved, or a comment
+ *  posted. `at` is an ISO string so it crosses the JSON hop unchanged and
+ *  still compares correctly — every Date here serialises to the same UTC
+ *  format, so a lexical comparison is a chronological one. */
+export type Activity = { at: string; actorId: string | null };
+
+export function latestActivity(candidates: (Activity | null | undefined)[]): Activity | null {
+  return candidates.reduce<Activity | null>(
+    (best, c) => (c && (!best || c.at > best.at) ? c : best),
+    null,
+  );
+}
+
+/**
+ * Should this viewer be told about `next`?
+ *
+ * Only if it is newer than the last thing they were told about, and only if
+ * somebody ELSE did it. Your own move is not news to you, and a tool that
+ * chimes back at your own clicks gets muted the first afternoon.
+ *
+ * `seen === null` is the first beat after the board loaded: everything on the
+ * board is history at that point, not news, so nothing fires.
+ *
+ * `actorId` is null for the shared team login, which is nobody in particular —
+ * so it is news to a signed-in person (someone did something) and not news to
+ * the shared login itself (that someone may well have been them).
+ */
+export function isNews(seen: string | null, next: Activity | null, viewerId: string | null): boolean {
+  if (!next || seen === null) return false;
+  if (next.at <= seen) return false;
+  return next.actorId !== viewerId;
+}
