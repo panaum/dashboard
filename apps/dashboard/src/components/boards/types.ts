@@ -3,7 +3,7 @@ import type { BoardStage } from "@/lib/constants";
 // The card as each role sees it. `Card` is what the board draws; only QA's
 // carries severity, recurring and reporter — the developer's arrives already
 // stripped by developerView(), so this shape is the whitelist made visible.
-export type Comment = { id: string; body: string; authorName: string | null; createdAt: string };
+export type Comment = { id: string; body: string; authorName: string | null; createdAt: string; deletable: boolean };
 export type Image = { id: string; filename: string | null; isCover: boolean; bytes: number; createdAt: string };
 /** A stage change, already named for the viewer: the developer view has
  *  non-assignee actors labelled "QA" before this leaves the server. */

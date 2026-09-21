@@ -78,7 +78,7 @@ export function mentionLabelsFor(role: Role, card: Parameters<typeof participant
 }
 
 export type FeedComment = {
-  kind: "comment"; id: string; body: string; authorName: string | null; createdAt: string;
+  kind: "comment"; id: string; body: string; authorName: string | null; createdAt: string; deletable: boolean;
 };
 export type FeedEvent = {
   kind: "event"; id: string; text: string; actorName: string | null; createdAt: string;
@@ -101,11 +101,11 @@ export function eventLine(e: {
  * a comment written on a move follows the move.
  */
 export function activityFeed(
-  comments: { id: string; body: string; authorName: string | null; createdAt: string }[],
+  comments: { id: string; body: string; authorName: string | null; createdAt: string; deletable?: boolean }[],
   events: { id: string; actorName: string | null; fromStage: BoardStage | null; toStage: BoardStage; createdAt: string }[],
 ): FeedItem[] {
   const items: FeedItem[] = [
-    ...comments.map((c): FeedComment => ({ kind: "comment", id: c.id, body: c.body, authorName: c.authorName, createdAt: c.createdAt })),
+    ...comments.map((c): FeedComment => ({ kind: "comment", id: c.id, body: c.body, authorName: c.authorName, createdAt: c.createdAt, deletable: c.deletable ?? false })),
     ...events.map((e): FeedEvent => ({ kind: "event", id: e.id, text: eventLine(e), actorName: e.actorName, createdAt: e.createdAt })),
   ];
   return items.sort((a, b) =>

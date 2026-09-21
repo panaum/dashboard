@@ -110,3 +110,19 @@ export async function developerDeleteImage(input: { boardShareId: string; issueI
   revalidatePath(`/b/${input.boardShareId}`);
   return r;
 }
+
+/** Delete one of your own comments from the link: the comment must be on a
+ *  card of this board and authored by that card's assignee — the only person
+ *  the link speaks for. */
+export async function developerDeleteComment(input: { boardShareId: string; id: string }): Promise<ActionResult> {
+  const board = await boardFor(input.boardShareId);
+  if (!board) return { error: "This link is no longer valid." };
+  const c = await db.issueComment.findUnique({ where: { id: input.id }, select: { issueId: true, authorId: true } });
+  if (!c) return { error: "Comment not found." };
+  const card = await cardIn(board.id, c.issueId);
+  if (!card) return { error: "Card not found on this board." };
+  if (!c.authorId || c.authorId !== card.assigneeId) return { error: "You can only delete your own comments." };
+  await db.issueComment.delete({ where: { id: input.id } });
+  revalidatePath(`/b/${input.boardShareId}`);
+  return { ok: true };
+}
