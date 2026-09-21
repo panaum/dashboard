@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { Board } from "@/components/boards/board";
 import type { Card } from "@/components/boards/types";
-import { developerAuthorLabel, developerView, isStage } from "@/lib/boards";
+import { developerView, isStage, threadAuthorLabel } from "@/lib/boards";
 import { developerComment, developerCover, developerDeleteComment, developerDeleteImage, developerImage, developerMove } from "./actions";
 import { participantsFor } from "@/lib/board-thread";
 
@@ -30,7 +30,7 @@ export default async function DeveloperBoardPage({ params }: { params: Promise<{
             select: {
               id: true, title: true, description: true, link: true,
               boardStage: true, boardOrder: true, assigneeId: true, reporterId: true, createdAt: true, startAt: true, dueAt: true,
-              assignee: { select: { name: true } },
+              assignee: { select: { name: true } }, reporter: { select: { name: true } },
               comments: { orderBy: { createdAt: "asc" }, select: { id: true, body: true, createdAt: true, authorId: true, author: { select: { name: true } } } },
               events: { orderBy: { createdAt: "asc" }, select: { id: true, fromStage: true, toStage: true, createdAt: true, actorId: true, actor: { select: { name: true } } } },
               images: { orderBy: { createdAt: "asc" }, select: { id: true, filename: true, isCover: true, bytes: true, createdAt: true } },
@@ -50,17 +50,18 @@ export default async function DeveloperBoardPage({ params }: { params: Promise<{
       createdAt: i.createdAt.toISOString(),
       startAt: safe.startAt ? new Date(safe.startAt).toISOString() : null, dueAt: safe.dueAt ? new Date(safe.dueAt).toISOString() : null,
       assigneeName: i.assignee?.name ?? null,
-      comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: developerAuthorLabel({ authorId: c.authorId, authorName: c.author?.name ?? null }, i.assigneeId), createdAt: c.createdAt.toISOString(), deletable: !!c.authorId && c.authorId === i.assigneeId })),
-      // Stage changes, with every non-assignee actor named "QA" — the same rule as the thread.
+      comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: threadAuthorLabel({ authorId: c.authorId, authorName: c.author?.name ?? null }), createdAt: c.createdAt.toISOString(), deletable: !!c.authorId && c.authorId === i.assigneeId })),
+      // Stage changes, by whoever made them — same rule as the thread.
       events: i.events.flatMap((e) => isStage(e.toStage) ? [{
         id: e.id,
-        actorName: developerAuthorLabel({ authorId: e.actorId, authorName: e.actor?.name ?? null }, i.assigneeId),
+        actorName: threadAuthorLabel({ authorId: e.actorId, authorName: e.actor?.name ?? null }),
         fromStage: isStage(e.fromStage) ? e.fromStage : null, toStage: e.toStage, createdAt: e.createdAt.toISOString(),
       }] : []),
       images: i.images.map((img) => ({ ...img, createdAt: img.createdAt.toISOString() })),
-      // Labels only. The reporter appears as "QA"; their id and name stay on the server.
+      // Labels only — the reporter's id never leaves the server, just the name.
       participants: participantsFor("developer", {
-        reporterId: i.reporterId, reporterName: null, assigneeId: i.assigneeId, assigneeName: i.assignee?.name ?? null,
+        reporterId: i.reporterId, reporterName: i.reporter?.name ?? null,
+        assigneeId: i.assigneeId, assigneeName: i.assignee?.name ?? null,
       }).map((p) => p.label),
     }];
   });

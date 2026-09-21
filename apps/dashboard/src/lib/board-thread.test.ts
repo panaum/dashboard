@@ -15,10 +15,12 @@ test("QA may mention the assignee and the reporter, by name", () => {
   ]);
 });
 
-test("the developer may mention the reporter only, and only as QA", () => {
-  // The reporter's name never leaves the server for this view; the id still resolves.
-  assert.deepEqual(participantsFor("developer", card), [{ id: "qa-1", label: "QA" }]);
-  // A card from the shared session has no reporter: nobody to ping.
+test("the developer may mention the reporter, by name", () => {
+  assert.deepEqual(participantsFor("developer", card), [{ id: "qa-1", label: "Anaum" }]);
+  // A reporter with no row behind them — the shared team login — has no name
+  // to offer, so that side reads "QA" rather than inventing one.
+  assert.deepEqual(participantsFor("developer", { ...card, reporterName: null }), [{ id: "qa-1", label: "QA" }]);
+  // No reporter at all: nobody to ping.
   assert.deepEqual(participantsFor("developer", { ...card, reporterId: null, reporterName: null }), []);
 });
 
@@ -94,7 +96,7 @@ test("the composer never offers the viewer their own name; the shared session se
   assert.deepEqual(mentionLabelsFor("qa", card, "qa-1"), ["Priya Sharma"]);
   assert.deepEqual(mentionLabelsFor("qa", card, "dev-1"), ["Anaum"]);
   assert.deepEqual(mentionLabelsFor("qa", card, "bootstrap"), ["Priya Sharma", "Anaum"]);
-  assert.deepEqual(mentionLabelsFor("developer", card, "dev-1"), ["QA"]);
+  assert.deepEqual(mentionLabelsFor("developer", card, "dev-1"), ["Anaum"]);
 });
 
 test("formatStamp writes the date the reference does: day, month, year, 24-hour time", () => {

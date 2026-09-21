@@ -72,10 +72,17 @@ export type DeveloperCard = {
 /**
  * Strip a card down to what the developer view is allowed to carry.
  *
- * Severity, the recurring flag and the reporter never leave the server for
- * this view — priority reaches the developer through card ORDER alone. This
- * is a whitelist, not a blacklist: a field added to Issue later is hidden by
+ * Severity and the recurring flag never leave the server for this view —
+ * priority reaches the developer through card ORDER alone. This is a
+ * whitelist, not a blacklist: a field added to Issue later is hidden by
  * default, not leaked by default.
+ *
+ * The reporter's NAME is no longer among the hidden things. It used to be —
+ * the developer saw "QA" — but the Slack DM names the sender in full, so the
+ * anonymity only ever held for a developer who never read their
+ * notifications. Operator's call, 2026-09-21: name people on both. The
+ * reporter's *id* still does not leave the server; only the display name
+ * reaches the client, through the labels built in board-thread.ts.
  */
 export function developerView<T extends DeveloperCard & Record<string, unknown>>(
   card: T,
@@ -95,17 +102,15 @@ export function developerView<T extends DeveloperCard & Record<string, unknown>>
 }
 
 /**
- * The name a comment carries on the developer view. Only the card's own
- * assignee is named; every other voice on the thread — the reporter, another
- * QA, the shared session — is "QA". The reporter's identity never leaves the
- * server for this view, and it holds whether or not that person has a login.
+ * The name a comment or a stage change carries on a board thread — the same
+ * rule for both views now: whoever did it, by name.
+ *
+ * A null author is not a person: that work came from the shared team login,
+ * which nobody can be held to. It reads "QA", exactly as it does on the QA
+ * side, rather than inventing an attribution.
  */
-export function developerAuthorLabel(
-  c: { authorId: string | null; authorName: string | null },
-  assigneeId: string | null,
-): string {
-  if (assigneeId && c.authorId === assigneeId) return c.authorName ?? "Developer";
-  return "QA";
+export function threadAuthorLabel(c: { authorId: string | null; authorName: string | null }): string {
+  return c.authorName ?? "QA";
 }
 
 /** Cards of one stage, in the order QA arranged them. */
