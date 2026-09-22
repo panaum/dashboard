@@ -33,7 +33,7 @@ export default async function DeveloperBoardPage({ params }: { params: Promise<{
               boardStage: true, boardOrder: true, assigneeId: true, reporterId: true, createdAt: true, startAt: true, dueAt: true,
               assignee: { select: { name: true } }, reporter: { select: { name: true } },
               comments: { orderBy: { createdAt: "asc" }, select: { id: true, body: true, createdAt: true, authorId: true, author: { select: { name: true } } } },
-              events: { orderBy: { createdAt: "asc" }, select: { id: true, fromStage: true, toStage: true, createdAt: true, note: true, actorId: true, actor: { select: { name: true } } } },
+              events: { orderBy: { createdAt: "asc" }, select: { id: true, fromStage: true, toStage: true, createdAt: true, actorId: true, actor: { select: { name: true } } } },
               images: { orderBy: { createdAt: "asc" }, select: { id: true, filename: true, isCover: true, bytes: true, createdAt: true } },
               views: { select: { viewerId: true, viewedAt: true } },
             },
@@ -65,7 +65,6 @@ export default async function DeveloperBoardPage({ params }: { params: Promise<{
         id: e.id,
         actorName: threadAuthorLabel({ authorId: e.actorId, authorName: e.actor?.name ?? null }),
         fromStage: isStage(e.fromStage) ? e.fromStage : null, toStage: e.toStage, createdAt: e.createdAt.toISOString(),
-        note: e.note,
       }] : []),
       images: i.images.map((img) => ({ ...img, createdAt: img.createdAt.toISOString() })),
       // Labels only — the reporter's id never leaves the server, just the name.

@@ -83,12 +83,7 @@ export type FeedComment = {
 };
 export type FeedEvent = {
   kind: "event"; id: string; text: string; actorName: string | null; createdAt: string;
-  /** Why the card moved, when the move required a reason. An event carrying
-   *  one is a message from a person, not metadata, so the developer view
-   *  shows it even though it hides bare stage changes. */
-  note: string | null;
 };
-
 export type FeedItem = FeedComment | FeedEvent;
 
 /** "Priya moved this card from Active to Completed" — the system line for one
@@ -108,11 +103,11 @@ export function eventLine(e: {
  */
 export function activityFeed(
   comments: { id: string; body: string; authorName: string | null; createdAt: string; deletable?: boolean }[],
-  events: { id: string; actorName: string | null; fromStage: BoardStage | null; toStage: BoardStage; createdAt: string; note?: string | null }[],
+  events: { id: string; actorName: string | null; fromStage: BoardStage | null; toStage: BoardStage; createdAt: string }[],
 ): FeedItem[] {
   const items: FeedItem[] = [
     ...comments.map((c): FeedComment => ({ kind: "comment", id: c.id, body: c.body, authorName: c.authorName, createdAt: c.createdAt, deletable: c.deletable ?? false })),
-    ...events.map((e): FeedEvent => ({ kind: "event", id: e.id, text: eventLine(e), actorName: e.actorName, createdAt: e.createdAt, note: e.note?.trim() || null })),
+    ...events.map((e): FeedEvent => ({ kind: "event", id: e.id, text: eventLine(e), actorName: e.actorName, createdAt: e.createdAt })),
   ];
   return items.sort((a, b) =>
     a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.kind === b.kind ? 0 : a.kind === "event" ? -1 : 1,

@@ -166,10 +166,6 @@ model IssueEvent {
   // QA session, which is honest rather than attributing to nobody in particular.
   actor     TeamMember? @relation("EventActor", fields: [actorId], references: [id], onDelete: SetNull)
   actorId   String?
-  // Why the card moved. Required when moving into NEEDS_CLARIFICATION and null
-  // everywhere else — it lives on the transition rather than loose in the
-  // comment thread, so it cannot drift from the move that prompted it.
-  note      String?
   createdAt DateTime    @default(now())
 
   @@index([issueId, createdAt])

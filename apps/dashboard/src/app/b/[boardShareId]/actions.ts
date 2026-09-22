@@ -52,8 +52,17 @@ export async function developerMove(input: {
       data: w.id === input.id ? { boardStage: input.to, boardOrder: w.boardOrder } : { boardOrder: w.boardOrder },
     })),
     ...(sameStage ? [] : [db.issueEvent.create({
-      data: { issueId: input.id, fromStage: from, toStage: input.to, actorId: card.assigneeId, note: reason || null },
+      data: { issueId: input.id, fromStage: from, toStage: input.to, actorId: card.assigneeId },
     })]),
+    ...(reason
+      ? [db.issueComment.create({
+          data: {
+            issueId: input.id,
+            body: `Moved to ${BOARD_STAGE_LABELS[input.to]} — ${reason}`,
+            authorId: card.assigneeId,
+          },
+        })]
+      : []),
   ]);
   revalidatePath(`/b/${input.boardShareId}`);
   return { ok: true };

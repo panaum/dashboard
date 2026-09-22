@@ -9,8 +9,6 @@ export type Image = { id: string; filename: string | null; isCover: boolean; byt
  *  non-assignee actors labelled "QA" before this leaves the server. */
 export type StageEvent = {
   id: string; actorName: string | null; fromStage: BoardStage | null; toStage: BoardStage; createdAt: string;
-  /** Why the card moved. Set only on moves that require a reason. */
-  note: string | null;
 };
 
 export type Card = {

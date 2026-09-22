@@ -38,7 +38,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
                 boardStage: true, boardOrder: true, assigneeId: true, reporterId: true, createdAt: true, startAt: true, dueAt: true, dueReminderMinutes: true,
                 assignee: { select: { name: true } }, reporter: { select: { name: true } },
                 comments: { orderBy: { createdAt: "asc" }, select: { id: true, body: true, createdAt: true, author: { select: { name: true } } } },
-                events: { orderBy: { createdAt: "asc" }, select: { id: true, fromStage: true, toStage: true, createdAt: true, note: true, actor: { select: { name: true } } } },
+                events: { orderBy: { createdAt: "asc" }, select: { id: true, fromStage: true, toStage: true, createdAt: true, actor: { select: { name: true } } } },
                 images: { orderBy: { createdAt: "asc" }, select: { id: true, filename: true, isCover: true, bytes: true, createdAt: true } },
                 views: { where: { viewerId: actor.bootstrap ? "" : actor.id }, select: { viewedAt: true }, take: 1 },
               },
@@ -65,7 +65,6 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: c.author?.name ?? null, createdAt: c.createdAt.toISOString(), deletable: true })),
     events: i.events.flatMap((e) => isStage(e.toStage) ? [{
       id: e.id, actorName: e.actor?.name ?? null, fromStage: isStage(e.fromStage) ? e.fromStage : null, toStage: e.toStage, createdAt: e.createdAt.toISOString(),
-      note: e.note,
     }] : []),
     images: i.images.map((img) => ({ ...img, createdAt: img.createdAt.toISOString() })),
     participants: mentionLabelsFor("qa", {
