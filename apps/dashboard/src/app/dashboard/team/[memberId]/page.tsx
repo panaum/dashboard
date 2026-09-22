@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { label, MONTH_NAMES } from "@/lib/constants";
+import { doesPageWork } from "@/lib/roles";
 
 const shortMonth = (m: string) =>
   MONTH_NAMES[Number(m.slice(5, 7)) - 1]?.slice(0, 3) ?? m.slice(5);
@@ -90,6 +91,11 @@ export default async function MemberDetailPage({
     },
   });
   if (!member) notFound();
+  // Everything below this line measures pages built and pages QA'd. For
+  // somebody who does neither, the page is not an empty state — it is four
+  // zeros and a chart of nothing, presented as their record. They are named on
+  // the team page instead, and nothing links here.
+  if (!doesPageWork(member.role)) notFound();
 
   const built = member.devPages;
   const tested = member.testerPages;

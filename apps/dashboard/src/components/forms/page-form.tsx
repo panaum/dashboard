@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { buildsPages, testsPages } from "@/lib/roles";
 import { Field, Input, Select } from "@/components/ui/field";
 import { FormFooter, useOnOk } from "@/components/forms/form-parts";
 import { savePage } from "@/app/dashboard/clients/[clientId]/[projectId]/actions";
@@ -38,8 +39,8 @@ export function PageForm({
 
   // Whitelist, not blacklist: with `!== "TESTER"` every role added later — the
   // first was MANAGER — silently appeared in both pickers.
-  const developers = members.filter((m) => m.role === "DEVELOPER" || m.role === "BOTH");
-  const testers = members.filter((m) => m.role === "TESTER" || m.role === "BOTH");
+  const developers = members.filter((m) => buildsPages(m.role));
+  const testers = members.filter((m) => testsPages(m.role));
 
   return (
     <form action={action} className="flex flex-col gap-4">
