@@ -60,13 +60,103 @@
   --shadow-lg: 0 12px 40px rgba(20, 20, 43, 0.1);
   --shadow-brand: 0 6px 20px rgba(79, 70, 229, 0.25);
 
-  /* Font (Geist is loaded via next/font in layout.tsx) */
+  /* Font (both loaded via next/font in layout.tsx) */
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  /* Every figure on the Insights page is set in this. A proportional face
+     lets a column of numbers wander; a monospace makes the decimal point a
+     vertical rule you can read down. */
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", monospace;
+}
+
+/* ══ TERMINAL — the Insights design system ═══════════════════════════════
+   Scoped to one route rather than dropped on the app, because it re-derives
+   ground, ink, hairline and radius, and the rest of the app carries 68
+   hardcoded colours and 25 literal utility classes that would have to be
+   audited first. Applied by <div data-surface="terminal"> on the Insights
+   page; everything inside reads these tokens and nothing outside sees them.
+
+   Direction: quiet, dense, editorial. Data is the only loud thing.
+
+   The ink ramp is TWO text steps, not three. Measured on this ground, the
+   lightest grey that still clears 4.5:1 on the dimmest surface it sits on is
+   #706E72, and the secondary is already #6B6B73 at 4.72:1 — there is no room
+   above it for a third readable step. So --ink-3 is a NON-TEXT ink: hairline
+   rules, chart gridlines, the hatch on a suppressed cell. It never sets type. */
+[data-surface="terminal"] {
+  --ground: #fbfaf8;          /* warm near-white, not blue-grey        */
+  --surface: #ffffff;         /* cards, lifted by hairline not shadow  */
+  --surface-sunken: #f4f2ee;  /* inset rows, folded groups             */
+  --hairline: #e8e6e1;        /* every card edge and row divider       */
+  --hairline-strong: #d8d5ce; /* section rules, axis lines             */
+
+  --ink: #1a1a1e;             /* 16.63:1 on ground                     */
+  --ink-2: #6b6b73;           /*  4.72:1 on the dimmest surface        */
+  --ink-3: #9a9aa2;           /*  NON-TEXT ONLY — 2.50:1               */
+
+  --focus: #4f46e5;           /* the one accent: interaction + current */
+  --focus-wash: #efeefc;
+
+  --good: #1f7a4d;            /* 5.32:1 on card                        */
+  --watch: #8a5300;           /* 6.33:1                                */
+  --poor: #b3261e;            /* 6.54:1                                */
+  --good-wash: #e9f3ed;
+  --watch-wash: #f8efe1;
+  --poor-wash: #f9eceb;
+
+  --r-card: 6px;
+  --r-chip: 4px;
+  --r-bar: 2px;
+
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --enter: 240ms;
+
+  /* This surface has a real dark variant, so it opts back in — form controls
+     and scrollbars inside it follow the theme instead of staying light. */
+  color-scheme: light dark;
+
+  background: var(--ground);
+  color: var(--ink-2);
+  font-family: var(--font-sans);
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-surface="terminal"] {
+    /* Re-derived, not inverted. The surface is LIFTED above the ground
+       (#1d1c21 over #17161a) rather than separated by a shadow, because a
+       shadow on a dark ground reads as smudge. Every value re-measured. */
+    --ground: #17161a;
+    --surface: #1d1c21;
+    --surface-sunken: #232228;
+    --hairline: #2e2c33;
+    --hairline-strong: #3d3b43;
+
+    --ink: #f4f3f1;           /* 15.27:1 on surface                    */
+    --ink-2: #a5a3a9;         /*  6.32:1 on the dimmest surface        */
+    --ink-3: #6e6c75;         /*  NON-TEXT ONLY                        */
+
+    --focus: #a5a0fb;
+    --focus-wash: #232046;
+
+    --good: #5fc98e;          /* 8.25:1 on surface                     */
+    --watch: #e0a653;         /* 7.86:1                                */
+    --poor: #ee8f87;          /* 7.19:1                                */
+    --good-wash: #16291f;
+    --watch-wash: #2b2314;
+    --poor-wash: #2d1918;
+  }
 }
 
 html,
 body {
   height: 100%;
+}
+
+/* The app is a light design and says so. Without this declaration a browser
+   on a dark OS applies its own automatic inversion to every page — an
+   algorithmic dark mode nobody designed, which is what was happening. Stating
+   `light` turns that off. The Insights surface opts back in for itself. */
+:root {
+  color-scheme: light;
 }
 
 body {
@@ -216,4 +306,74 @@ body {
   @page {
     margin: 1.5cm;
   }
+}
+
+/* ══ TERMINAL — type, density and motion ════════════════════════════════
+   Five sizes, nothing between them. Weight carries hierarchy, not size:
+   400 body, 500 labels, 600 headings, and never a whole row in bold. */
+[data-surface="terminal"] .t-micro {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+[data-surface="terminal"] .t-body   { font-size: 13px; line-height: 1.45; }
+[data-surface="terminal"] .t-card   { font-size: 15px; font-weight: 600; color: var(--ink); }
+[data-surface="terminal"] .t-section{ font-size: 20px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+[data-surface="terminal"] .t-kpi {
+  font-size: 32px;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+/* Every figure, everywhere, in the mono — and aligned on the decimal. */
+[data-surface="terminal"] .fig {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* A card is a hairline and the ground. No shadow: the one elevation level
+   this system has is reserved for popovers, and nothing here is a popover. */
+[data-surface="terminal"] .panel {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+}
+/* Row dividers sit at 40% of the hairline — present, not striped. Zebra
+   banding is banned here: it colours rows that carry no meaning. */
+[data-surface="terminal"] .rule-row + .rule-row {
+  border-top: 1px solid color-mix(in srgb, var(--hairline) 40%, transparent);
+}
+
+/* Suppressed cells are hatched, never blank and never zero — a gap reads as
+   "no work", a zero reads as "perfect". The hatch reads as "withheld". */
+[data-surface="terminal"] .hatched {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--ink-3) 22%, transparent) 0 1px,
+    transparent 1px 5px
+  );
+}
+
+/* Entrance, and only entrance. Motion here exists to let the eye keep hold of
+   an object while the data under it changes; anything that is not doing that
+   has been deleted. */
+@keyframes t-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+[data-surface="terminal"] .t-in {
+  animation: t-enter var(--enter) var(--ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-surface="terminal"] .t-in {
+    animation-name: t-fade;
+    animation-duration: 90ms;
+    animation-timing-function: linear;
+  }
+  @keyframes t-fade { from { opacity: 0; } to { opacity: 1; } }
 }

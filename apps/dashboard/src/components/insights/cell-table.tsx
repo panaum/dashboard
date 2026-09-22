@@ -1,28 +1,63 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MIN_N, type Cell, type Confidence } from "@/lib/metrics";
+import { bandFor, MIN_N, type Band, type Cell, type Confidence } from "@/lib/metrics";
 
-// EVERY NUMBER ARRIVES WITH ITS n.
+// EVERY NUMBER ARRIVES WITH ITS n, AND EVERY FIGURE IS SET IN THE MONO.
 //
 // The old page ranked seven developers on as few as one page each and printed
 // the winner in bold. A cell whose sample cannot carry a ranking is rendered
-// here as a suppressed row — present, greyed, with its n and the reason —
-// never as a rank and never as an absence. Deleting the row would read as
-// "this person did no work"; showing the number would read as a verdict.
+// here HATCHED — present, its n visible, diagonally struck through. A blank
+// would read as "did no work" and a zero would read as "perfect"; the hatch
+// reads as withheld, which is what it is.
+//
+// Rows are 40px with 16px cell padding, numerics right-aligned on a tabular
+// mono so the decimal points form a vertical rule. Dividers are the hairline
+// at 40%. No zebra striping: banding rows colours something that carries no
+// meaning, and this system spends colour only where it means something.
+
+const ROW = "grid h-10 items-center gap-4 px-4";
+
+// Colour never carries the band alone — each step has a glyph too, and the
+// rows are already sorted, so position carries it a third time.
+//
+// The MIDDLE step is deliberately not amber. The band is a ratio of the
+// period mean, so most values land in it by construction: on real data that
+// painted eleven of sixteen rows amber, which reads as an alarm about being
+// average. Colour is spent on the exceptions at either end and the typical
+// case is left in plain ink — the glyph still distinguishes it.
+const BAND_GLYPH: Record<Band, string> = { good: "▾", watch: "–", poor: "▴" };
+const BAND_INK: Record<Band, string> = {
+  good: "text-[var(--good)]",
+  watch: "text-[var(--ink)]",
+  poor: "text-[var(--poor)]",
+};
+
+export function BandedFigure({ value, mean }: { value: number | null; mean: number | null }) {
+  const band = bandFor(value, mean);
+  if (value === null) return <span className="text-[var(--ink-3)]">—</span>;
+  return (
+    <span className={cn("fig inline-flex items-center gap-1.5", band ? BAND_INK[band] : "text-[var(--ink)]")}>
+      {band && <span aria-hidden className="text-[9px] leading-none">{BAND_GLYPH[band]}</span>}
+      <span className="font-medium">{value}</span>
+      {band && <span className="sr-only">({band})</span>}
+    </span>
+  );
+}
 
 export function ConfidenceMark({ c, n }: { c: Confidence; n: number }) {
   if (c === "high") return null;
-  const text =
-    c === "blocked" ? "not captured"
-    : c === "insufficient" ? `n=${n}, too few to rank`
-    : "indicative";
+  const text = c === "blocked" ? "not captured" : c === "insufficient" ? `n=${n}` : "indicative";
   return (
     <span
-      className={cn(
-        "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-        c === "blocked" ? "bg-card-soft text-text-muted" : "bg-warning/[0.14] text-warning-strong",
-      )}
+      className="t-micro shrink-0 rounded-[var(--r-chip)] border border-[var(--hairline-strong)] px-1.5 py-px text-[10px] tracking-[0.04em]"
+      title={
+        c === "insufficient"
+          ? `Fewer than ${MIN_N} pages — shown, but not ranked.`
+          : c === "blocked"
+            ? "No field behind this metric."
+            : "Adjusted against too few reviewers to be more than indicative."
+      }
     >
       {text}
     </span>
@@ -31,8 +66,9 @@ export function ConfidenceMark({ c, n }: { c: Confidence; n: number }) {
 
 export type Column<T extends Cell = Cell> = {
   head: string;
-  /** Right-aligned numerics are the default; a name column opts out. */
+  /** Right-aligned numerics are the default; a text column opts out. */
   align?: "left";
+  width?: string;
   render: (c: T) => React.ReactNode;
 };
 
@@ -41,120 +77,128 @@ export function CellTable<T extends Cell>({
   label,
   columns,
   unit,
+  mean,
   hrefFor,
   emptyNote = "Nothing in this scope.",
   collapseAfter = 5,
 }: {
   cells: T[];
-  /** Turns a cell's key into something a person recognises. */
   label: (key: string) => string;
   columns?: Column<T>[];
-  /** What the default value column is measuring, for the header. */
+  /** The unit, stated once in the header rather than repeated per row. */
   unit?: string;
+  /** The period mean, which the three-step ramp is measured against. */
+  mean?: number | null;
   hrefFor?: (key: string) => string | null;
   emptyNote?: string;
-  /** Past this many suppressed rows, fold them away. Showing 81 unrankable
-   *  clients in a row is honest and unreadable; a disclosure is both. */
+  /** Past this many withheld rows, fold them away. 81 unrankable clients in a
+   *  column is honest and unreadable; a disclosure is both. */
   collapseAfter?: number;
 }) {
   if (cells.length === 0) {
-    return <p className="px-4 py-8 text-center text-[13px] text-text-secondary">{emptyNote}</p>;
+    return (
+      <div className="panel flex h-24 items-center justify-center">
+        <p className="t-body text-[var(--ink-2)]">{emptyNote}</p>
+      </div>
+    );
   }
-  const cols: Column<T>[] = columns ?? [
-    { head: "n", render: (c) => <span className="tabular-nums text-text-secondary">{c.n}</span> },
-    {
-      head: unit ?? "value",
-      render: (c) => (
-        <span className="font-medium tabular-nums text-text-primary">
-          {c.value === null ? "—" : c.value}
-        </span>
-      ),
-    },
-    {
-      head: "vs prev",
-      render: (c) => <Delta now={c.value} before={c.previousPeriodValue} />,
-    },
-  ];
 
-  const isSuppressed = (c: T) => c.confidence === "insufficient" || c.confidence === "blocked";
-  const suppressedCount = cells.filter(isSuppressed).length;
-  const fold = suppressedCount > collapseAfter;
-  const ranked = fold ? cells.filter((c) => !isSuppressed(c)) : cells;
-  const folded = fold ? cells.filter(isSuppressed) : [];
+  const cols: Column<T>[] =
+    columns ?? [
+      { head: "n", width: "3rem", render: (c) => <span className="fig text-[var(--ink-2)]">{c.n}</span> },
+      { head: unit ?? "value", width: "7rem", render: (c) => <BandedFigure value={c.value} mean={mean ?? null} /> },
+      { head: "vs prev", width: "5rem", render: (c) => <Delta now={c.value} before={c.previousPeriodValue} /> },
+    ];
+  const grid = { gridTemplateColumns: `minmax(0,1fr) ${cols.map((c) => c.width ?? "5rem").join(" ")}` };
+
+  const withheld = (c: T) => c.confidence === "insufficient" || c.confidence === "blocked";
+  const fold = cells.filter(withheld).length > collapseAfter;
+  const ranked = fold ? cells.filter((c) => !withheld(c)) : cells;
+  const folded = fold ? cells.filter(withheld) : [];
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
-      <div className="flex items-center gap-4 border-b border-border-soft px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
-        <span className="flex-1">name</span>
+    <div className="panel overflow-hidden">
+      <div
+        className={cn(ROW, "t-micro h-8 border-b border-[var(--hairline)] text-[var(--ink-3)]")}
+        style={grid}
+      >
+        <span>name</span>
         {cols.map((c) => (
-          <span key={c.head} className={cn("w-20 shrink-0", c.align === "left" ? "text-left" : "text-right")}>
+          <span key={c.head} className={c.align === "left" ? "text-left" : "text-right"}>
             {c.head}
           </span>
         ))}
       </div>
-      {ranked.map(row)}
+
+      {ranked.map((cell, i) => row(cell, i))}
+
       {folded.length > 0 && (
-        <details className="group border-t border-border-soft">
-          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[13px] text-text-secondary transition-colors hover:bg-card-soft">
+        <details className="group border-t border-[var(--hairline)]">
+          <summary
+            className={cn(
+              ROW,
+              "t-body cursor-pointer list-none text-[var(--ink-2)] transition-colors hover:bg-[var(--surface-sunken)]",
+            )}
+            style={{ gridTemplateColumns: "auto minmax(0,1fr)" }}
+          >
             <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" strokeWidth={2} />
-            {folded.length} more below {MIN_N} pages — shown, not ranked
+            <span>
+              <span className="fig">{folded.length}</span> more below{" "}
+              <span className="fig">{MIN_N}</span> pages — withheld, not ranked
+            </span>
           </summary>
-          <div className="border-t border-border-soft">{folded.map(row)}</div>
+          <div className="border-t border-[var(--hairline)] bg-[var(--surface-sunken)]">
+            {folded.map((cell, i) => row(cell, i))}
+          </div>
         </details>
       )}
     </div>
   );
 
-  function row(cell: T) {
-    {
-        const suppressed = cell.confidence === "insufficient" || cell.confidence === "blocked";
-        const href = hrefFor?.(cell.key) ?? null;
-        const name = (
-          <span className={cn("truncate text-sm", suppressed ? "text-text-secondary" : "text-text-primary")}>
-            {label(cell.key)}
-          </span>
-        );
-        return (
-          <div
-            key={cell.key}
-            className={cn(
-              "flex items-center gap-4 border-b border-border-soft px-4 py-2.5 last:border-b-0",
-              suppressed && "bg-card-soft/40",
-            )}
+  function row(cell: T, i: number) {
+    const out = withheld(cell);
+    const href = hrefFor?.(cell.key) ?? null;
+    const name = <span className="truncate text-[13px] text-[var(--ink)]">{label(cell.key)}</span>;
+    return (
+      <div
+        key={cell.key}
+        style={{ ...grid, animationDelay: `${Math.min(i, 12) * 40}ms` }}
+        className={cn(ROW, "rule-row t-in", out && "hatched")}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {href ? (
+            <Link href={href} className="min-w-0 truncate hover:underline">
+              {name}
+            </Link>
+          ) : (
+            name
+          )}
+          <ConfidenceMark c={cell.confidence} n={cell.n} />
+        </span>
+        {cols.map((c) => (
+          <span
+            key={c.head}
+            className={cn("text-[13px]", c.align === "left" ? "text-left" : "text-right")}
           >
-            <span className="flex min-w-0 flex-1 items-center gap-2">
-              {href ? (
-                <Link href={href} className="min-w-0 truncate hover:underline">{name}</Link>
-              ) : (
-                name
-              )}
-              <ConfidenceMark c={cell.confidence} n={cell.n} />
-            </span>
-            {cols.map((c) => (
-              <span
-                key={c.head}
-                className={cn("w-20 shrink-0 text-[13px]", c.align === "left" ? "text-left" : "text-right",
-                  suppressed && "opacity-55")}
-              >
-                {c.render(cell)}
-              </span>
-            ))}
-          </div>
-        );
-    }
+            {c.render(cell)}
+          </span>
+        ))}
+      </div>
+    );
   }
 }
 
 /** Direction is what matters on a defect rate, and down is good — so this
- *  never colours by sign alone. */
+ *  reads the sign against the metric, never as plain positive/negative, and
+ *  pairs the colour with an arrow. */
 export function Delta({ now, before }: { now: number | null; before: number | null }) {
-  if (now === null || before === null) {
-    return <span className="text-text-muted">—</span>;
-  }
+  if (now === null || before === null) return <span className="fig text-[var(--ink-3)]">—</span>;
   const d = Math.round((now - before) * 100) / 100;
-  if (d === 0) return <span className="text-text-muted">level</span>;
+  if (d === 0) return <span className="t-body text-[var(--ink-3)]">level</span>;
+  const better = d < 0;
   return (
-    <span className={cn("tabular-nums", d < 0 ? "text-success-strong" : "text-warning-strong")}>
+    <span className={cn("fig", better ? "text-[var(--good)]" : "text-[var(--watch)]")}>
+      <span aria-hidden className="mr-1 text-[9px]">{better ? "▾" : "▴"}</span>
       {d > 0 ? "+" : ""}
       {d}
     </span>

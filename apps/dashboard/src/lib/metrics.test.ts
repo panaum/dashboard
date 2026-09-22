@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  blocked, byClient, byDeveloper, byPlatform, defectRate, defectRateBy, isRecurring,
+  bandFor, blocked, byClient, byDeveloper, byPlatform, defectRate, defectRateBy, isRecurring,
   defectRateByMonth, makePeriod, MIN_N, previousPeriod, recurrenceRate, testerAdjustedDefectRate,
   testerCalibration, testerCoverage, testerRates, weightedDefectRate,
   type PageRow,
@@ -341,4 +341,26 @@ test("a thin month is still plotted, but flagged", () => {
   const series = defectRateByMonth(pages(2, { deliveryMonth: "2026-07", issues: issues(4) }), JUL_SEP);
   assert.equal(series[0].n, 2);
   assert.equal(series[0].confidence, "insufficient");
+});
+
+// ─── the data ramp ──────────────────────────────────────────────────────────
+
+test("a band is a ratio of the period mean, not an absolute rate", () => {
+  const mean = 8;
+  assert.equal(bandFor(6, mean), "good");     // 0.75×
+  assert.equal(bandFor(6.8, mean), "good");   // exactly 0.85× — the boundary is inclusive
+  assert.equal(bandFor(7, mean), "watch");
+  assert.equal(bandFor(10, mean), "watch");   // exactly 1.25×
+  assert.equal(bandFor(10.1, mean), "poor");
+  // The same rate lands in a different band when the team mean moves, which
+  // is the point of expressing it as a ratio.
+  assert.equal(bandFor(10, 14), "good");
+});
+
+test("a band is withheld rather than guessed when either side is missing", () => {
+  assert.equal(bandFor(null, 8), null);
+  assert.equal(bandFor(5, null), null);
+  assert.equal(bandFor(5, 0), null, "a zero mean cannot divide");
+  // A genuine zero defect rate is the best possible, not a missing band.
+  assert.equal(bandFor(0, 8), "good");
 });
