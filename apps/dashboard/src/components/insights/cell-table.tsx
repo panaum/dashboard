@@ -55,7 +55,7 @@ export function BandedFigure({ value, mean }: { value: number | null; mean: numb
 //
 // It sits BEHIND the number rather than beside it, so the column of decimals
 // stays a straight edge.
-function BarFigure({
+export function BarFigure({
   value, mean, max, delay,
 }: {
   value: number | null;
@@ -98,6 +98,13 @@ export function ConfidenceMark({ c, n }: { c: Confidence; n: number }) {
       {text}
     </span>
   );
+}
+
+/** One scale for a whole column, from the rankable rows only — a single n=1
+ *  outlier at 50 issues/page would otherwise flatten every real bar. Exported
+ *  so a table supplying its own columns still shares the table's scale. */
+export function scaleOf(cells: Cell[]): number {
+  return Math.max(0, ...cells.filter((c) => c.confidence === "high").map((c) => c.value ?? 0));
 }
 
 export type Column<T extends Cell = Cell> = {
