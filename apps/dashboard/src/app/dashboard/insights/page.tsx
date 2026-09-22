@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import {
   TrendingUp,
   TrendingDown,
@@ -7,13 +8,10 @@ import {
   Download,
 } from "lucide-react";
 import { db } from "@/lib/db";
-import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { Select } from "@/components/ui/field";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
-import { OpenSite } from "@/components/shared/open-site";
+import { AnimatedNumber } from "@/components/shared/animated-number";
 import { Bar } from "@/components/reports/bar";
 import { TeamPerformancePanel } from "@/components/team/team-performance";
 import {
@@ -30,7 +28,7 @@ import {
   windowLabel,
 } from "@/lib/team-performance";
 import { cn } from "@/lib/utils";
-import { STATUSES, label, monthLabel, type Status } from "@/lib/constants";
+import { STATUSES, label, monthLabel } from "@/lib/constants";
 import { buildsPages, testsPages } from "@/lib/roles";
 
 export const metadata = { title: "Insights" };
@@ -89,7 +87,7 @@ export default async function InsightsPage({
 
   const hasFilters = hasAnyFilter(sp);
 
-  const [scopedPages, teamPages, results, matchesAllTime] = await Promise.all([
+  const [scopedPages, teamPages, matchCount] = await Promise.all([
     db.page.findMany({
       where: analysisWhere,
       select: {
@@ -108,24 +106,10 @@ export default async function InsightsPage({
         issues: { select: { status: true } },
       },
     }),
-    hasFilters
-      ? db.page.findMany({
-          where: analysisWhere,
-          take: 100,
-          orderBy: { name: "asc" },
-          include: {
-            project: { include: { client: true } },
-            developer: true,
-            tester: true,
-            _count: { select: { issues: true } },
-          },
-        })
-      : Promise.resolve([]),
-    // How many pages the same filters match with no window at all, so a
-    // narrowed scope can say what it is leaving out instead of hiding it.
-    hasFilters && !allTime && !sp.month
-      ? db.page.count({ where: buildPageWhere(sp) })
-      : Promise.resolve(0),
+    // Only how MANY pages match, for the export button. This used to pull the
+    // first 100 rows with their project, client, developer and tester joined,
+    // to render a list that repeated what the numbers above already said.
+    hasFilters ? db.page.count({ where: analysisWhere }) : Promise.resolve(0),
   ]);
 
   const {
@@ -140,6 +124,10 @@ export default async function InsightsPage({
     maxMonthAvg,
   } = computeInsights(scopedPages);
   const perf = computeTeamPerformance(teamPages);
+  // The mean of the months on screen, for the baseline drawn across the trend.
+  const meanMonthAvg = monthStats.length
+    ? monthStats.reduce((n, m) => n + m.avg, 0) / monthStats.length
+    : 0;
 
   const scopeLabel = sp.month
     ? monthLabel(sp.month)
@@ -207,15 +195,27 @@ export default async function InsightsPage({
   const testers = members.filter((m) => testsPages(m.role));
   const fieldCls = "w-auto text-[13px]";
 
-  const tiles = [
-    { label: "Pages", value: `${total}`, note: undefined as string | undefined },
-    { label: "Avg issues / page", value: avgIssues.toFixed(1), note: undefined },
+  // Numbers rather than pre-formatted strings, so they can count up. `tone`
+  // is semantic only — it fires when a number is worth noticing, never for
+  // decoration.
+  const tiles: {
+    label: string;
+    value: number;
+    decimals?: number;
+    suffix?: string;
+    note?: string;
+    tone?: "warning" | "success";
+  }[] = [
+    { label: "Pages", value: total },
+    { label: "Avg issues / page", value: avgIssues, decimals: 1 },
     {
       label: "On-time delivery",
-      value: `${onTimePct}%`,
+      value: onTimePct,
+      suffix: "%",
       note: perf.delayRecorded ? undefined : "No delay recorded",
+      tone: !perf.delayRecorded ? undefined : onTimePct >= 95 ? "success" : onTimePct < 85 ? "warning" : undefined,
     },
-    { label: "Repetitive bugs", value: `${repetitive}`, note: undefined },
+    { label: "Repetitive bugs", value: repetitive, tone: repetitive > 0 ? "warning" : undefined },
   ];
 
   return (
@@ -266,6 +266,24 @@ export default async function InsightsPage({
             Clear
           </Link>
         )}
+        {/* The export belongs with the filters that decide what it contains.
+            It used to sit at the bottom, attached to a list of matching pages
+            that repeated what the numbers above already said — the list is
+            gone, the export is not. */}
+        {matchCount > 0 && (
+          <a
+            href={exportHref}
+            className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "ml-auto")}
+          >
+            <Download /> Export CSV
+            <span className="text-text-muted">
+              {/* The route caps a download at 1000 rows; say so rather than
+                  hand somebody a silently truncated file. */}
+              ({Math.min(matchCount, 1000)}
+              {matchCount > 1000 ? " of " + matchCount : ""})
+            </span>
+          </a>
+        )}
       </form>
 
       <p className="mb-6 text-[13px] text-text-secondary">
@@ -297,38 +315,68 @@ export default async function InsightsPage({
           {/* Auto-flagged intelligence */}
           {callouts.length > 0 && (
             <div className="mb-8 grid gap-3 sm:grid-cols-2">
-              {callouts.map((c, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-3 rounded-xl border border-border-soft bg-card p-4"
-                >
-                  <span className={`mt-0.5 ${c.tone}`}>
-                    <c.icon className="size-5" />
-                  </span>
-                  <p className="text-sm text-text-primary">{c.text}</p>
-                </div>
-              ))}
+              {callouts.map((c, i) => {
+                // Good news and bad news were the same grey card with a
+                // differently coloured icon. The wash and the icon chip make
+                // which is which readable before the sentence is.
+                const good = c.tone === "text-success";
+                return (
+                  <div
+                    key={i}
+                    style={{ animationDelay: `${i * 70}ms` }}
+                    className={cn(
+                      "animate-in flex items-start gap-3 rounded-xl border p-4",
+                      good
+                        ? "border-success/25 bg-success/[0.07]"
+                        : "border-warning/30 bg-warning/[0.07]",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex size-8 shrink-0 items-center justify-center rounded-full",
+                        good ? "bg-success/15 text-success-strong" : "bg-warning/15 text-warning-strong",
+                      )}
+                    >
+                      <c.icon className="size-4" />
+                    </span>
+                    <p className="text-sm text-text-primary">{c.text}</p>
+                  </div>
+                );
+              })}
             </div>
           )}
 
           {/* Headline numbers */}
+          {/* Four cards that arrive in sequence and count up, matching the
+              Team page. They were one flat divided strip of static text on a
+              page where everything else moved. */}
           <div
             role="group"
             aria-label="Headline numbers"
-            className="mb-9 grid grid-cols-2 divide-x divide-border-soft overflow-hidden rounded-xl border border-border-soft bg-card md:grid-cols-4"
+            className="mb-9 grid grid-cols-2 gap-3 md:grid-cols-4"
           >
-            {tiles.map((s) => (
-              <div key={s.label} className="px-4 py-4 sm:px-5">
+            {tiles.map((t, i) => (
+              <div
+                key={t.label}
+                style={{ animationDelay: `${i * 60}ms` }}
+                className="animate-in rounded-xl border border-border-soft bg-card px-4 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-sm sm:px-5"
+              >
                 <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-muted sm:text-[11px] sm:tracking-[0.08em]">
-                  {s.label}
+                  {t.label}
                 </div>
-                <div className="mt-2 text-[24px] font-semibold leading-none tracking-tight tabular-nums text-text-primary sm:text-[28px]">
-                  {s.value}
+                <div
+                  className={cn(
+                    "mt-2 text-[24px] font-semibold leading-none tracking-tight tabular-nums sm:text-[28px]",
+                    t.tone === "warning" && "text-warning-strong",
+                    t.tone === "success" && "text-success-strong",
+                    !t.tone && "text-text-primary",
+                  )}
+                >
+                  <AnimatedNumber value={t.value} decimals={t.decimals ?? 0} />
+                  {t.suffix}
                 </div>
-                {s.note && (
-                  <div className="mt-1.5 text-[11px] text-text-muted">
-                    {s.note}
-                  </div>
+                {t.note && (
+                  <div className="mt-1.5 text-[11px] text-text-muted">{t.note}</div>
                 )}
               </div>
             ))}
@@ -383,21 +431,35 @@ export default async function InsightsPage({
               <p className="mb-4 text-[13px] text-text-secondary">
                 Average issues per page, by delivery month.
               </p>
-              <div className="flex items-end gap-3" style={{ height: 130 }}>
-                {monthStats.map((m) => {
+              {/* A dashed mean across the columns: without it a reader has to
+                  hold six numbers in their head to see whether a month was
+                  above or below the usual. */}
+              <div className="relative flex items-end gap-3" style={{ height: 130 }}>
+                {monthStats.length > 1 && (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-x-0 border-t border-dashed border-border-strong/70"
+                    style={{ bottom: 22 + Math.round((meanMonthAvg / maxMonthAvg) * 96) }}
+                  >
+                    <span className="absolute -top-2 right-0 bg-card pl-1.5 text-[10px] font-medium text-text-muted">
+                      avg {meanMonthAvg.toFixed(1)}
+                    </span>
+                  </div>
+                )}
+                {monthStats.map((m, i) => {
                   const h = Math.max(6, Math.round((m.avg / maxMonthAvg) * 96));
                   return (
                     <div
                       key={m.m}
-                      className="flex flex-1 flex-col items-center justify-end gap-1.5"
+                      className="group/bar relative flex flex-1 flex-col items-center justify-end gap-1.5"
                       title={`${m.avg.toFixed(1)} issues/page`}
                     >
                       <span className="text-[11px] font-semibold tabular-nums text-text-primary">
                         {m.avg.toFixed(1)}
                       </span>
                       <div
-                        className="w-full max-w-[40px] rounded-t-md bg-accent"
-                        style={{ height: h }}
+                        className="animate-grow w-full max-w-[40px] rounded-t-md bg-accent transition-colors group-hover/bar:bg-accent-bright"
+                        style={{ "--bar-h": `${h}px`, animationDelay: `${i * 60}ms` } as CSSProperties}
                       />
                       <span className="text-[11px] text-text-muted">
                         {monthLabel(m.m).slice(0, 3)}
@@ -417,103 +479,6 @@ export default async function InsightsPage({
         </>
       )}
 
-      {/* Matching pages — the drill-down for whatever the filters selected */}
-      {hasFilters && (
-        <section className="mt-8" aria-labelledby="matching-pages-heading">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2
-              id="matching-pages-heading"
-              className="text-sm font-semibold text-text-primary"
-            >
-              Matching pages
-              <span className="ml-2 font-normal text-text-secondary">
-                {results.length} result{results.length === 1 ? "" : "s"}
-                {results.length === 100 ? " (showing first 100)" : ""}
-              </span>
-            </h2>
-            {results.length > 0 && (
-              <a
-                href={exportHref}
-                className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
-              >
-                <Download /> Export CSV
-              </a>
-            )}
-          </div>
-
-          {matchesAllTime > results.length && (
-            <p className="mb-3 text-[13px] text-text-muted">
-              {matchesAllTime} page{matchesAllTime === 1 ? "" : "s"} match these
-              filters across all time.{" "}
-              <Link
-                href={scopeHref}
-                className="rounded-xs font-medium text-accent hover:underline"
-              >
-                Show all time
-              </Link>
-            </p>
-          )}
-
-          {results.length === 0 ? (
-            <div className="rounded-xl border border-border-soft bg-card px-4 py-12 text-center text-sm text-text-secondary">
-              No matches in this window. Try fewer filters, or widen the scope
-              to all time.
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
-              {results.map((pg) => (
-                <div
-                  key={pg.id}
-                  className="group flex items-center gap-3 border-t border-border-soft px-4 py-3 transition-colors first:border-t-0 hover:bg-card-soft sm:gap-4"
-                >
-                  <Link
-                    href={`/dashboard/clients/${pg.project.clientId}/${pg.projectId}/${pg.id}`}
-                    className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4"
-                  >
-                    {pg.developer ? (
-                      <Avatar name={pg.developer.name} size="sm" />
-                    ) : (
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-dashed border-border-soft text-[11px] text-text-muted">
-                        —
-                      </span>
-                    )}
-                    <div className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-sm font-medium text-text-primary group-hover:underline">
-                        {pg.name}
-                      </span>
-                      <span className="truncate text-[13px] text-text-secondary">
-                        {pg.project.client.name} ·{" "}
-                        {pg.deliveryMonth ? monthLabel(pg.deliveryMonth) : "—"}
-                      </span>
-                    </div>
-                  </Link>
-                  <Badge tone="neutral" className="hidden shrink-0 md:inline-flex">
-                    {label(pg.project.platform)}
-                  </Badge>
-                  <Badge
-                    tone={pg._count.issues > 0 ? "warning" : "success"}
-                    className="hidden shrink-0 sm:inline-flex"
-                  >
-                    {pg._count.issues} issue{pg._count.issues === 1 ? "" : "s"}
-                  </Badge>
-                  <StatusBadge status={pg.status as Status} />
-                  <OpenSite url={pg.url} />
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {!hasFilters && (
-        <p className="mt-8 flex flex-wrap items-center justify-center gap-1.5 py-2 text-[13px] text-text-muted">
-          Filter above to list the matching pages, or press
-          <kbd className="rounded-md border border-border-soft bg-card-soft px-1.5 py-0.5 text-[11px] font-medium text-text-secondary">
-            ⌘K
-          </kbd>
-          to jump to one by name.
-        </p>
-      )}
     </>
   );
 }

@@ -99,6 +99,24 @@ body {
   animation: fade-in-up 0.4s ease-out both;
 }
 
+/* A column chart growing out of its baseline. Height rather than scaleY, so a
+   bar's rounded top does not squash on the way up; six small bars is nowhere
+   near enough work to miss the compositor. The target height rides in on
+   --bar-h, because a keyframe cannot read an inline height. */
+@keyframes grow-h {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--bar-h);
+  }
+}
+
+.animate-grow {
+  height: var(--bar-h);
+  animation: grow-h 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @keyframes cmd-in {
   from {
     opacity: 0;
