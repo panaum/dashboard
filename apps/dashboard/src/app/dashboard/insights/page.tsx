@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Download } from "lucide-react";
 import { db } from "@/lib/db";
 import { CellTable, type Column } from "@/components/insights/cell-table";
-import { Sparkline } from "@/components/insights/sparkline";
 import { TSelect, TButton, TLink, Tile } from "@/components/insights/controls";
 import { Trend } from "@/components/insights/trend";
 import { ViewTabs, isView, type ViewKey } from "@/components/insights/view-tabs";
@@ -10,7 +9,7 @@ import { buildPageWhere, hasAnyFilter } from "@/lib/page-search";
 import { listPlatforms } from "@/lib/platforms";
 import { rollingMonths, ROLLING_MONTHS } from "@/lib/team-performance";
 import {
-  byClient, byDeveloper, byPlatform, defectRate, defectRateBy, defectRateByMonth, makePeriod,
+  byClient, byPlatform, defectRate, defectRateBy, defectRateByMonth, makePeriod,
   monthSeriesBy,
   MIN_N, recurrenceRate, testerAdjustedDefectRate, testerCalibration, testerRates,
   weightedDefectRate, type AdjustedCell, type CalibrationCell, type PageRow,
@@ -373,8 +372,6 @@ function PeopleView({
   href: (o: Record<string, string | null>) => string;
 }) {
   const adjusted = testerAdjustedDefectRate(pages, period);
-  const devSeries = monthSeriesBy(pages, period, byDeveloper);
-  const seriesMax = Math.max(0, ...[...devSeries.values()].flat().map((v) => v ?? 0));
   const testers = testerCalibration(pages, period);
   const usable = testerRates(pages, period).filter((t) => t.pages >= MIN_N).length;
   const name = (k: string) => nameOf.get(k) ?? k;
@@ -419,21 +416,8 @@ function PeopleView({
       },
     },
     {
-      head: "trend",
-      width: "5rem",
-      render: (c) => (
-        <span className="flex justify-end">
-          <Sparkline
-            values={devSeries.get(c.key) ?? []}
-            max={seriesMax}
-            label={`${name(c.key)} by month`}
-          />
-        </span>
-      ),
-    },
-    {
       head: "reviewed by",
-      width: "10rem",
+      width: "12rem",
       align: "left",
       render: (c) => (
         <span className="t-body truncate text-[var(--ink-2)]">
