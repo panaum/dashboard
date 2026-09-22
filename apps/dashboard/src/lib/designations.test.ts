@@ -13,11 +13,19 @@ test("every designation maps to a real work role", () => {
   }
 });
 
-test("each work role is reachable from at least one designation", () => {
+test("every work role but BOTH is reachable from a designation", () => {
   // Otherwise a role exists that nobody can be given through the only form
-  // that sets it.
+  // that sets it. BOTH is the deliberate exception: "Developer & QA" was
+  // removed because nobody held it, so the form cannot produce BOTH until
+  // some designation maps to it again. This test is the record of that being
+  // a decision rather than an oversight.
   for (const role of MEMBER_ROLES) {
-    assert.ok(DESIGNATIONS.some((d) => d.role === role), `no designation produces ${role}`);
+    const reachable = DESIGNATIONS.some((d) => d.role === role);
+    if (role === "BOTH") {
+      assert.equal(reachable, false, "BOTH is not offered — see designations.ts");
+      continue;
+    }
+    assert.ok(reachable, `no designation produces ${role}`);
   }
 });
 
@@ -26,13 +34,12 @@ test("the titles this team actually uses resolve the way they read", () => {
   assert.equal(roleForDesignation("Project Manager"), "MANAGER");
   assert.equal(roleForDesignation("Chief Delivery Officer"), "MANAGER");
   assert.equal(roleForDesignation("Head of Accounts"), "MANAGER");
-  assert.equal(roleForDesignation("QA Lead"), "TESTER");
   assert.equal(roleForDesignation("Developer"), "DEVELOPER");
-  assert.equal(roleForDesignation("Developer & QA"), "BOTH");
+  assert.equal(roleForDesignation("QA"), "TESTER");
   // Which is the point: the CEO and the PM land outside every work list.
   assert.equal(doesPageWork(roleForDesignation("CEO")!), false);
   assert.equal(doesPageWork(roleForDesignation("Project Manager")!), false);
-  assert.equal(buildsPages(roleForDesignation("Senior Developer")!), true);
+  assert.equal(buildsPages(roleForDesignation("Developer")!), true);
   assert.equal(testsPages(roleForDesignation("QA")!), true);
 });
 
@@ -59,12 +66,12 @@ test("one label under a name, never two", () => {
 });
 
 test("the dialog opens on what they already are", () => {
+  // Including a title that is no longer offered — it is still theirs.
   assert.equal(designationFor({ title: "QA Lead", role: "TESTER" }), "QA Lead");
   // No title yet: the first stock designation for the role they hold, so
   // opening and saving the dialog does not move them.
   assert.equal(designationFor({ title: null, role: "TESTER" }), "QA");
   assert.equal(designationFor({ title: null, role: "MANAGER" }), "Project Manager");
-  assert.equal(designationFor({ title: null, role: "BOTH" }), "Developer & QA");
   assert.equal(roleForDesignation(designationFor({ title: null, role: "MANAGER" })), "MANAGER");
   // An unknown role cannot happen through the form, but must not crash a page.
   assert.equal(designationFor({ title: null, role: "ACCOUNTANT" }), "Developer");
@@ -126,4 +133,15 @@ test("reordering the dropdown did not change the default for a new manager", () 
   // moved to the top of DESIGNATIONS to get it first on screen, every
   // untitled manager would silently default to CEO.
   assert.equal(designationFor({ title: null, role: "MANAGER" }), "Project Manager");
+});
+
+test("a retired designation is forgotten as a rule, not as a person", () => {
+  // Nobody held these, so they left the dropdown. If a row somewhere still
+  // has one, it displays as typed and keeps the role it was saved with —
+  // saveMember only overwrites the role when it recognises the title.
+  for (const gone of ["Senior Developer", "QA Lead", "Developer & QA"]) {
+    assert.equal(roleForDesignation(gone), null, `${gone} should no longer resolve`);
+    assert.ok(!DESIGNATIONS.some((d) => d.title === gone), `${gone} should be off the list`);
+    assert.equal(memberLabel({ title: gone, role: "TESTER" }), gone, "still shown as theirs");
+  }
 });
