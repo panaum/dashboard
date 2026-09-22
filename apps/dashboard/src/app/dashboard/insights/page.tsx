@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { db } from "@/lib/db";
-import { CellTable, type Column } from "@/components/insights/cell-table";
+import { BarFigure, CellTable, scaleOf, type Column } from "@/components/insights/cell-table";
 import { TSelect, TButton, TLink, Tile } from "@/components/insights/controls";
 import { Trend } from "@/components/insights/trend";
 import { ViewTabs, isView, type ViewKey } from "@/components/insights/view-tabs";
@@ -9,7 +9,7 @@ import { buildPageWhere, hasAnyFilter } from "@/lib/page-search";
 import { listPlatforms } from "@/lib/platforms";
 import { rollingMonths, ROLLING_MONTHS } from "@/lib/team-performance";
 import {
-  byClient, byPlatform, defectRate, defectRateBy, defectRateByMonth, makePeriod,
+  byClient, byPlatform, defectRate, defectRateBy, defectRateByMonth, inPeriod, makePeriod,
   monthSeriesBy,
   MIN_N, recurrenceRate, testerAdjustedDefectRate, testerCalibration, testerRates,
   weightedDefectRate, type AdjustedCell, type CalibrationCell, type PageRow,
@@ -332,8 +332,33 @@ function ClientsView({
   mean: number | null;
 }) {
   const cells = defectRateBy(pages, period, byClient);
-  const series = monthSeriesBy(pages, period, byClient);
   const rankable = cells.filter((c) => c.confidence === "high");
+
+  // THE ABSOLUTE COUNT, NOT A SPARKLINE.
+  //
+  // Most clients deliver in one or two months of the period, so the trend
+  // column was a field of isolated dots — shape where there was no shape.
+  // Total issues is the half of the story a rate hides: Option Goddess runs
+  // 13.17 per page and produces 79 issues, while Trading Cafe runs 7.21 and
+  // produces 281. The rate says who is worst per page; this says where the
+  // work actually goes.
+  const issuesByClient = new Map<string, number>();
+  for (const pg of inPeriod(pages, period)) {
+    issuesByClient.set(pg.clientId, (issuesByClient.get(pg.clientId) ?? 0) + pg.issues.length);
+  }
+  const clientCols: Column[] = [
+    { head: "pages", width: "4.5rem", render: (c) => <span className="fig text-[var(--ink-2)]">{c.n}</span> },
+    {
+      head: "issues",
+      width: "5rem",
+      render: (c) => <span className="fig text-[var(--ink-2)]">{issuesByClient.get(c.key) ?? 0}</span>,
+    },
+    {
+      head: "issues / pg",
+      width: "8rem",
+      render: (c, i) => <BarFigure value={c.value} mean={mean ?? null} max={scaleOf(cells)} delay={i * 40} />,
+    },
+  ];
   return (
     <div className={SECTIONS}>
       <section className={WITHIN}>
@@ -347,13 +372,7 @@ function ClientsView({
           or two pages each — shown, hatched, and kept out of the ordering, because two pages is not
           a trend about an account.
         </p>
-        <CellTable
-          cells={cells}
-          label={(k) => nameOf.get(k) ?? k}
-          unit="issues / pg"
-          mean={mean}
-          series={series}
-        />
+        <CellTable cells={cells} label={(k) => nameOf.get(k) ?? k} columns={clientCols} />
       </section>
 
     </div>
@@ -417,10 +436,13 @@ function PeopleView({
     },
     {
       head: "reviewed by",
-      width: "12rem",
+      // Wider, and indented away from the figure column: the names used to
+      // start the moment the issues/page number ended, so a right-aligned
+      // decimal and a left-aligned name collided in the middle of the row.
+      width: "14rem",
       align: "left",
       render: (c) => (
-        <span className="t-body truncate text-[var(--ink-2)]">
+        <span className="t-body block truncate pl-6 text-[var(--ink-2)]">
           {c.coverage
             .slice(0, 2)
             .map((cv) => `${name(cv.testerId).split(" ")[0]} ${Math.round(cv.share * 100)}%`)
