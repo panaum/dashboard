@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/constants";
 import { bandFor, BAND_THRESHOLDS, MIN_N, type Cell } from "@/lib/metrics";
@@ -72,9 +73,9 @@ export function Trend({ months, mean }: { months: Cell[]; mean: number | null })
                     ? `${m.n} page${m.n === 1 ? "" : "s"} — fewer than ${MIN_N}, so this month is withheld from the ranking`
                     : `${m.value} issues per page over ${m.n} pages`
                 }
-                style={{ height: h, animationDelay: `${i * 40}ms` }}
+                style={{ "--bar-h": `${h}px`, animationDelay: `${i * 40}ms` } as CSSProperties}
                 className={cn(
-                  "t-in w-full max-w-[82px] rounded-t-[var(--r-bar)] transition-opacity hover:opacity-80",
+                  "animate-grow w-full max-w-[82px] rounded-t-[var(--r-bar)] transition-[filter,opacity] duration-200 group-hover/bar:brightness-110",
                   thin
                     ? "hatched border border-[var(--hairline-strong)]"
                     : band === "poor"
@@ -84,7 +85,12 @@ export function Trend({ months, mean }: { months: Cell[]; mean: number | null })
                         : "bg-[var(--focus)]",
                 )}
               />
-              <span className="t-micro truncate text-[10px] text-[var(--ink-3)]">
+              <span
+                className={cn(
+                  "t-micro truncate text-[10px] transition-colors",
+                  "text-[var(--ink-3)] group-hover/bar:text-[var(--ink)]",
+                )}
+              >
                 {monthLabel(m.key).slice(0, 3)}
               </span>
             </div>

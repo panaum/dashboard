@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { bandFor, MIN_N, type Band, type Cell, type Confidence } from "@/lib/metrics";
+import { Sparkline } from "./sparkline";
 
 // EVERY NUMBER ARRIVES WITH ITS n, AND EVERY FIGURE IS SET IN THE MONO.
 //
@@ -45,6 +46,41 @@ export function BandedFigure({ value, mean }: { value: number | null; mean: numb
   );
 }
 
+// THE FIGURE, WITH ITS SIZE BEHIND IT.
+//
+// 13.17 against 1.43 is a ratio of nine, and reading two numbers to work that
+// out is slower than seeing it. The bar is scaled to one maximum shared by the
+// whole column — scaling each row to itself is the classic in-table bar lie,
+// where every row fills its cell and the column says nothing.
+//
+// It sits BEHIND the number rather than beside it, so the column of decimals
+// stays a straight edge.
+function BarFigure({
+  value, mean, max, delay,
+}: {
+  value: number | null;
+  mean: number | null;
+  max: number;
+  delay: number;
+}) {
+  const band = bandFor(value, mean);
+  const pct = value === null || max <= 0 ? 0 : Math.min(100, (value / max) * 100);
+  const fill =
+    band === "poor" ? "var(--poor)" : band === "good" ? "var(--good)" : "var(--focus)";
+  return (
+    <span className="relative flex items-center justify-end">
+      <span
+        aria-hidden
+        style={{ width: `${pct}%`, background: fill, animationDelay: `${delay}ms` }}
+        className="t-grow absolute inset-y-[3px] right-0 rounded-[var(--r-bar)] opacity-[0.16]"
+      />
+      <span className="relative pr-1.5">
+        <BandedFigure value={value} mean={mean} />
+      </span>
+    </span>
+  );
+}
+
 export function ConfidenceMark({ c, n }: { c: Confidence; n: number }) {
   if (c === "high") return null;
   const text = c === "blocked" ? "not captured" : c === "insufficient" ? `n=${n}` : "indicative";
@@ -69,7 +105,7 @@ export type Column<T extends Cell = Cell> = {
   /** Right-aligned numerics are the default; a text column opts out. */
   align?: "left";
   width?: string;
-  render: (c: T) => React.ReactNode;
+  render: (c: T, index: number) => React.ReactNode;
 };
 
 export function CellTable<T extends Cell>({
@@ -78,6 +114,7 @@ export function CellTable<T extends Cell>({
   columns,
   unit,
   mean,
+  series,
   hrefFor,
   emptyNote = "Nothing in this scope.",
   collapseAfter = 5,
@@ -89,6 +126,8 @@ export function CellTable<T extends Cell>({
   unit?: string;
   /** The period mean, which the three-step ramp is measured against. */
   mean?: number | null;
+  /** Per-row month series, aligned to the period — draws a sparkline column. */
+  series?: Map<string, (number | null)[]>;
   hrefFor?: (key: string) => string | null;
   emptyNote?: string;
   /** Past this many withheld rows, fold them away. 81 unrankable clients in a
@@ -103,11 +142,51 @@ export function CellTable<T extends Cell>({
     );
   }
 
+  // One scale for the whole column, from the rankable rows only — a single
+  // n=1 outlier at 50 issues/page would otherwise flatten every real bar.
+  const scale = Math.max(
+    0,
+    ...cells.filter((c) => c.confidence === "high").map((c) => c.value ?? 0),
+  );
+  // "vs prev" is dropped entirely when no row has a previous period to compare
+  // against — on the all-time scope that was 96 rows of em-dash.
+  const hasPrev = cells.some((c) => c.previousPeriodValue !== null);
+  const seriesMax = Math.max(
+    0,
+    ...[...(series?.values() ?? [])].flat().map((v) => v ?? 0),
+  );
+
   const cols: Column<T>[] =
     columns ?? [
       { head: "n", width: "3rem", render: (c) => <span className="fig text-[var(--ink-2)]">{c.n}</span> },
-      { head: unit ?? "value", width: "7rem", render: (c) => <BandedFigure value={c.value} mean={mean ?? null} /> },
-      { head: "vs prev", width: "5rem", render: (c) => <Delta now={c.value} before={c.previousPeriodValue} /> },
+      {
+        head: unit ?? "value",
+        width: "8rem",
+        render: (c, i) => <BarFigure value={c.value} mean={mean ?? null} max={scale} delay={i * 40} />,
+      },
+      ...(series
+        ? [{
+            head: "trend",
+            width: "5rem",
+            render: (c: T) => (
+              <span className="flex justify-end">
+                <Sparkline
+                  values={series.get(c.key) ?? []}
+                  max={seriesMax}
+                  tone={bandFor(c.value, mean ?? null) === "poor" ? "poor" : "neutral"}
+                  label={`${label(c.key)} by month`}
+                />
+              </span>
+            ),
+          } as Column<T>]
+        : []),
+      ...(hasPrev
+        ? [{
+            head: "vs prev",
+            width: "5rem",
+            render: (c: T) => <Delta now={c.value} before={c.previousPeriodValue} />,
+          } as Column<T>]
+        : []),
     ];
   const grid = { gridTemplateColumns: `minmax(0,1fr) ${cols.map((c) => c.width ?? "5rem").join(" ")}` };
 
@@ -180,7 +259,7 @@ export function CellTable<T extends Cell>({
             key={c.head}
             className={cn("text-[13px]", c.align === "left" ? "text-left" : "text-right")}
           >
-            {c.render(cell)}
+            {c.render(cell, i)}
           </span>
         ))}
       </div>

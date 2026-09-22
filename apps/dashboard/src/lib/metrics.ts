@@ -461,3 +461,33 @@ export function defectRateByMonth(pages: PageRow[], period: Period): Cell[] {
       };
     });
 }
+
+// ─── per-key month series, for sparklines ───────────────────────────────────
+
+/**
+ * One value per month of the period, per group — the shape behind a sparkline.
+ *
+ * Aligned to `period.months` and padded with nulls, so every row's line shares
+ * one x-axis and two sparklines in a column are directly comparable. A month
+ * where that client delivered nothing is a null, drawn as a gap: joining
+ * across it would invent a trend through months that never happened.
+ */
+export function monthSeriesBy(
+  pages: PageRow[],
+  period: Period,
+  keyOf: KeyOf,
+): Map<string, (number | null)[]> {
+  const buckets = new Map<string, Map<string, PageRow[]>>();
+  for (const p of inPeriod(pages, period)) {
+    const k = keyOf(p);
+    if (k === null) continue;
+    const months = buckets.get(k) ?? buckets.set(k, new Map()).get(k)!;
+    const m = p.deliveryMonth!;
+    (months.get(m) ?? months.set(m, []).get(m)!).push(p);
+  }
+  const out = new Map<string, (number | null)[]>();
+  for (const [key, months] of buckets) {
+    out.set(key, period.months.map((m) => (months.has(m) ? rateOf(months.get(m)!) : null)));
+  }
+  return out;
+}
