@@ -186,10 +186,13 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
     <div className="flex flex-col text-[13px]">
       {lightbox && card.images.length > 0 && (
         <ImageLightbox
-          images={card.images.map((i) => ({ id: i.id, filename: i.filename }))}
+          images={card.images}
           startId={lightbox}
           src={imageSrc}
+          tz={tz}
           onClose={() => setLightbox(null)}
+          onCover={(imageId) => run(() => onCover({ issueId: card.id, imageId }))}
+          onDelete={(imageId) => run(() => onDeleteImage({ issueId: card.id, imageId }))}
         />
       )}
       {/* Header: the cover, or a plain bar when there is none. */}
