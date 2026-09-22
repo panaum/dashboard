@@ -10,8 +10,9 @@ import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { deleteMember } from "@/app/dashboard/team/actions";
 import { RankSelect } from "@/components/team/rank-select";
 import { LoginButton } from "@/components/team/login-button";
-import { memberLabel } from "@/lib/designations";
-import { buildsPages, testsPages } from "@/lib/roles";
+import { compareManagement, memberLabel } from "@/lib/designations";
+import { buildsPages, doesPageWork, testsPages } from "@/lib/roles";
+import { Managers } from "@/components/team/managers";
 import type { Rank } from "@/lib/permissions";
 
 export type MemberRow = {
@@ -35,8 +36,23 @@ export type MemberRow = {
   repetitive: number;
 };
 
-const ROW =
-  "grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem_5rem_9.5rem_5.5rem] items-center gap-4";
+// ONE BOX PER KIND OF WORK.
+//
+// This was a single table with Built, QA'd and Repetitive on every row, which
+// meant a QA carried two columns that could only ever be a dash and a
+// developer carried one. Splitting the groups lets each box show only the
+// numbers that mean something in it, so there are no dashes left to explain.
+//
+// One filter above the lot: typing a name should find that person wherever
+// they sit, not just in the box you happen to be looking at.
+
+type Metric = { head: string; get: (m: MemberRow) => number; warnWhenSet?: boolean };
+
+const BUILD_METRICS: Metric[] = [
+  { head: "Built", get: (m) => m.built },
+  { head: "Repetitive", get: (m) => m.repetitive, warnWhenSet: true },
+];
+const QA_METRICS: Metric[] = [{ head: "QA'd", get: (m) => m.tested }];
 
 export function TeamTable({ members }: { members: MemberRow[] }) {
   const [q, setQ] = useState("");
@@ -51,9 +67,17 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
     );
   }, [q, members]);
 
+  // Seniority, not the alphabet — CEO first. The page used to sort this
+  // before handing it over; the grouping lives here now, so the sort does too.
+  const managers = filtered.filter((m) => !doesPageWork(m.role)).sort(compareManagement);
+  const qa = filtered.filter((m) => testsPages(m.role) && !buildsPages(m.role));
+  const devs = filtered.filter((m) => buildsPages(m.role));
+
   return (
     <>
-      <div className="relative mb-4 max-w-sm">
+      {/* One filter, above everything: typing a name should find that person
+          wherever they sit, not only in the box you happen to be looking at. */}
+      <div className="relative mb-6 max-w-sm">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
         <input
           value={q}
@@ -63,28 +87,66 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
         />
       </div>
 
+      <div className="flex flex-col gap-6">
+        {/* Management has no metric columns at all — they neither build nor
+            QA — so it keeps its own layout rather than an empty grid. */}
+        {(managers.length > 0 || !q.trim()) && (
+          <section>
+            <GroupHeading title="Management" count={managers.length} />
+            <Managers members={managers} />
+          </section>
+        )}
+        <Group title="QA" members={qa} metrics={QA_METRICS} term={q} />
+        <Group title="Developers" members={devs} metrics={BUILD_METRICS} term={q} />
+      </div>
+    </>
+  );
+}
+
+function Group({
+  title, members, metrics, term,
+}: {
+  title: string;
+  members: MemberRow[];
+  metrics: Metric[];
+  term: string;
+}) {
+  // The columns are built from the metric list, so a box never has to leave
+  // room for a number it does not carry.
+  const grid = {
+    gridTemplateColumns: `minmax(0,1fr) ${metrics.map(() => "6rem").join(" ")} 9.5rem 5.5rem`,
+  };
+  const row = "grid items-center gap-4 px-4";
+
+  if (members.length === 0 && term.trim()) return null;
+
+  return (
+    <section>
+      <GroupHeading title={title} count={members.length} />
+
       <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
         <div
-          className={`${ROW} border-b border-border-soft px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted`}
+          style={grid}
+          className={`${row} border-b border-border-soft py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted`}
         >
           <span>Member</span>
-          <span className="text-right">Built</span>
-          <span className="text-right">QA&apos;d</span>
-          <span className="text-right">Repetitive</span>
+          {metrics.map((m) => (
+            <span key={m.head} className="text-right">{m.head}</span>
+          ))}
           <span className="text-right">Access</span>
           <span />
         </div>
 
-        {filtered.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-text-secondary">
-            No team members match “{q}”.
+        {members.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-text-secondary">
+            Nobody here yet.
           </div>
         ) : (
-          filtered.map((m, i) => (
+          members.map((m, i) => (
             <div
               key={m.id}
-              style={{ animationDelay: `${Math.min(i, 14) * 30}ms` }}
-              className={`${ROW} animate-in border-t border-border-soft px-4 py-3 transition-colors first:border-t-0 hover:bg-card-soft`}
+              style={{ ...grid, animationDelay: `${Math.min(i, 14) * 30}ms` }}
+              className={`${row} animate-in border-t border-border-soft py-3 transition-colors first:border-t-0 hover:bg-card-soft`}
             >
               <Link
                 href={`/dashboard/team/${m.id}`}
@@ -102,10 +164,7 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
                     {/* One label, not two. It used to be the designation AND
                         the role badge side by side, which said the same thing
                         twice for everyone whose title matched their work. */}
-                    <Badge
-                      tone={m.role === "TESTER" ? "info" : "neutral"}
-                      className="w-fit"
-                    >
+                    <Badge tone={m.role === "TESTER" ? "info" : "neutral"} className="w-fit">
                       {memberLabel(m)}
                     </Badge>
                     {!m.hasLogin && (
@@ -114,18 +173,23 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
                   </div>
                 </div>
               </Link>
-              {/* A QA has no Built figure and a developer has no QA'd one, so
-                  those cells are a dash rather than a zero. A zero here reads
-                  as "built nothing", which is a judgement; a dash reads as
-                  "not their job", which is the truth. Repetitive counts bugs
-                  in work somebody built, so it follows Built. */}
-              <Metric value={m.built} applies={buildsPages(m.role)} />
-              <Metric value={m.tested} applies={testsPages(m.role)} />
-              <Metric
-                value={m.repetitive}
-                applies={buildsPages(m.role)}
-                tone={m.repetitive ? "warn" : undefined}
-              />
+
+              {metrics.map((metric) => {
+                const value = metric.get(m);
+                return (
+                  <span
+                    key={metric.head}
+                    className={`text-right text-sm tabular-nums ${
+                      metric.warnWhenSet && value
+                        ? "font-medium text-warning-strong"
+                        : "text-text-primary"
+                    }`}
+                  >
+                    {value}
+                  </span>
+                );
+              })}
+
               <RankSelect
                 memberId={m.id}
                 rank={m.rank}
@@ -137,7 +201,9 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
                 <LoginButton
                   member={{ id: m.id, name: m.name, email: m.email, hasLogin: m.hasLogin }}
                 />
-                <EditMemberButton member={{ id: m.id, name: m.name, role: m.role, title: m.title, slackUserId: m.slackUserId, avatarUpdatedAt: m.avatarUpdatedAt }} />
+                <EditMemberButton
+                  member={{ id: m.id, name: m.name, role: m.role, title: m.title, slackUserId: m.slackUserId, avatarUpdatedAt: m.avatarUpdatedAt }}
+                />
                 <ConfirmDelete
                   action={deleteMember}
                   fields={{ id: m.id }}
@@ -157,33 +223,17 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
           ))
         )}
       </div>
-    </>
+    </section>
   );
 }
 
-/** One numeric cell. Shows a dash when the metric does not apply to the role,
- *  which is different from the metric being zero. */
-function Metric({
-  value, applies, tone,
-}: {
-  value: number;
-  applies: boolean;
-  tone?: "warn";
-}) {
-  if (!applies) {
-    return (
-      <span className="text-right text-sm text-text-muted" title="Not part of this role">
-        —
-      </span>
-    );
-  }
+function GroupHeading({ title, count }: { title: string; count: number }) {
   return (
-    <span
-      className={`text-right text-sm tabular-nums ${
-        tone === "warn" ? "font-medium text-warning-strong" : "text-text-primary"
-      }`}
-    >
-      {value}
-    </span>
+    <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
+      {title}
+      <span className="ml-2 font-normal normal-case tracking-normal tabular-nums text-text-muted">
+        {count}
+      </span>
+    </h2>
   );
 }
