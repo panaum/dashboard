@@ -6,7 +6,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { FormFooter, useOnOk } from "@/components/forms/form-parts";
 import { saveMember, setAvatar } from "@/app/dashboard/team/actions";
-import { MEMBER_ROLES, label } from "@/lib/constants";
+import { DESIGNATIONS, designationFor } from "@/lib/designations";
 
 type MemberInitial = {
   id: string;
@@ -46,6 +46,10 @@ export function MemberForm({
   const [state, action, pending] = useActionState(saveMember, {});
   useOnOk(state, close);
 
+  const current = initial ? designationFor(initial) : DESIGNATIONS[0].title;
+  const stock = DESIGNATIONS.map((d) => d.title);
+  const options = stock.includes(current) ? stock : [current, ...stock];
+
   return (
     <form action={action} className="flex flex-col gap-4">
       {initial && <input type="hidden" name="id" value={initial.id} />}
@@ -68,28 +72,19 @@ export function MemberForm({
           required
         />
       </Field>
-      <Field
-        label="Designation"
-        htmlFor="title"
-        hint="What it says on their card — CEO, Project Manager, QA Lead. Shown under their name."
-      >
-        <Input
-          id="title"
-          name="title"
-          defaultValue={initial?.title ?? ""}
-          placeholder="e.g. Project Manager"
-          maxLength={60}
-        />
-      </Field>
+      {/* One field where there were two. The designation is what shows under
+          their name AND what decides the work they are offered — see
+          src/lib/designations.ts. A title typed before this change is kept as
+          an extra option so opening this dialog never relabels anyone. */}
       <Field
         label="Role"
-        htmlFor="role"
-        hint="The work they do — this is what page and board assignment lists read. Manager appears in none of them."
+        htmlFor="title"
+        hint="Shown under their name, and what page and board assignment lists read. A manager appears in neither."
       >
-        <Select id="role" name="role" defaultValue={initial?.role ?? "DEVELOPER"}>
-          {MEMBER_ROLES.filter((r) => r !== "BOTH").map((r) => (
-            <option key={r} value={r}>
-              {label(r)}
+        <Select id="title" name="title" defaultValue={current}>
+          {options.map((t) => (
+            <option key={t} value={t}>
+              {t}
             </option>
           ))}
         </Select>

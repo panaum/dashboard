@@ -6,7 +6,8 @@ import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
-import { label, MONTH_NAMES } from "@/lib/constants";
+import { MONTH_NAMES } from "@/lib/constants";
+import { memberLabel } from "@/lib/designations";
 import { doesPageWork } from "@/lib/roles";
 
 const shortMonth = (m: string) =>
@@ -130,17 +131,13 @@ export default async function MemberDetailPage({
           <h1 className="text-[28px] font-semibold leading-none tracking-tight text-text-primary">
             {member.name}
           </h1>
-          {member.title && (
-            <p className="text-sm text-text-secondary">{member.title}</p>
-          )}
-          {(!member.title || member.role !== "MANAGER") && (
-            <Badge
-              tone={member.role === "TESTER" ? "info" : "neutral"}
-              className="w-fit"
-            >
-              {label(member.role)}
-            </Badge>
-          )}
+          {/* One label under the name, the same one the team list shows. */}
+          <Badge
+            tone={member.role === "TESTER" ? "info" : "neutral"}
+            className="w-fit"
+          >
+            {memberLabel(member)}
+          </Badge>
         </div>
         {/* Team answers "who is this person"; Insights answers "how is the
             work going". This is the hop between them, pre-filtered so the

@@ -82,10 +82,11 @@ export const commentSchema = z.object({
   body: z.string().trim().min(1, "Say something").max(4000),
 });
 
+// `role` is deliberately absent: the form has one field, and saveMember
+// derives the work role from the designation. See src/lib/designations.ts.
 export const memberSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(80),
-  role: z.enum(MEMBER_ROLES),
-  title: optionalText(60),
+  title: z.string().trim().min(1, "A role is required").max(60),
   slackUserId: optionalText(40),
 });
 

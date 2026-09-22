@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getActor, hashPassword } from "@/lib/auth";
 import { RANKS, type Rank, can } from "@/lib/permissions";
 import { memberSchema, parseForm, type ActionResult } from "@/lib/validation";
+import { roleForDesignation } from "@/lib/designations";
 
 // Every action here re-checks for itself. Hiding the page from the sidebar and
 // guarding the route are courtesies to the reader; a server action is directly
@@ -23,11 +24,21 @@ export async function saveMember(
   if ("error" in parsed) return { error: parsed.error };
 
   const id = String(formData.get("id") ?? "");
+  // The work role comes from the designation rather than a second field the
+  // two could disagree on. A designation typed in free text before that change
+  // is not in the table, and rather than guess — or quietly demote somebody to
+  // DEVELOPER — we leave the role they already had.
+  const derived = roleForDesignation(parsed.data.title);
   try {
     if (id) {
-      await db.teamMember.update({ where: { id }, data: parsed.data });
+      const existing = await db.teamMember.findUnique({ where: { id }, select: { role: true } });
+      if (!existing) return { error: "That team member no longer exists." };
+      await db.teamMember.update({
+        where: { id },
+        data: { ...parsed.data, role: derived ?? existing.role },
+      });
     } else {
-      await db.teamMember.create({ data: parsed.data });
+      await db.teamMember.create({ data: { ...parsed.data, role: derived ?? "DEVELOPER" } });
     }
   } catch (e) {
     if (e instanceof Error && e.message.includes("Unique"))
