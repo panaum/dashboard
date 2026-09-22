@@ -4,13 +4,10 @@ import { RANKS, type Rank } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/page-header";
 import { AddMemberButton } from "@/components/forms/dialogs";
 import { TeamTable, type MemberRow } from "@/components/team/team-table";
-import { Managers } from "@/components/team/managers";
 import { AnimatedNumber } from "@/components/shared/animated-number";
 import { BoardPerformancePanel } from "@/components/team/board-performance-panel";
 import { computeBoardPerformance, monthPeriod } from "@/lib/board-performance";
 import { isStage } from "@/lib/boards";
-import { doesPageWork } from "@/lib/roles";
-import { compareManagement } from "@/lib/designations";
 
 type Stat = { built: number; tested: number; issuesBuilt: number; repetitive: number; issuesFound: number };
 
@@ -90,13 +87,6 @@ export default async function TeamPage() {
     };
   });
 
-  // Managers are named, not scored: none of the columns below mean anything
-  // for someone who neither builds nor QAs a page.
-  // Seniority, not the alphabet: the CEO reads first. Everyone else on this
-  // page is still sorted by name.
-  const managers = rows.filter((m) => !doesPageWork(m.role)).sort(compareManagement);
-  const workers = rows.filter((m) => doesPageWork(m.role));
-
   return (
     <>
       <PageHeader
@@ -105,7 +95,6 @@ export default async function TeamPage() {
         action={<AddMemberButton />}
       />
 
-      <Managers members={managers} />
 
       <div className="mb-7 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat value={members.length} unit="People" index={0} />
@@ -119,7 +108,9 @@ export default async function TeamPage() {
         />
       </div>
 
-      <TeamTable members={workers} />
+      {/* The order the operator asked for: the numbers first, then each group
+          in its own box — management, QA, developers — behind one filter. */}
+      <TeamTable members={rows} />
       <BoardPerformancePanel data={boardPerf} names={new Map(members.map((m) => [m.id, m.name]))} month={month} />
     </>
   );
