@@ -22,8 +22,42 @@ export const DESIGNATIONS: readonly { title: string; role: MemberRole }[] = [
   { title: "QA Lead", role: "TESTER" },
   { title: "Developer & QA", role: "BOTH" },
   { title: "Project Manager", role: "MANAGER" },
+  { title: "Head of Accounts", role: "MANAGER" },
+  { title: "Chief Delivery Officer", role: "MANAGER" },
   { title: "CEO", role: "MANAGER" },
 ];
+
+/**
+ * The order the management block reads in, most senior first. Everything else
+ * on this page is sorted by name, which put the CEO wherever the alphabet felt
+ * like putting him.
+ *
+ * It is a separate list from DESIGNATIONS on purpose. That one runs the other
+ * way — junior first — because it is a dropdown, and because designationFor()
+ * takes the FIRST entry matching a role as the sensible default for somebody
+ * who has no title yet. Reordering DESIGNATIONS to put the CEO on top would
+ * quietly make "CEO" the default designation for every new manager.
+ *
+ * A manager whose title is not listed here sorts after the ones that are,
+ * by name. Nobody vanishes for want of a line in this array.
+ */
+export const MANAGEMENT_ORDER: readonly string[] = [
+  "CEO",
+  "Chief Delivery Officer",
+  "Head of Accounts",
+  "Project Manager",
+];
+
+export function compareManagement(
+  a: { name: string; title?: string | null; role: string },
+  b: { name: string; title?: string | null; role: string },
+): number {
+  const rank = (m: typeof a) => {
+    const i = MANAGEMENT_ORDER.indexOf(memberLabel(m));
+    return i === -1 ? MANAGEMENT_ORDER.length : i;
+  };
+  return rank(a) - rank(b) || a.name.localeCompare(b.name);
+}
 
 /** The work role a designation implies, or null if we have never heard of it. */
 export function roleForDesignation(title: string | null | undefined): MemberRole | null {
