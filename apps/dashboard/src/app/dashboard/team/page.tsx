@@ -10,6 +10,7 @@ import { BoardPerformancePanel } from "@/components/team/board-performance-panel
 import { computeBoardPerformance, monthPeriod } from "@/lib/board-performance";
 import { isStage } from "@/lib/boards";
 import { doesPageWork } from "@/lib/roles";
+import { compareManagement } from "@/lib/designations";
 
 type Stat = { built: number; tested: number; issuesBuilt: number; repetitive: number; issuesFound: number };
 
@@ -91,7 +92,9 @@ export default async function TeamPage() {
 
   // Managers are named, not scored: none of the columns below mean anything
   // for someone who neither builds nor QAs a page.
-  const managers = rows.filter((m) => !doesPageWork(m.role));
+  // Seniority, not the alphabet: the CEO reads first. Everyone else on this
+  // page is still sorted by name.
+  const managers = rows.filter((m) => !doesPageWork(m.role)).sort(compareManagement);
   const workers = rows.filter((m) => doesPageWork(m.role));
 
   return (
