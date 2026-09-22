@@ -15,12 +15,19 @@ import { label, type MemberRole } from "./constants";
 // Adding a job title is adding a line below. A title typed in free text before
 // this change still displays and keeps whatever role it had — see saveMember.
 
+// Only titles somebody actually holds. Senior Developer, QA Lead and
+// Developer & QA were offered and taken by nobody, so they were three-quarters
+// of a dropdown that only ever needed six lines. Add one back the day there is
+// a person to put under it.
+//
+// One consequence, stated rather than discovered later: BOTH — a person who
+// builds AND QAs — was only reachable through "Developer & QA", so the form no
+// longer produces it. Nothing else changed: buildsPages/testsPages still
+// honour it, and a BOTH row from an import still works everywhere. There is
+// simply no way to choose it until a designation maps to it again.
 export const DESIGNATIONS: readonly { title: string; role: MemberRole }[] = [
   { title: "Developer", role: "DEVELOPER" },
-  { title: "Senior Developer", role: "DEVELOPER" },
   { title: "QA", role: "TESTER" },
-  { title: "QA Lead", role: "TESTER" },
-  { title: "Developer & QA", role: "BOTH" },
   { title: "Project Manager", role: "MANAGER" },
   { title: "Head of Accounts", role: "MANAGER" },
   { title: "Chief Delivery Officer", role: "MANAGER" },
