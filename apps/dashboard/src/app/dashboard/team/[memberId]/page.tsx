@@ -8,7 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { MONTH_NAMES } from "@/lib/constants";
 import { memberLabel } from "@/lib/designations";
-import { doesPageWork } from "@/lib/roles";
+import { buildsPages, doesPageWork, testsPages } from "@/lib/roles";
+import { groupByClient, groupSummary } from "@/lib/team-pages";
+import { ChevronRight } from "lucide-react";
 
 const shortMonth = (m: string) =>
   MONTH_NAMES[Number(m.slice(5, 7)) - 1]?.slice(0, 3) ?? m.slice(5);
@@ -31,17 +33,54 @@ const pageInclude = {
   issues: { select: { severity: true } },
 } as const;
 
+/**
+ * One client, collapsed. A QA with 145 pages had 145 rows on this page, which
+ * is a list nobody reads; the client is the unit people think in, and the
+ * pages are the detail behind it.
+ *
+ * <details> rather than state: this is a Server Component, and the browser
+ * already does disclosure properly — keyboard, screen reader, and each group
+ * independent of the others, for no JavaScript at all.
+ */
+function ClientGroup({
+  group,
+}: {
+  group: { clientId: string; client: string; pages: PageForRow[]; issues: number };
+}) {
+  return (
+    <details className="group overflow-hidden rounded-xl border border-border-soft bg-card">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 transition-colors hover:bg-card-soft">
+        <ChevronRight
+          className="size-4 shrink-0 text-text-muted transition-transform group-open:rotate-90"
+          strokeWidth={2}
+        />
+        <span className="flex-1 truncate text-sm font-medium text-text-primary">
+          {group.client}
+        </span>
+        <span className="shrink-0 text-xs tabular-nums text-text-secondary">
+          {groupSummary(group.pages.length, group.issues)}
+        </span>
+      </summary>
+      <div className="flex flex-col gap-2 border-t border-border-soft bg-card-soft/40 p-3">
+        {group.pages.map((pg) => <PageRow key={pg.id} pg={pg} />)}
+      </div>
+    </details>
+  );
+}
+
+type PageForRow = {
+  id: string;
+  name: string;
+  projectId: string;
+  deliveryMonth: string | null;
+  project: { clientId: string; client: { name: string } };
+  issues: { severity: string }[];
+};
+
 function PageRow({
   pg,
 }: {
-  pg: {
-    id: string;
-    name: string;
-    projectId: string;
-    deliveryMonth: string | null;
-    project: { clientId: string; client: { name: string } };
-    issues: { severity: string }[];
-  };
+  pg: PageForRow;
 }) {
   return (
     <Link
@@ -107,6 +146,37 @@ export default async function MemberDetailPage({
   );
   const issuesFound = tested.reduce((n, p) => n + p.issues.length, 0);
 
+  // WHAT THIS PERSON'S ROLE EARNS THEM ON THIS PAGE.
+  //
+  // A QA does not build, so "Pages built" was a zero, and "Avg issues / build"
+  // and "Repetitive bugs" were zeros derived from that zero — three numbers
+  // about work she was never going to do, sitting next to the one that counts.
+  // The same in reverse for a developer and the QA'd column. Nobody is BOTH
+  // today; when somebody is, they get all of it.
+  const builds = buildsPages(member.role);
+  const tests = testsPages(member.role);
+
+  const stats: { unit: string; value: string | number }[] = [
+    ...(builds
+      ? [
+          { unit: "Pages built", value: built.length },
+          { unit: "Avg issues / build", value: built.length ? (issuesBuilt / built.length).toFixed(1) : "0" },
+          { unit: "Repetitive bugs", value: repetitive },
+        ]
+      : []),
+    ...(tests
+      ? [
+          { unit: "Pages QA'd", value: tested.length },
+          { unit: "Issues found", value: issuesFound },
+        ]
+      : []),
+  ];
+  // Tailwind needs the whole class name to exist in the source, so this is a
+  // lookup rather than a template string.
+  const statCols = ["", "md:grid-cols-1", "md:grid-cols-2", "md:grid-cols-3", "md:grid-cols-4"][
+    Math.min(stats.length, 4)
+  ];
+
   // Pages built per month (the quality-trend signal from the sheet).
   const months = [...new Set(built.map((p) => p.deliveryMonth).filter(Boolean))].sort() as string[];
   const perMonth = months.map((m) => ({
@@ -153,14 +223,11 @@ export default async function MemberDetailPage({
         )}
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Stat value={built.length} unit="Pages built" />
-        <Stat value={tested.length} unit="Pages QA'd" />
-        <Stat value={built.length ? (issuesBuilt / built.length).toFixed(1) : "0"} unit="Avg issues / build" />
-        <Stat value={repetitive} unit="Repetitive bugs" />
+      <div className={`mb-6 grid grid-cols-2 gap-4 ${statCols}`}>
+        {stats.map((s) => <Stat key={s.unit} value={s.value} unit={s.unit} />)}
       </div>
 
-      {perMonth.length > 0 && (
+      {builds && perMonth.length > 0 && (
         <Card className="mb-6 p-5">
           <div className="mb-4 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold text-text-primary">
@@ -206,29 +273,45 @@ export default async function MemberDetailPage({
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div>
-          <h2 className="mb-3 text-lg font-semibold text-text-primary">
-            Built <span className="text-sm font-normal text-text-secondary">({built.length})</span>
-          </h2>
-          <div className="flex flex-col gap-2">
-            {built.map((pg) => <PageRow key={pg.id} pg={pg} />)}
-            {built.length === 0 && <p className="text-sm text-text-secondary">No pages built.</p>}
-          </div>
-        </div>
-        <div>
-          <h2 className="mb-3 text-lg font-semibold text-text-primary">
-            QA&apos;d{" "}
-            <span className="text-sm font-normal text-text-secondary">
-              ({tested.length} · {issuesFound} issues found)
-            </span>
-          </h2>
-          <div className="flex flex-col gap-2">
-            {tested.map((pg) => <PageRow key={pg.id} pg={pg} />)}
-            {tested.length === 0 && <p className="text-sm text-text-secondary">No pages QA&apos;d.</p>}
-          </div>
-        </div>
+      {/* One column each, but only for the work they do — so somebody who only
+          QAs gets the full width for it instead of half a page of "No pages
+          built." */}
+      <div className={`grid gap-6 ${builds && tests ? "lg:grid-cols-2" : ""}`}>
+        {builds && (
+          <section>
+            <h2 className="mb-3 text-lg font-semibold text-text-primary">
+              Built{" "}
+              <span className="text-sm font-normal text-text-secondary">
+                ({built.length} · {issuesBuilt} issue{issuesBuilt === 1 ? "" : "s"})
+              </span>
+            </h2>
+            <PageList pages={built} empty="No pages built." />
+          </section>
+        )}
+        {tests && (
+          <section>
+            <h2 className="mb-3 text-lg font-semibold text-text-primary">
+              QA&apos;d{" "}
+              <span className="text-sm font-normal text-text-secondary">
+                ({tested.length} · {issuesFound} issue{issuesFound === 1 ? "" : "s"} found)
+              </span>
+            </h2>
+            <PageList pages={tested} empty="No pages QA'd." />
+          </section>
+        )}
       </div>
     </>
+  );
+}
+
+/** Client first, pages behind a disclosure. */
+function PageList({ pages, empty }: { pages: PageForRow[]; empty: string }) {
+  if (pages.length === 0) {
+    return <p className="text-sm text-text-secondary">{empty}</p>;
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      {groupByClient(pages).map((g) => <ClientGroup key={g.clientId} group={g} />)}
+    </div>
   );
 }
