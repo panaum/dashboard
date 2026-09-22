@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { commentWithMentions, hasCover, removeImage, setCoverImage, storeImage, type ImageResult } from "@/app/dashboard/boards/actions";
 import { boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
-import { canMove, isStage, reorder } from "@/lib/boards";
-import type { BoardStage } from "@/lib/constants";
+import { canMove, isStage, moveNeedsReason, reorder } from "@/lib/boards";
+import { BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constants";
 
 // The developer's side. No session: the capability link IS the credential,
 // so every action re-resolves the project from the token and refuses any
@@ -25,7 +25,7 @@ async function cardIn(projectId: string, issueId: string) {
 }
 
 export async function developerMove(input: {
-  boardShareId: string; id: string; to: BoardStage; index: number;
+  boardShareId: string; id: string; to: BoardStage; index: number; reason?: string;
 }): Promise<ActionResult> {
   const board = await boardFor(input.boardShareId);
   if (!board) return { error: "This link is no longer valid." };
@@ -34,9 +34,12 @@ export async function developerMove(input: {
   if (!card) return { error: "Card not found on this board." };
   const from = isStage(card.boardStage) ? card.boardStage : null;
   const sameStage = from === input.to;
-  // A developer may only move a card assigned to them, and never through CLOSED.
-  if (!sameStage && !canMove("developer", from, input.to, { assigned: !!card.assigneeId })) {
-    return { error: "That move is QA's to make." };
+  if (!sameStage && !canMove("developer", from, input.to)) {
+    return { error: "That move is not allowed." };
+  }
+  const reason = (input.reason ?? "").trim();
+  if (moveNeedsReason(input.to, from) && !reason) {
+    return { error: `Say why this is going to ${BOARD_STAGE_LABELS[input.to]}.` };
   }
   const cards = await db.issue.findMany({
     where: { page: { projectId: board.id }, boardStage: { not: null } },
@@ -49,7 +52,7 @@ export async function developerMove(input: {
       data: w.id === input.id ? { boardStage: input.to, boardOrder: w.boardOrder } : { boardOrder: w.boardOrder },
     })),
     ...(sameStage ? [] : [db.issueEvent.create({
-      data: { issueId: input.id, fromStage: from, toStage: input.to, actorId: card.assigneeId },
+      data: { issueId: input.id, fromStage: from, toStage: input.to, actorId: card.assigneeId, note: reason || null },
     })]),
   ]);
   revalidatePath(`/b/${input.boardShareId}`);

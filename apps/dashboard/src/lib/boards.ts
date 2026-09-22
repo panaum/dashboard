@@ -42,17 +42,29 @@ export function isBounceBack(from: BoardStage | null, to: BoardStage): boolean {
  * meaningless.
  */
 export function canMove(
-  role: Role,
+  _role: Role,
   from: BoardStage | null,
   to: BoardStage,
-  opts: { assigned: boolean } = { assigned: true },
 ): boolean {
+  // EVERY MOVE IS EVERYBODY'S TO MAKE.
+  //
+  // This used to gate the developer: only a card assigned to them, never in or
+  // out of Closed, and anything else came back "That move is QA's to make." In
+  // practice the developer is the person looking at the board, the rule mostly
+  // produced a red banner, and every move is recorded as an IssueEvent with
+  // its actor anyway — the audit trail was always the real control, not the
+  // permission. The role argument stays so callers do not all have to change,
+  // and so a future rule has somewhere to live.
   if (!isStage(to)) return false;
-  if (from === to) return false;
-  if (role === "qa") return true;
-  if (!opts.assigned) return false;
-  if (to === "CLOSED" || from === "CLOSED") return false;
-  return true;
+  return from !== to;
+}
+
+/** Moving into this stage requires a written reason. Asking "why" at the one
+ *  point where work stops is the whole value of the stage. */
+export const STAGE_NEEDS_REASON: BoardStage = "NEEDS_CLARIFICATION";
+
+export function moveNeedsReason(to: BoardStage, from: BoardStage | null): boolean {
+  return to === STAGE_NEEDS_REASON && from !== to;
 }
 
 /** What a card looks like to the developer holding a board link. */

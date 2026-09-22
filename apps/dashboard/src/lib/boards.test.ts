@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  canMove, developerView, inStage, isBounceBack, nextOrder, reorder,
+  canMove, developerView, inStage, isBounceBack, moveNeedsReason, nextOrder, reorder,
   threadAuthorLabel,
 } from "./boards";
 
@@ -26,18 +26,34 @@ test("QA may move anything anywhere, including backward", () => {
   assert.equal(canMove("qa", null, "NEW"), true);
 });
 
-test("a developer works their own cards and hands them to QA, but never closes", () => {
-  assert.equal(canMove("developer", "NEW", "ACTIVE"), true);
-  assert.equal(canMove("developer", "ACTIVE", "NEEDS_CLARIFICATION"), true);
-  assert.equal(canMove("developer", "ACTIVE", "COMPLETED"), true, "hands it to QA");
-  assert.equal(canMove("developer", "COMPLETED", "ACTIVE"), true, "may take it back before QA looks");
-  // "Developer says done" and "QA confirmed" must be two people's acts.
-  assert.equal(canMove("developer", "COMPLETED", "CLOSED"), false);
-  assert.equal(canMove("developer", "CLOSED", "ACTIVE"), false, "only QA reopens a closed card");
+test("a developer may make every move QA can, including closing and reopening", () => {
+  // This used to be a whitelist: own cards only, never in or out of Closed.
+  // The developer is the person looking at the board, the rule mostly produced
+  // a red banner, and every move is recorded with its actor either way — the
+  // audit trail was always the real control, not the permission.
+  for (const [from, to] of [
+    ["NEW", "ACTIVE"], ["ACTIVE", "NEEDS_CLARIFICATION"], ["ACTIVE", "COMPLETED"],
+    ["COMPLETED", "ACTIVE"], ["COMPLETED", "CLOSED"], ["CLOSED", "ACTIVE"],
+  ] as const) {
+    assert.equal(canMove("developer", from, to), true, `${from} → ${to}`);
+    assert.equal(canMove("qa", from, to), true, `qa ${from} → ${to}`);
+  }
 });
 
-test("a developer cannot move a card that is not theirs", () => {
-  assert.equal(canMove("developer", "NEW", "ACTIVE", { assigned: false }), false);
+test("an unassigned card is no longer a special case", () => {
+  assert.equal(canMove("developer", "NEW", "ACTIVE"), true);
+});
+
+test("only the move into Discussed demands a reason", () => {
+  assert.equal(moveNeedsReason("NEEDS_CLARIFICATION", "ACTIVE"), true);
+  assert.equal(moveNeedsReason("NEEDS_CLARIFICATION", "NEW"), true);
+  assert.equal(moveNeedsReason("NEEDS_CLARIFICATION", null), true);
+  // Reordering within the column is not entering it again.
+  assert.equal(moveNeedsReason("NEEDS_CLARIFICATION", "NEEDS_CLARIFICATION"), false);
+  // Leaving it, and every other move, needs nothing.
+  assert.equal(moveNeedsReason("ACTIVE", "NEEDS_CLARIFICATION"), false);
+  assert.equal(moveNeedsReason("COMPLETED", "ACTIVE"), false);
+  assert.equal(moveNeedsReason("CLOSED", null), false);
 });
 
 test("a move to the same stage, or to no stage, is not a move", () => {

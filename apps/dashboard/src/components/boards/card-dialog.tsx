@@ -113,7 +113,7 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
 
   const qa = role === "qa";
   const cover = coverOf(card.images);
-  const stages = BOARD_STAGES.filter((s) => s === card.boardStage || canMove(role, card.boardStage, s, { assigned: !!card.assigneeId }));
+  const stages = BOARD_STAGES.filter((s) => s === card.boardStage || canMove(role, card.boardStage, s));
   const tz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
 
   /** One write for the fields the developer never receives. */
@@ -151,7 +151,11 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
     } catch { /* tainted or unsupported: keep the neutral backdrop */ }
   };
 
-  const feed = activityFeed(card.comments, card.events).reverse().filter((i) => showDetails || i.kind === "comment");
+  // A bare stage change is QA's metadata and stays hidden on the developer
+  // view; one carrying a reason is addressed TO the developer, so it shows.
+  const feed = activityFeed(card.comments, card.events)
+    .reverse()
+    .filter((i) => showDetails || i.kind === "comment" || i.note);
   const sev = severityRow(card.severity);
   const stagePill = (
     <select
@@ -500,7 +504,14 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
                         )}
                       </>) : (<>
                         <p className="text-text-primary"><span className="font-semibold">{who}</span> {item.text.slice(who.length + 1)}</p>
-                        <p className="text-[12px] text-text-secondary underline decoration-border-soft underline-offset-2">{formatStamp(item.createdAt, tz)}</p>
+                        {/* The reason the move required, quoted where it was
+                            given rather than left in the thread to drift. */}
+                        {item.note && (
+                          <p className="mt-1 border-l-2 border-warning/60 bg-warning/[0.07] px-3 py-1.5 text-[13px] text-text-primary">
+                            {item.note}
+                          </p>
+                        )}
+                        <p className="mt-1 text-[12px] text-text-secondary underline decoration-border-soft underline-offset-2">{formatStamp(item.createdAt, tz)}</p>
                       </>)}
                     </div>
                   </li>

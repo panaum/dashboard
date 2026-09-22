@@ -5,7 +5,8 @@ import { Inbox, MessageSquare, Paperclip, Plus, Volume2, VolumeX, X } from "luci
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BOARD_STAGES, BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constants";
-import { canMove, inStage, type Role } from "@/lib/boards";
+import { canMove, inStage, moveNeedsReason, type Role } from "@/lib/boards";
+import { ReasonPrompt } from "./reason-prompt";
 import { coverOf, initials } from "@/lib/board-thread";
 import { agingLabel, agingLevel } from "@/lib/board-alive";
 import { CountUp } from "./count-up";
@@ -103,6 +104,7 @@ export function Board({
     }
   }, [justAdded, cards]);
   const [pending, start] = useTransition();
+  const [asking, setAsking] = useState<{ id: string; to: BoardStage; index: number; title: string } | null>(null);
 
   const [soundOn, setSoundOn] = useSoundPreference();
 
@@ -142,22 +144,43 @@ export function Board({
     (id: string, to: BoardStage) => {
       const card = byId.current.get(id);
       if (!card) return false;
-      return card.boardStage === to || canMove(role, card.boardStage, to, { assigned: !!card.assigneeId });
+      return card.boardStage === to || canMove(role, card.boardStage, to);
     },
     [role],
   );
 
-  const drop = (id: string, to: BoardStage, index: number) => {
-    setDragging(null); setOver(null); setError(null);
-    if (!allowed(id, to)) { setError(role === "qa" ? "That move is not allowed." : "That move is QA's to make."); return; }
+  const send = (id: string, to: BoardStage, index: number, reason?: string) =>
     start(async () => {
-      const r = await onMove({ id, to, index });
+      const r = await onMove({ id, to, index, reason });
       if (r.error) setError(r.error);
     });
+
+  const drop = (id: string, to: BoardStage, index: number) => {
+    setDragging(null); setOver(null); setError(null);
+    if (!allowed(id, to)) { setError("That move is not allowed."); return; }
+    // Discussed is the one column you have to explain yourself into, so the
+    // card waits on the answer rather than moving and asking afterwards.
+    if (moveNeedsReason(to, byId.current.get(id)?.boardStage ?? null)) {
+      setAsking({ id, to, index, title: byId.current.get(id)?.title ?? "this card" });
+      return;
+    }
+    send(id, to, index);
   };
 
   return (
     <div className="flex flex-col gap-3">
+      {asking && (
+        <ReasonPrompt
+          stageLabel={BOARD_STAGE_LABELS[asking.to]}
+          cardTitle={asking.title}
+          onCancel={() => setAsking(null)}
+          onSubmit={(reason) => {
+            const a = asking;
+            setAsking(null);
+            send(a.id, a.to, a.index, reason);
+          }}
+        />
+      )}
       {error && (
         <p role="alert" className="rounded-lg bg-error/[0.11] px-4 py-2 text-[13px] text-error-strong">
           {error}
@@ -349,7 +372,7 @@ export function Board({
 
 /** The keyboard path: the same move, as a labelled select. */
 function MoveMenu({ card, role, onMove }: { card: Card; role: Role; onMove: (to: BoardStage) => void }) {
-  const targets = BOARD_STAGES.filter((s) => canMove(role, card.boardStage, s, { assigned: !!card.assigneeId }));
+  const targets = BOARD_STAGES.filter((s) => canMove(role, card.boardStage, s));
   if (!targets.length) return null;
   return (
     <label className="mt-0.5 flex items-center gap-1.5 text-[11px] text-text-secondary">
