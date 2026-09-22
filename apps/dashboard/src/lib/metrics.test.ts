@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   blocked, byClient, byDeveloper, byPlatform, defectRate, defectRateBy, isRecurring,
-  makePeriod, MIN_N, previousPeriod, recurrenceRate, testerAdjustedDefectRate,
+  defectRateByMonth, makePeriod, MIN_N, previousPeriod, recurrenceRate, testerAdjustedDefectRate,
   testerCalibration, testerCoverage, testerRates, weightedDefectRate,
   type PageRow,
 } from "./metrics";
@@ -318,4 +318,27 @@ test("a blocked metric is null with a reason, never a zero", () => {
   // The distinction that matters: blocked ≠ zero ≠ insufficient.
   assert.notEqual(m.confidence, defectRate([], JUL_SEP).confidence);
   assert.notEqual(m.value, defectRate(pages(5, { issues: [] }), JUL_SEP).value);
+});
+
+// ─── month series ───────────────────────────────────────────────────────────
+
+test("the month series runs in calendar order, never by value", () => {
+  const rows = [
+    ...pages(5, { deliveryMonth: "2026-09", issues: issues(2) }),
+    ...pages(5, { deliveryMonth: "2026-07", issues: issues(9) }),
+  ];
+  const series = defectRateByMonth(rows, JUL_SEP);
+  // Worst-first would put July on the left; a chart sorted by value is a lie.
+  assert.deepEqual(series.map((c) => [c.key, c.value]), [["2026-07", 9], ["2026-09", 2]]);
+});
+
+test("a month with nothing delivered is absent, not a zero", () => {
+  const series = defectRateByMonth(pages(5, { deliveryMonth: "2026-08" }), JUL_SEP);
+  assert.deepEqual(series.map((c) => c.key), ["2026-08"]);
+});
+
+test("a thin month is still plotted, but flagged", () => {
+  const series = defectRateByMonth(pages(2, { deliveryMonth: "2026-07", issues: issues(4) }), JUL_SEP);
+  assert.equal(series[0].n, 2);
+  assert.equal(series[0].confidence, "insufficient");
 });

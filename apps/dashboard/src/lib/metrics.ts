@@ -401,3 +401,33 @@ export function testerCalibration(pages: PageRow[], period: Period): Calibration
     };
   });
 }
+
+// ─── month series ───────────────────────────────────────────────────────────
+
+/**
+ * One cell per month in the period, in calendar order — the trend line.
+ *
+ * Deliberately not `defectRateBy` with a month key: that one sorts worst-first
+ * for a ranking, and a chart whose x-axis is sorted by value is a lie. Months
+ * with no delivered page are omitted rather than drawn as zero.
+ */
+export function defectRateByMonth(pages: PageRow[], period: Period): Cell[] {
+  const m = new Map<string, PageRow[]>();
+  for (const p of inPeriod(pages, period)) {
+    const k = p.deliveryMonth!;
+    (m.get(k) ?? m.set(k, []).get(k)!).push(p);
+  }
+  return period.months
+    .filter((month) => m.has(month))
+    .map((month) => {
+      const ps = m.get(month)!;
+      return {
+        key: month,
+        value: rateOf(ps),
+        n: ps.length,
+        confidence: confidenceFor(ps.length),
+        period: makePeriod([month], month),
+        previousPeriodValue: null,
+      };
+    });
+}
