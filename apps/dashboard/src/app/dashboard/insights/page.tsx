@@ -31,6 +31,7 @@ import {
 } from "@/lib/team-performance";
 import { cn } from "@/lib/utils";
 import { STATUSES, label, monthLabel, type Status } from "@/lib/constants";
+import { buildsPages, testsPages } from "@/lib/roles";
 
 export const metadata = { title: "Insights" };
 
@@ -200,8 +201,10 @@ export default async function InsightsPage({
   }
 
   // Developers = DEVELOPER/BOTH; testers = pure TESTER only.
-  const developers = members.filter((m) => m.role !== "TESTER");
-  const testers = members.filter((m) => m.role === "TESTER");
+  // Whitelists, not `!== "TESTER"`: that form put the CEO in the developer
+  // picker the day MANAGER was added. See src/lib/roles.ts.
+  const developers = members.filter((m) => buildsPages(m.role));
+  const testers = members.filter((m) => testsPages(m.role));
   const fieldCls = "w-auto text-[13px]";
 
   const tiles = [
