@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AnimatedNumber } from "@/components/shared/animated-number";
 import { cn } from "@/lib/utils";
 
 // The filter bar, in the page's own system rather than the app's.
@@ -70,8 +71,16 @@ export function Tile({
   decimals?: number;
   band?: "good" | "watch" | "poor" | null;
 }) {
+  // Counts up on first load. This was here before the terminal restyle and
+  // got dropped in it — a regression, not a decision.
   const shown =
-    value === null ? "—" : typeof value === "number" ? value.toFixed(decimals) : value;
+    value === null ? (
+      "—"
+    ) : typeof value === "number" ? (
+      <AnimatedNumber value={value} decimals={decimals} />
+    ) : (
+      value
+    );
   const ink =
     band === "good" ? "text-[var(--good)]"
     : band === "watch" ? "text-[var(--watch)]"

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   bandFor, blocked, byClient, byDeveloper, byPlatform, defectRate, defectRateBy, isRecurring,
-  defectRateByMonth, makePeriod, MIN_N, previousPeriod, recurrenceRate, testerAdjustedDefectRate,
+  defectRateByMonth, makePeriod, MIN_N, monthSeriesBy, previousPeriod, recurrenceRate,
+  testerAdjustedDefectRate,
   testerCalibration, testerCoverage, testerRates, weightedDefectRate,
   type PageRow,
 } from "./metrics";
@@ -363,4 +364,26 @@ test("a band is withheld rather than guessed when either side is missing", () =>
   assert.equal(bandFor(5, 0), null, "a zero mean cannot divide");
   // A genuine zero defect rate is the best possible, not a missing band.
   assert.equal(bandFor(0, 8), "good");
+});
+
+// ─── month series per group ─────────────────────────────────────────────────
+
+test("a group's series is aligned to the period, with gaps for silent months", () => {
+  const rows = [
+    ...pages(2, { clientId: "acme", deliveryMonth: "2026-07", issues: issues(4) }),
+    ...pages(2, { clientId: "acme", deliveryMonth: "2026-09", issues: issues(10) }),
+    ...pages(1, { clientId: "globex", deliveryMonth: "2026-08", issues: issues(6) }),
+  ];
+  const series = monthSeriesBy(rows, JUL_SEP, byClient);
+  // Three slots either way, so two rows line up under one x-axis.
+  assert.deepEqual(series.get("acme"), [4, null, 10]);
+  assert.deepEqual(series.get("globex"), [null, 6, null]);
+  // A month with no delivery is null, not zero — joining across it would
+  // invent a trend through months that never happened.
+  assert.equal(series.get("acme")![1], null);
+});
+
+test("a group with nothing in the period is absent, not an empty row", () => {
+  const series = monthSeriesBy(pages(2, { deliveryMonth: "2026-01" }), JUL_SEP, byClient);
+  assert.equal(series.size, 0);
 });

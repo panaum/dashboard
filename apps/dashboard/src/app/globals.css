@@ -377,3 +377,16 @@ body {
   }
   @keyframes t-fade { from { opacity: 0; } to { opacity: 1; } }
 }
+
+/* A bar growing out of nothing, for the widths drawn behind table figures.
+   Width rather than transform, because these sit inside a grid cell whose
+   right edge is the anchor and a scaleX would drift the decimal column. */
+@keyframes t-grow-w {
+  from { width: 0; }
+}
+[data-surface="terminal"] .t-grow {
+  animation: t-grow-w 520ms var(--ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-surface="terminal"] .t-grow { animation: none; }
+}
