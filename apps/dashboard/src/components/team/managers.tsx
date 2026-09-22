@@ -22,13 +22,14 @@ export function Managers({ members }: { members: MemberRow[] }) {
   if (members.length === 0) return null;
   return (
     <div className="mb-6 overflow-hidden rounded-xl border border-border-soft bg-card">
+      {/* The heading alone. The sentence that used to sit under it explained
+          why these people are separate from the table, which is a thing the
+          layout already says — and an explanation nobody asked for reads as
+          an apology for the design. */}
       <div className="border-b border-border-soft px-4 py-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
           Management
         </span>
-        <p className="mt-0.5 text-[12px] text-text-secondary">
-          Named here rather than counted below — they don&apos;t build or QA pages.
-        </p>
       </div>
       {members.map((m) => (
         <div
