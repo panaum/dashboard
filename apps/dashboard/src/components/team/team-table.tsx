@@ -10,7 +10,7 @@ import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { deleteMember } from "@/app/dashboard/team/actions";
 import { RankSelect } from "@/components/team/rank-select";
 import { LoginButton } from "@/components/team/login-button";
-import { label } from "@/lib/constants";
+import { memberLabel } from "@/lib/designations";
 import type { Rank } from "@/lib/permissions";
 
 export type MemberRow = {
@@ -46,7 +46,7 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
     return members.filter(
       (m) =>
         m.name.toLowerCase().includes(term) ||
-        label(m.role).toLowerCase().includes(term),
+        memberLabel(m).toLowerCase().includes(term),
     );
   }, [q, members]);
 
@@ -98,20 +98,15 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
                     {m.name}
                   </span>
                   <div className="flex items-center gap-1.5">
-                    {m.title ? (
-                      <span className="truncate text-[12px] text-text-secondary">{m.title}</span>
-                    ) : null}
-                    {/* The role badge is what assignment reads; a designation
-                        does not replace it, except for a manager, where
-                        "Manager · CEO" would say the same thing twice. */}
-                    {(!m.title || m.role !== "MANAGER") && (
-                      <Badge
-                        tone={m.role === "TESTER" ? "info" : "neutral"}
-                        className="w-fit"
-                      >
-                        {label(m.role)}
-                      </Badge>
-                    )}
+                    {/* One label, not two. It used to be the designation AND
+                        the role badge side by side, which said the same thing
+                        twice for everyone whose title matched their work. */}
+                    <Badge
+                      tone={m.role === "TESTER" ? "info" : "neutral"}
+                      className="w-fit"
+                    >
+                      {memberLabel(m)}
+                    </Badge>
                     {!m.hasLogin && (
                       <span className="text-[11px] text-text-muted">no login</span>
                     )}

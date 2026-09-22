@@ -6,6 +6,7 @@ import { deleteMember } from "@/app/dashboard/team/actions";
 import { RankSelect } from "@/components/team/rank-select";
 import { LoginButton } from "@/components/team/login-button";
 import type { MemberRow } from "@/components/team/team-table";
+import { memberLabel } from "@/lib/designations";
 
 // The people who run the place, named rather than measured.
 //
@@ -42,7 +43,7 @@ export function Managers({ members }: { members: MemberRow[] }) {
             <span className="truncate text-sm font-medium text-text-primary">{m.name}</span>
             <div className="flex items-center gap-1.5">
               <span className="truncate text-[12px] text-text-secondary">
-                {m.title ?? "Manager"}
+                {memberLabel(m)}
               </span>
               {!m.hasLogin && <span className="text-[11px] text-text-muted">no login</span>}
             </div>
