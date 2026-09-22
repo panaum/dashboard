@@ -51,6 +51,36 @@ export const SEVERITY_WEIGHT: Record<Severity, number> = {
   REPETITIVE: 1,
 };
 
+/**
+ * THE DATA RAMP — three steps, declared here and nowhere else.
+ *
+ * Expressed as ratios of the period's own mean rather than absolute rates,
+ * because "10 issues a page" means something different on a nine-month view
+ * than on one month, and a threshold that drifts out of date is worse than no
+ * threshold at all.
+ *
+ * Three steps and not a gradient: a continuous colour scale asks a reader to
+ * judge a hue against a key, which nobody does accurately. And colour never
+ * carries the band alone — every banded figure on the page is paired with a
+ * glyph and its position in a sorted column.
+ */
+export const BAND_THRESHOLDS = {
+  /** At or below this share of the mean, a defect rate is good. */
+  good: 0.85,
+  /** Above `good` and at or below this, it is worth watching. */
+  watch: 1.25,
+} as const;
+
+export type Band = "good" | "watch" | "poor";
+
+export function bandFor(value: number | null, mean: number | null): Band | null {
+  if (value === null || mean === null || mean <= 0) return null;
+  const ratio = value / mean;
+  if (ratio <= BAND_THRESHOLDS.good) return "good";
+  if (ratio <= BAND_THRESHOLDS.watch) return "watch";
+  return "poor";
+}
+
 // ─── shapes ─────────────────────────────────────────────────────────────────
 
 export type Confidence = "high" | "low" | "insufficient" | "blocked";

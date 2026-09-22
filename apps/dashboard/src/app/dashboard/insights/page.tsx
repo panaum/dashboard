@@ -1,12 +1,9 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
 import { Download } from "lucide-react";
 import { db } from "@/lib/db";
-import { Select } from "@/components/ui/field";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { PageHeader } from "@/components/shared/page-header";
-import { AnimatedNumber } from "@/components/shared/animated-number";
-import { CellTable, Delta, type Column } from "@/components/insights/cell-table";
+import { CellTable, BandedFigure, type Column } from "@/components/insights/cell-table";
+import { TSelect, TButton, TLink, Tile } from "@/components/insights/controls";
+import { Trend } from "@/components/insights/trend";
 import { BlockedList, type Blocked } from "@/components/insights/blocked-list";
 import { ViewTabs, isView, type ViewKey } from "@/components/insights/view-tabs";
 import { buildPageWhere, hasAnyFilter } from "@/lib/page-search";
@@ -17,7 +14,6 @@ import {
   MIN_N, recurrenceRate, testerAdjustedDefectRate, testerCalibration, testerRates,
   weightedDefectRate, type AdjustedCell, type CalibrationCell, type PageRow,
 } from "@/lib/metrics";
-import { cn } from "@/lib/utils";
 import { STATUSES, label, monthLabel } from "@/lib/constants";
 
 /**
@@ -139,61 +135,70 @@ export default async function InsightsPage({
     ...(windowed ? {} : { scope: "all" }),
   }).toString()}`;
 
-  const fieldCls = "w-auto text-[13px]";
-
   return (
-    <>
-      <PageHeader
-        title="Insights"
-        subtitle="Where defects concentrate, and how confident we are about each number."
-      />
+    <div
+      data-wide
+      data-surface="terminal"
+      className="-mx-8 -my-7 min-h-screen px-8 py-7"
+    >
+    <div className="mx-auto flex max-w-[1500px] flex-col gap-6">
+      <header className="flex flex-col gap-1">
+        <h1 className="t-section">Insights</h1>
+        <p className="t-body text-[var(--ink-2)]">
+          Where defects concentrate, and how confident we are about each number.
+        </p>
+      </header>
 
-      <form method="get" className="mb-3 flex flex-wrap items-end gap-2">
+      <form method="get" className="flex flex-wrap items-center gap-2">
         {windowed && <input type="hidden" name="scope" value="window" />}
         {active !== "process" && <input type="hidden" name="view" value={active} />}
-        <Select name="platform" defaultValue={sp.platform ?? ""} className={fieldCls}>
+        <TSelect name="platform" defaultValue={sp.platform ?? ""} label="Platform">
           <option value="">Any platform</option>
           {platformOptions.map((p) => <option key={p} value={p}>{label(p)}</option>)}
-        </Select>
-        <Select name="status" defaultValue={sp.status ?? ""} className={fieldCls}>
+        </TSelect>
+        <TSelect name="status" defaultValue={sp.status ?? ""} label="Status">
           <option value="">Any status</option>
           {STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
-        </Select>
-        <Select name="developerId" defaultValue={sp.developerId ?? ""} className={fieldCls}>
+        </TSelect>
+        <TSelect name="developerId" defaultValue={sp.developerId ?? ""} label="Developer">
           <option value="">Any developer</option>
           {members.filter((m) => m.role !== "TESTER" && m.role !== "MANAGER")
             .map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </Select>
-        <Select name="testerId" defaultValue={sp.testerId ?? ""} className={fieldCls}>
+        </TSelect>
+        <TSelect name="testerId" defaultValue={sp.testerId ?? ""} label="Tester">
           <option value="">Any tester</option>
           {members.filter((m) => m.role === "TESTER" || m.role === "BOTH")
             .map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </Select>
-        <Select name="month" defaultValue={sp.month ?? ""} className={fieldCls}>
+        </TSelect>
+        <TSelect name="month" defaultValue={sp.month ?? ""} label="Month">
           <option value="">Any month</option>
           {allMonths.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
-        </Select>
-        <Button type="submit" size="sm">Apply</Button>
+        </TSelect>
+        <TButton>Apply</TButton>
         {hasAnyFilter(sp) && (
-          <Link href={href({ platform: null, status: null, developerId: null, testerId: null, month: null })}
-            className="px-2 py-2 text-[13px] text-text-secondary hover:text-text-primary">
+          <TLink href={href({ platform: null, status: null, developerId: null, testerId: null, month: null })}>
             Clear
-          </Link>
+          </TLink>
         )}
         {pages.length > 0 && (
-          <a href={exportHref} className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "ml-auto")}>
-            <Download /> Export CSV
+          <a
+            href={exportHref}
+            className="ml-auto flex h-8 items-center gap-1.5 rounded-[var(--r-chip)] border border-[var(--hairline-strong)] bg-[var(--surface)] px-3 text-[13px] text-[var(--ink)] transition-colors hover:border-[var(--ink-3)]"
+          >
+            <Download className="size-3.5" strokeWidth={2} /> Export CSV
           </a>
         )}
       </form>
 
-      <p className="mb-6 text-[13px] text-text-secondary">
-        {period.label} · {rate.n} page{rate.n === 1 ? "" : "s"}
+      <p className="t-body text-[var(--ink-2)]">
+        {period.label} · <span className="fig">{rate.n}</span> page{rate.n === 1 ? "" : "s"}
         {!sp.month && (
           <>
             {" · "}
-            <Link href={href(windowed ? { scope: null } : { scope: "window" })}
-              className="rounded-xs font-medium text-accent hover:underline">
+            <Link
+              href={href(windowed ? { scope: null } : { scope: "window" })}
+              className="text-[var(--focus)] underline-offset-4 hover:underline"
+            >
               {windowed ? "All recorded history" : `Last ${ROLLING_MONTHS} months`}
             </Link>
           </>
@@ -203,19 +208,22 @@ export default async function InsightsPage({
       <ViewTabs active={active} hrefFor={(v) => href({ view: v === "process" ? null : v })} />
 
       {rate.n === 0 ? (
-        <div className="rounded-xl border border-border-soft bg-card px-4 py-16 text-center">
-          <p className="text-sm text-text-secondary">No pages match these filters in this scope.</p>
+        <div className="panel flex min-h-[220px] items-center justify-center px-4 text-center">
+          <p className="t-body text-[var(--ink-2)]">
+            No pages match these filters in this scope. Widen the platform or month filter.
+          </p>
         </div>
       ) : active === "process" ? (
         <ProcessView {...{ pages, period, rate, weighted, recurrence, href }} />
       ) : active === "clients" ? (
-        <ClientsView {...{ pages, period }} nameOf={clientName} />
+        <ClientsView {...{ pages, period }} nameOf={clientName} mean={rate.value} />
       ) : active === "people" ? (
-        <PeopleView {...{ pages, period, showRaw, href }} nameOf={nameOf} />
+        <PeopleView {...{ pages, period, showRaw, href }} nameOf={nameOf} mean={rate.value} />
       ) : (
         <DeliveryView rows={rows} period={period} />
       )}
-    </>
+    </div>
+    </div>
   );
 }
 
@@ -249,6 +257,10 @@ const PROCESS_BLOCKED: Blocked[] = [
   },
 ];
 
+/** 48px between sections, 16px within them: whitespace as structure. */
+const SECTIONS = "flex flex-col gap-12";
+const WITHIN = "flex flex-col gap-4";
+
 function ProcessView({
   pages, period, rate, weighted, recurrence, href,
 }: {
@@ -260,74 +272,91 @@ function ProcessView({
   href: (o: Record<string, string | null>) => string;
 }) {
   const platforms = defectRateBy(pages, period, byPlatform);
-  const rankable = platforms.filter((c) => c.confidence === "high");
+  const thin = platforms.filter((c) => c.confidence !== "high").length;
   const months = defectRateByMonth(pages, period);
-  const maxMonth = Math.max(1, ...months.map((m) => m.value ?? 0));
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* In-flight risk is what this page most needs and least has. Saying so
-          in the position it would occupy is the honest version of a
-          leading-indicator strip. */}
-      <BlockedList
-        title="In-flight risk — not available"
-        items={[{
-          metric: "Pages on QA round ≥3, stuck in QA, or heading for a bad platform",
-          because: "Every one of these needs a QA round number or a stage timestamp, and neither is recorded anywhere.",
-          unblockedBy: "QA rounds on the certificate, and Page.qaStartedAt",
-        }]}
-      />
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Tile label="Pages" value={rate.n} />
-        <Tile label="Issues / page" value={rate.value} decimals={2} prev={rate.previousPeriodValue} />
-        <Tile label="Weighted / page" value={weighted.value} decimals={2}
-              note="severity-weighted" prev={weighted.previousPeriodValue} />
-        <Tile label="Repeat defects" value={recurrence.value} decimals={1} suffix="%"
-              note={`of ${recurrence.n} issues`} prev={recurrence.previousPeriodValue} />
-      </div>
-
-      <section>
-        <h2 className="mb-1 text-sm font-semibold text-text-primary">Where defects concentrate</h2>
-        <p className="mb-3 text-[13px] text-text-secondary">
-          Platform has an order of magnitude more pages per cell than any person does.
-          {rankable.length < platforms.length && (
-            <> {platforms.length - rankable.length} of {platforms.length} platforms are below {MIN_N} pages and are not ranked.</>
-          )}
-        </p>
-        <CellTable cells={platforms} label={(k) => label(k)} unit="issues / pg" />
+    <div className={SECTIONS}>
+      {/* The only surface on this page allowed visual urgency — and it is
+          currently reporting that it has nothing to report, which is the
+          honest state. A small filled glyph and weight, never a red banner. */}
+      <section className="panel t-in flex items-start gap-3 p-4">
+        <span
+          aria-hidden
+          className="mt-[3px] size-2 shrink-0 rounded-full bg-[var(--ink-3)]"
+        />
+        <div className={WITHIN}>
+          <h2 className="t-card">In-flight risk — not available</h2>
+          <p className="t-body text-[var(--ink-2)]">
+            Pages on QA round ≥3, stuck in QA, or heading for a platform that runs hot: every one of
+            these needs a QA round number or a stage timestamp, and neither is recorded anywhere.
+            Until they are, this page is entirely retrospective and says so here rather than
+            pretending the risk is zero.
+          </p>
+        </div>
       </section>
 
-      {months.length > 1 && (
-        <section className="rounded-xl border border-border-soft bg-card p-5">
-          <h2 className="mb-1 text-sm font-semibold text-text-primary">Quality trend</h2>
-          <p className="mb-4 text-[13px] text-text-secondary">Issues per page, by delivery month.</p>
-          <div className="flex items-end gap-3" style={{ height: 130 }}>
-            {months.map((m, i) => {
-              const h = Math.max(6, Math.round(((m.value ?? 0) / maxMonth) * 96));
-              return (
-                <div key={m.key} className="group/bar flex flex-1 flex-col items-center justify-end gap-1.5"
-                     title={`${m.value} issues/page over ${m.n} pages`}>
-                  <span className="text-[11px] font-semibold tabular-nums text-text-primary">{m.value}</span>
-                  <div
-                    className={cn("animate-grow w-full max-w-[40px] rounded-t-md transition-colors",
-                      m.confidence === "high" ? "bg-accent group-hover/bar:bg-accent-bright" : "bg-border-strong")}
-                    style={{ "--bar-h": `${h}px`, animationDelay: `${i * 60}ms` } as CSSProperties}
-                  />
-                  <span className="text-[11px] text-text-muted">{monthLabel(m.key).slice(0, 3)}</span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+      <section className={WITHIN}>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Tile label="Pages" value={rate.n} note={period.label} />
+          <Tile
+            label="Issues / page"
+            value={rate.value}
+            decimals={2}
+            note="team mean"
+            band={null}
+          />
+          <Tile
+            label="Weighted / page"
+            value={weighted.value}
+            decimals={2}
+            note="severity-weighted"
+          />
+          <Tile
+            label="Repeat defects"
+            value={recurrence.value}
+            decimals={1}
+            unit="%"
+            note={`of ${recurrence.n} issues`}
+          />
+        </div>
+        {recurrence.value === 0 && (
+          <p className="t-body flex items-center gap-2 text-[var(--good)]">
+            <span aria-hidden>✓</span>
+            No defect was recorded as a repeat of an earlier one this period.
+          </p>
+        )}
+      </section>
+
+      <section className={WITHIN}>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="t-card">Where defects concentrate</h2>
+          <span className="t-micro">by platform</span>
+        </div>
+        <p className="t-body text-[var(--ink-2)]">
+          A platform cell carries an order of magnitude more pages than any per-person figure.
+          {thin > 0 && (
+            <>
+              {" "}
+              <span className="fig">{thin}</span> of <span className="fig">{platforms.length}</span>{" "}
+              platforms sit below <span className="fig">{MIN_N}</span> pages and are withheld from the
+              ranking.
+            </>
+          )}
+        </p>
+        <CellTable cells={platforms} label={(k) => label(k)} unit="issues / pg" mean={rate.value} />
+      </section>
+
+      {months.length > 1 && <Trend months={months} mean={rate.value} />}
 
       <BlockedList title="Not measurable with what we record" items={PROCESS_BLOCKED} />
 
-      <p className="text-[13px] text-text-muted">
+      <p className="t-body text-[var(--ink-3)]">
         Looking for the people view? It is{" "}
-        <Link href={href({ view: "people" })} className="font-medium text-accent hover:underline">one tab across</Link>,
-        deliberately — a per-person rate has the thinnest evidence on this page.
+        <Link href={href({ view: "people" })} className="text-[var(--focus)] underline-offset-4 hover:underline">
+          one tab across
+        </Link>
+        , deliberately — a per-person rate has the thinnest evidence on this page.
       </p>
     </div>
   );
@@ -336,24 +365,31 @@ function ProcessView({
 // ─── clients ────────────────────────────────────────────────────────────────
 
 function ClientsView({
-  pages, period, nameOf,
+  pages, period, nameOf, mean,
 }: {
   pages: PageRow[];
   period: ReturnType<typeof makePeriod>;
   nameOf: Map<string, string>;
+  mean: number | null;
 }) {
   const cells = defectRateBy(pages, period, byClient);
   const rankable = cells.filter((c) => c.confidence === "high");
   return (
-    <div className="flex flex-col gap-6">
-      <section>
-        <h2 className="mb-1 text-sm font-semibold text-text-primary">Defect rate by client</h2>
-        <p className="mb-3 text-[13px] text-text-secondary">
-          {rankable.length} of {cells.length} clients have {MIN_N} or more delivered pages. The rest are
-          shown but not ranked — most accounts here are one or two pages, which is not a trend.
+    <div className={SECTIONS}>
+      <section className={WITHIN}>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="t-card">Defect rate by client</h2>
+          <span className="t-micro">issues per page</span>
+        </div>
+        <p className="t-body text-[var(--ink-2)]">
+          <span className="fig">{rankable.length}</span> of <span className="fig">{cells.length}</span>{" "}
+          clients have <span className="fig">{MIN_N}</span> or more delivered pages. The rest are one
+          or two pages each — shown, hatched, and kept out of the ordering, because two pages is not
+          a trend about an account.
         </p>
-        <CellTable cells={cells} label={(k) => nameOf.get(k) ?? k} unit="issues / pg" />
+        <CellTable cells={cells} label={(k) => nameOf.get(k) ?? k} unit="issues / pg" mean={mean} />
       </section>
+
       <BlockedList
         title="The commercial half is blocked"
         items={[{
@@ -369,13 +405,14 @@ function ClientsView({
 // ─── people ─────────────────────────────────────────────────────────────────
 
 function PeopleView({
-  pages, period, showRaw, nameOf, href,
+  pages, period, showRaw, nameOf, href, mean,
 }: {
   pages: PageRow[];
   period: ReturnType<typeof makePeriod>;
   showRaw: boolean;
   nameOf: Map<string, string>;
   href: (o: Record<string, string | null>) => string;
+  mean: number | null;
 }) {
   const adjusted = testerAdjustedDefectRate(pages, period);
   const testers = testerCalibration(pages, period);
@@ -383,69 +420,75 @@ function PeopleView({
   const name = (k: string) => nameOf.get(k) ?? k;
 
   const devCols: Column<AdjustedCell>[] = [
-    { head: "pages", render: (c) => <span className="tabular-nums text-text-secondary">{c.n}</span> },
-    { head: "raw", render: (c) => <span className="tabular-nums text-text-secondary">{c.raw ?? "—"}</span> },
+    { head: "pages", width: "4rem", render: (c) => <span className="fig text-[var(--ink-2)]">{c.n}</span> },
+    { head: "raw", width: "4.5rem", render: (c) => <span className="fig text-[var(--ink-2)]">{c.raw ?? "—"}</span> },
     {
       head: showRaw ? "raw" : "adjusted",
-      render: (c) => (
-        <span className="font-medium tabular-nums text-text-primary">
-          {(showRaw ? c.raw : c.value) ?? "—"}
-        </span>
-      ),
+      width: "6.5rem",
+      render: (c) => <BandedFigure value={showRaw ? c.raw : c.value} mean={mean ?? null} />,
     },
     {
-      head: "reviewers",
+      head: "reviewed by",
+      width: "11rem",
+      align: "left",
       render: (c) => (
-        <span className="text-[12px] text-text-secondary">
-          {c.coverage.slice(0, 2).map((cv) => `${name(cv.testerId).split(" ")[0]} ${Math.round(cv.share * 100)}%`).join(", ") || "—"}
+        <span className="t-body truncate text-[var(--ink-2)]">
+          {c.coverage
+            .slice(0, 2)
+            .map((cv) => `${name(cv.testerId).split(" ")[0]} ${Math.round(cv.share * 100)}%`)
+            .join("  ") || "—"}
         </span>
       ),
     },
   ];
 
   const testerCols: Column<CalibrationCell>[] = [
-    { head: "pages", render: (c) => <span className="tabular-nums text-text-secondary">{c.n}</span> },
-    { head: "issues / pg", render: (c) => <span className="font-medium tabular-nums text-text-primary">{c.value ?? "—"}</span> },
+    { head: "pages", width: "4rem", render: (c) => <span className="fig text-[var(--ink-2)]">{c.n}</span> },
+    { head: "issues / pg", width: "6rem", render: (c) => <span className="fig text-[var(--ink)]">{c.value ?? "—"}</span> },
     {
       head: "vs mean",
+      width: "5rem",
       render: (c) => (
-        <span className="tabular-nums text-text-secondary">{c.divergence === null ? "—" : `${c.divergence}×`}</span>
+        <span className="fig text-[var(--ink-2)]">{c.divergence === null ? "—" : `${c.divergence}×`}</span>
       ),
     },
   ];
 
   return (
-    <div className="flex flex-col gap-8">
-      <section>
-        <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-text-primary">Developers</h2>
-          <Link href={href({ view: "people", raw: showRaw ? null : "1" })}
-            className="text-[13px] font-medium text-accent hover:underline">
-            {showRaw ? "Show tester-adjusted" : "Show raw, unadjusted"}
+    <div className={SECTIONS}>
+      <section className={WITHIN}>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="t-card">Developers</h2>
+          <Link
+            href={href({ view: "people", raw: showRaw ? null : "1" })}
+            className="t-micro text-[var(--focus)] underline-offset-4 hover:underline"
+          >
+            {showRaw ? "show tester-adjusted" : "show raw, unadjusted"}
           </Link>
         </div>
-        <p className="mb-3 text-[13px] text-text-secondary">
-          Issues per page is a joint product of how much the developer got wrong and how hard
-          their reviewer looked. The adjusted column divides the reviewer back out; the raw
-          column and the reviewer mix are both shown so the adjustment is auditable.
+        <p className="t-body max-w-[68ch] text-[var(--ink-2)]">
+          Issues per page is a joint product of how much the developer got wrong and how hard their
+          reviewer looked. The adjusted column divides the reviewer back out; the raw column and the
+          reviewer mix sit in the same row so the adjustment is auditable.
           {usable < 3 && (
-            <span className="text-warning-strong">
-              {" "}Only {usable} reviewer{usable === 1 ? "" : "s"} has enough pages to adjust against — treat the ordering as indicative.
+            <span className="text-[var(--watch)]">
+              {" "}Only <span className="fig">{usable}</span> reviewer{usable === 1 ? "" : "s"} has
+              enough pages to adjust against — treat the ordering as indicative.
             </span>
           )}
         </p>
         <CellTable cells={adjusted} label={name} columns={devCols} />
-        {adjusted[0]?.note && (
-          <p className="mt-2 text-[12px] text-text-muted">{adjusted[0].note}</p>
-        )}
+        {adjusted[0]?.note && <p className="t-body text-[var(--ink-3)]">{adjusted[0].note}</p>}
       </section>
 
-      <section>
-        <h2 className="mb-1 text-sm font-semibold text-text-primary">Testers — calibration</h2>
-        <p className="mb-3 text-[13px] text-text-secondary">
-          Not performance. A reviewer who finds more than the mean is differently tuned, not
-          better or worse — and that difference is exactly what the developer column above
-          corrects for.
+      <section className={WITHIN}>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="t-card">Testers — calibration</h2>
+          <span className="t-micro">not performance</span>
+        </div>
+        <p className="t-body max-w-[68ch] text-[var(--ink-2)]">
+          A reviewer who finds more than the mean is differently tuned, not better or worse — and that
+          difference is exactly what the developer column above corrects for.
         </p>
         <CellTable cells={testers} label={name} columns={testerCols} />
       </section>
@@ -476,51 +519,24 @@ function DeliveryView({
   const totalDelay = late.reduce((n, r) => n + r.delayDays, 0);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <Tile label="On-time delivery" value={onTime} suffix="%" />
-        <Tile label="Pages delivered late" value={late.length} note={`of ${scoped.length}`} />
-        <Tile label="Total delay" value={totalDelay} note="days, all pages" />
+    <div className={SECTIONS}>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <Tile label="On-time delivery" value={onTime} unit="%" note="of pages delivered" />
+        <Tile label="Delivered late" value={late.length} note={`of ${scoped.length} pages`} />
+        <Tile label="Total delay" value={totalDelay} note="days, every page combined" />
       </div>
-      <section className="rounded-xl border border-border-soft bg-card-soft/50 p-5">
-        <h2 className="text-sm font-semibold text-text-primary">Why this is not a headline number</h2>
-        <p className="mt-1.5 text-[13px] text-text-secondary">
-          On-time delivery is saturated: {late.length} of {scoped.length} pages in this scope were
-          late at all, for {totalDelay} day{totalDelay === 1 ? "" : "s"} between them. A metric that
-          reads 100% for almost everybody cannot separate anybody, so it lives here rather than at
-          the top of the page. Cycle time would separate them — it needs a build-start and a
-          QA-start timestamp, and neither is recorded.
+
+      <section className="panel t-in bg-[var(--surface-sunken)] p-5">
+        <h2 className="t-card">Why this is not a headline number</h2>
+        <p className="t-body mt-1.5 max-w-[68ch] text-[var(--ink-2)]">
+          On-time delivery is saturated. <span className="fig">{late.length}</span> of{" "}
+          <span className="fig">{scoped.length}</span> pages in this scope were late at all, by{" "}
+          <span className="fig">{totalDelay}</span> day{totalDelay === 1 ? "" : "s"} between them. A
+          metric that reads <span className="fig">100%</span> for almost everybody cannot separate
+          anybody, so it lives here rather than at the top of the page. Cycle time would separate
+          them — it needs a build-start and a QA-start timestamp, and neither is recorded.
         </p>
       </section>
-    </div>
-  );
-}
-
-// ─── shared ─────────────────────────────────────────────────────────────────
-
-function Tile({
-  label: text, value, decimals = 0, suffix, note, prev,
-}: {
-  label: string;
-  value: number | null;
-  decimals?: number;
-  suffix?: string;
-  note?: string;
-  prev?: number | null;
-}) {
-  return (
-    <div className="rounded-xl border border-border-soft bg-card px-4 py-4 sm:px-5">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-muted sm:text-[11px]">
-        {text}
-      </div>
-      <div className="mt-2 text-[24px] font-semibold leading-none tracking-tight tabular-nums text-text-primary sm:text-[28px]">
-        {value === null ? <span className="text-text-muted">—</span> : <AnimatedNumber value={value} decimals={decimals} />}
-        {value !== null && suffix}
-      </div>
-      <div className="mt-1.5 flex items-center gap-2 text-[11px] text-text-muted">
-        {note}
-        {prev !== undefined && <Delta now={value} before={prev ?? null} />}
-      </div>
     </div>
   );
 }
