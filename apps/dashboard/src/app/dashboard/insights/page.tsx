@@ -4,7 +4,6 @@ import { db } from "@/lib/db";
 import { CellTable, BandedFigure, type Column } from "@/components/insights/cell-table";
 import { TSelect, TButton, TLink, Tile } from "@/components/insights/controls";
 import { Trend } from "@/components/insights/trend";
-import { BlockedList, type Blocked } from "@/components/insights/blocked-list";
 import { ViewTabs, isView, type ViewKey } from "@/components/insights/view-tabs";
 import { buildPageWhere, hasAnyFilter } from "@/lib/page-search";
 import { listPlatforms } from "@/lib/platforms";
@@ -229,33 +228,6 @@ export default async function InsightsPage({
 
 // ─── process ────────────────────────────────────────────────────────────────
 
-const PROCESS_BLOCKED: Blocked[] = [
-  {
-    metric: "Defect concentration by issue type",
-    because: "Issues have no type or category, and 99.8% of titles are placeholders with no description, so nothing can be derived from the text either.",
-    unblockedBy: "Issue.type, captured when the issue is raised",
-  },
-  {
-    metric: "Checklist yield and zero-yield items",
-    because: "The checklist records 30 failures across 39 items in nine months — 94% of the 11,466 rows are N/A.",
-    unblockedBy: "checklist items actually answered, plus Issue.checklistItemId",
-  },
-  {
-    metric: "Coverage gaps",
-    because: "A gap is a recurring issue signature with no checklist item behind it. Both halves are missing.",
-    unblockedBy: "Issue.type and Issue.checklistItemId",
-  },
-  {
-    metric: "Rework rate and QA rounds",
-    because: "One certificate per page is enforced by the schema, so a second QA pass cannot be recorded.",
-    unblockedBy: "a round number on the certificate",
-  },
-  {
-    metric: "Cycle time by stage",
-    because: "A page stores only a delivery month — no brief, build-start or QA-start timestamp.",
-    unblockedBy: "Page.buildStartedAt and Page.qaStartedAt",
-  },
-];
 
 /** 48px between sections, 16px within them: whitespace as structure. */
 const SECTIONS = "flex flex-col gap-12";
@@ -277,25 +249,6 @@ function ProcessView({
 
   return (
     <div className={SECTIONS}>
-      {/* The only surface on this page allowed visual urgency — and it is
-          currently reporting that it has nothing to report, which is the
-          honest state. A small filled glyph and weight, never a red banner. */}
-      <section className="panel t-in flex items-start gap-3 p-4">
-        <span
-          aria-hidden
-          className="mt-[3px] size-2 shrink-0 rounded-full bg-[var(--ink-3)]"
-        />
-        <div className={WITHIN}>
-          <h2 className="t-card">In-flight risk — not available</h2>
-          <p className="t-body text-[var(--ink-2)]">
-            Pages on QA round ≥3, stuck in QA, or heading for a platform that runs hot: every one of
-            these needs a QA round number or a stage timestamp, and neither is recorded anywhere.
-            Until they are, this page is entirely retrospective and says so here rather than
-            pretending the risk is zero.
-          </p>
-        </div>
-      </section>
-
       <section className={WITHIN}>
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Tile label="Pages" value={rate.n} note={period.label} />
@@ -349,8 +302,6 @@ function ProcessView({
 
       {months.length > 1 && <Trend months={months} mean={rate.value} />}
 
-      <BlockedList title="Not measurable with what we record" items={PROCESS_BLOCKED} />
-
       <p className="t-body text-[var(--ink-3)]">
         Looking for the people view? It is{" "}
         <Link href={href({ view: "people" })} className="text-[var(--focus)] underline-offset-4 hover:underline">
@@ -390,14 +341,6 @@ function ClientsView({
         <CellTable cells={cells} label={(k) => nameOf.get(k) ?? k} unit="issues / pg" mean={mean} />
       </section>
 
-      <BlockedList
-        title="The commercial half is blocked"
-        items={[{
-          metric: "Unbilled rework per client",
-          because: "Rework means a second QA round, and the schema allows exactly one certificate per page.",
-          unblockedBy: "a round number on the certificate",
-        }]}
-      />
     </div>
   );
 }
@@ -493,14 +436,6 @@ function PeopleView({
         <CellTable cells={testers} label={name} columns={testerCols} />
       </section>
 
-      <BlockedList
-        title="Not measurable per person"
-        items={[{
-          metric: "Issues done, and anything derived from it",
-          because: "Issue.status records which import a row came from, not whether anyone fixed it. Every issue delivered Jan–Jun is FIXED, written in one batch and never touched since; everything from July on is OPEN.",
-          unblockedBy: "issues actually being resolved in the product",
-        }]}
-      />
     </div>
   );
 }
