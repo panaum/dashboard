@@ -469,3 +469,48 @@ export async function commentWithMentions(input: {
   }
   return { ok: true, mentioned: recipients.length, notified, notes: notes.length ? notes : undefined };
 }
+
+// --- Archiving --------------------------------------------------------------
+//
+// Archiving is a FLAG. Nothing cascades, nothing is deleted, nothing moves:
+// the cards, the comments, the screenshots, the event log, the assignees and
+// the developer link all stay exactly where they are. The board still opens
+// and still works — it is simply out of the grid. Unarchiving clears one
+// column.
+//
+// The developer link is deliberately NOT revoked. Archiving is a tidying
+// action, and silently breaking a URL somebody was given is not tidying. The
+// archive page shows which archived boards still have a live link so it stays
+// a visible decision rather than a forgotten one.
+
+export async function archiveBoard(input: { projectId: string }): Promise<ActionResult> {
+  const actor = await guard("issue:write");
+  if (!actor) return { error: "Your access level cannot archive boards." };
+  const project = await db.project.findUnique({
+    where: { id: input.projectId },
+    select: { boardArchivedAt: true },
+  });
+  if (!project) return { error: "Project not found." };
+  if (project.boardArchivedAt) return { ok: true }; // already away; not an error
+
+  await db.project.update({
+    where: { id: input.projectId },
+    data: { boardArchivedAt: new Date(), boardArchivedById: memberId(actor) },
+  });
+  revalidatePath("/dashboard/boards");
+  revalidatePath("/dashboard/boards/archive");
+  revalidatePath(boardPath(input.projectId));
+  return { ok: true };
+}
+
+export async function unarchiveBoard(input: { projectId: string }): Promise<ActionResult> {
+  if (!(await guard("issue:write"))) return { error: "Your access level cannot archive boards." };
+  await db.project.update({
+    where: { id: input.projectId },
+    data: { boardArchivedAt: null, boardArchivedById: null },
+  });
+  revalidatePath("/dashboard/boards");
+  revalidatePath("/dashboard/boards/archive");
+  revalidatePath(boardPath(input.projectId));
+  return { ok: true };
+}

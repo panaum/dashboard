@@ -15,71 +15,78 @@ datasource db {
 }
 
 model Client {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  notes     String?
-  portalId  String?   @unique //                 opt-in public client portal token
+  id               String    @id @default(cuid())
+  name             String    @unique
+  notes            String?
+  portalId         String?   @unique //                 opt-in public client portal token
   // Seam 1 (Phase 1): annotation onto the LinkSpy registry. Nullable; unset =
   // exactly today's behaviour. Never mutates any existing QA field.
   registryClientId String?
-  projects  Project[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  projects         Project[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model Project {
-  id        String   @id @default(cuid())
-  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  clientId  String
-  name      String
-  type      String   @default("WEBSITE") // ProjectType
-  platform  String   @default("OTHER") //   Platform
-  url       String?
-  status    String   @default("IN_PROGRESS") // Status
-  pages     Page[]
+  id                    String      @id @default(cuid())
+  client                Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId              String
+  name                  String
+  type                  String      @default("WEBSITE") // ProjectType
+  platform              String      @default("OTHER") //   Platform
+  url                   String?
+  status                String      @default("IN_PROGRESS") // Status
+  pages                 Page[]
   // Boards. A board is this project's issues that carry a boardStage, and the
   // developer-facing view is reached by a capability link — the same
   // mechanism as Page.shareId (random token on the row, null to revoke,
   // minted behind a permission), scoped to this project. Nullable; unset =
   // no developer link exists.
-  boardShareId String? @unique
+  boardShareId          String?     @unique
   // The board's accent, as a hex string. Null = the app's default purple; a
   // board never requires one and nothing blocks on it being unset.
-  accentColor  String?
+  accentColor           String?
   // Who minted the developer link and when — set with the token, cleared
   // with it. Null minter = the shared session, like every other attribution.
   boardShareCreatedBy   TeamMember? @relation("BoardLinkMinter", fields: [boardShareCreatedById], references: [id], onDelete: SetNull)
   boardShareCreatedById String?
   boardShareCreatedAt   DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // Archiving a board is a flag and nothing else — every card, comment,
+  // screenshot and event stays. Null means the board is live; a timestamp
+  // means somebody put it away, and clearing it brings it back.
+  boardArchivedAt       DateTime?
+  boardArchivedBy       TeamMember? @relation("BoardArchiver", fields: [boardArchivedById], references: [id], onDelete: SetNull)
+  boardArchivedById     String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
 
   @@index([clientId])
+  @@index([boardArchivedAt])
 }
 
 model Page {
-  id            String         @id @default(cuid())
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId     String
-  name          String
-  url           String?
-  status        String         @default("IN_PROGRESS") // Status
-  shareId       String?        @unique //                 public certificate link token (opt-in)
-  livingCertificateEnabled Boolean @default(false) //     opt-in: certificate keeps reflecting live status
-  developer     TeamMember?    @relation("Dev", fields: [developerId], references: [id], onDelete: SetNull)
-  developerId   String?
-  tester        TeamMember?    @relation("Tester", fields: [testerId], references: [id], onDelete: SetNull)
-  testerId      String?
-  delayDays     Int            @default(0)
-  deliveryMonth String? //                              "2026-01" — powers monthly report
+  id                       String         @id @default(cuid())
+  project                  Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId                String
+  name                     String
+  url                      String?
+  status                   String         @default("IN_PROGRESS") // Status
+  shareId                  String?        @unique //                 public certificate link token (opt-in)
+  livingCertificateEnabled Boolean        @default(false) //     opt-in: certificate keeps reflecting live status
+  developer                TeamMember?    @relation("Dev", fields: [developerId], references: [id], onDelete: SetNull)
+  developerId              String?
+  tester                   TeamMember?    @relation("Tester", fields: [testerId], references: [id], onDelete: SetNull)
+  testerId                 String?
+  delayDays                Int            @default(0)
+  deliveryMonth            String? //                              "2026-01" — powers monthly report
   // Seam 1 (Phase 1): registry annotation. Nullable; unset = today's behaviour.
-  registryDeliverableId String? //                      the LinkSpy deliverable id
-  registrySiteId        String? //                      the LinkSpy site id
-  issues        Issue[]
-  certificate   QACertificate?
-  linkspyStatus LinkSpyStatus?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  registryDeliverableId    String? //                      the LinkSpy deliverable id
+  registrySiteId           String? //                      the LinkSpy site id
+  issues                   Issue[]
+  certificate              QACertificate?
+  linkspyStatus            LinkSpyStatus?
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
 
   @@index([projectId])
   @@index([deliveryMonth])
@@ -99,32 +106,32 @@ model LinkSpyStatus {
 }
 
 model Issue {
-  id          String   @id @default(cuid())
-  page        Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  pageId      String
-  title       String
-  description String?
-  severity    String   @default("LOW") // Severity
-  status      String   @default("OPEN") // IssueStatus
+  id                 String         @id @default(cuid())
+  page               Page           @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  pageId             String
+  title              String
+  description        String?
+  severity           String         @default("LOW") // Severity
+  status             String         @default("OPEN") // IssueStatus
   // ── Boards (all nullable or defaulted: an issue that predates boards is
   //    untouched, and boardStage null means "not on a board").
-  boardStage  String? //                                 BoardStage
+  boardStage         String? //                                 BoardStage
   // QA arranges cards top-to-bottom within a stage; the developer works
   // top-down. Order IS the priority signal the developer view receives, so it
   // has to persist — the spec implies it and names no field.
-  boardOrder  Int      @default(0)
+  boardOrder         Int            @default(0)
   // Where on the site the issue is — a URL to the page or feature.
-  link        String?
+  link               String?
   // Separate from severity on purpose. A low-severity recurring bug is a
   // different problem from a one-off high-severity one. (The existing
   // REPETITIVE severity value already conflates the two; it is left alone.)
-  recurring   Boolean  @default(false)
-  assignee    TeamMember? @relation("Assignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  assigneeId  String?
+  recurring          Boolean        @default(false)
+  assignee           TeamMember?    @relation("Assignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId         String?
   // The QA who logged it. Null on today's single shared session — there is
   // no per-person identity to record until access control lands.
-  reporter    TeamMember? @relation("Reporter", fields: [reporterId], references: [id], onDelete: SetNull)
-  reporterId  String?
+  reporter           TeamMember?    @relation("Reporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  reporterId         String?
   // Dates, as the reference's card has them: an optional start, an optional
   // due date-time, and a reminder some minutes before it. dueRemindedAt is the
   // once-only mark for the reminder sweep; it resets when dueAt changes.
@@ -132,12 +139,12 @@ model Issue {
   dueAt              DateTime?
   dueReminderMinutes Int?
   dueRemindedAt      DateTime?
-  events      IssueEvent[]
-  comments    IssueComment[]
-  images      IssueImage[]
-  views       IssueView[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  events             IssueEvent[]
+  comments           IssueComment[]
+  images             IssueImage[]
+  views              IssueView[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@index([pageId])
   @@index([assigneeId])
@@ -149,8 +156,8 @@ model Issue {
 // or bounce-backs, so this is the source every board metric is computed from.
 // fromStage is null when the card is created onto the board.
 model IssueEvent {
-  id        String   @id @default(cuid())
-  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  id        String      @id @default(cuid())
+  issue     Issue       @relation(fields: [issueId], references: [id], onDelete: Cascade)
   issueId   String
   fromStage String? //                                   BoardStage
   toStage   String //                                    BoardStage
@@ -159,21 +166,21 @@ model IssueEvent {
   // QA session, which is honest rather than attributing to nobody in particular.
   actor     TeamMember? @relation("EventActor", fields: [actorId], references: [id], onDelete: SetNull)
   actorId   String?
-  createdAt DateTime @default(now())
+  createdAt DateTime    @default(now())
 
   @@index([issueId, createdAt])
   @@index([actorId, createdAt])
 }
 
 model IssueComment {
-  id        String   @id @default(cuid())
-  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  id        String         @id @default(cuid())
+  issue     Issue          @relation(fields: [issueId], references: [id], onDelete: Cascade)
   issueId   String
-  author    TeamMember? @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  author    TeamMember?    @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   authorId  String?
   body      String
   mentions  IssueMention[]
-  createdAt DateTime @default(now())
+  createdAt DateTime       @default(now())
 
   @@index([issueId, createdAt])
 }
@@ -203,12 +210,12 @@ model IssueMention {
 // IssueEvent is younger than their row (or they have no row at all) — so
 // nothing has to be marked read, and a new event makes it unread again.
 model IssueView {
-  id       String   @id @default(cuid())
-  issue    Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  id       String     @id @default(cuid())
+  issue    Issue      @relation(fields: [issueId], references: [id], onDelete: Cascade)
   issueId  String
   viewer   TeamMember @relation("Viewer", fields: [viewerId], references: [id], onDelete: Cascade)
   viewerId String
-  viewedAt DateTime @default(now())
+  viewedAt DateTime   @default(now())
 
   @@unique([issueId, viewerId])
   @@index([viewerId])
@@ -219,10 +226,10 @@ model IssueView {
 // high-churn ephemeral data written every few seconds, and it has no business
 // touching the canonical row for a person. One row per member, upserted.
 model BoardPresence {
-  memberId      String   @id
+  memberId      String     @id
   member        TeamMember @relation("Presence", fields: [memberId], references: [id], onDelete: Cascade)
   projectId     String?
-  seenAt        DateTime @default(now())
+  seenAt        DateTime   @default(now())
   typingIssueId String?
   typingAt      DateTime?
 
@@ -249,42 +256,43 @@ model IssueImage {
 }
 
 model TeamMember {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  role        String   @default("DEVELOPER") // MemberRole — the work they do
+  id               String         @id @default(cuid())
+  name             String         @unique
+  role             String         @default("DEVELOPER") // MemberRole — the work they do
   // Access, independent of role. See src/lib/permissions.ts. Defaults to MEMBER
   // so an existing person gains a login without gaining any admin power.
-  rank         String    @default("MEMBER") // Rank
-  email        String?   @unique // null until an admin gives them a login
-  passwordHash String? // scrypt; null means "cannot sign in yet"
-  lastLoginAt  DateTime?
+  rank             String         @default("MEMBER") // Rank
+  email            String?        @unique // null until an admin gives them a login
+  passwordHash     String? // scrypt; null means "cannot sign in yet"
+  lastLoginAt      DateTime?
   // Slack member id (U…), so a board @mention can ping them by name in the
   // channel the webhook posts to. Set from the team page; null = not pinged.
-  slackUserId  String?
+  slackUserId      String?
   // What it says on their card: "CEO", "Project Manager", "QA Lead". Free text,
   // independent of `role` (the work) and `rank` (the access), because a title
   // is neither of those and pretending otherwise corrupts both.
-  title        String?
+  title            String?
   // Profile photo, stored like every other image here — bytes in the row, no
   // object store on the free tier. Resized to 256×256 in the browser before
   // upload, so these stay a few KB. avatarUpdatedAt busts the cache.
-  avatar          Bytes?
-  avatarType      String?
-  avatarUpdatedAt DateTime?
-  active      Boolean  @default(true)
-  devPages    Page[]   @relation("Dev")
-  testerPages Page[]   @relation("Tester")
+  avatar           Bytes?
+  avatarType       String?
+  avatarUpdatedAt  DateTime?
+  active           Boolean        @default(true)
+  devPages         Page[]         @relation("Dev")
+  testerPages      Page[]         @relation("Tester")
   // Boards. A developer keeps a TeamMember row for assignment and attribution
   // even with no login: their capability link resolves to it.
-  assignedIssues  Issue[]        @relation("Assignee")
-  reportedIssues  Issue[]        @relation("Reporter")
-  issueEvents     IssueEvent[]   @relation("EventActor")
-  issueComments   IssueComment[] @relation("CommentAuthor")
-  mentionedIn     IssueMention[] @relation("Mentioned")
-  issueViews      IssueView[]    @relation("Viewer")
-  presence        BoardPresence? @relation("Presence")
+  assignedIssues   Issue[]        @relation("Assignee")
+  reportedIssues   Issue[]        @relation("Reporter")
+  issueEvents      IssueEvent[]   @relation("EventActor")
+  issueComments    IssueComment[] @relation("CommentAuthor")
+  mentionedIn      IssueMention[] @relation("Mentioned")
+  issueViews       IssueView[]    @relation("Viewer")
+  presence         BoardPresence? @relation("Presence")
   mintedBoardLinks Project[]      @relation("BoardLinkMinter")
-  createdAt   DateTime @default(now())
+  archivedBoards   Project[]      @relation("BoardArchiver")
+  createdAt        DateTime       @default(now())
 }
 
 model QACertificate {
@@ -300,27 +308,27 @@ model QACertificate {
 }
 
 model QACheckItem {
-  id            String        @id @default(cuid())
-  certificate   QACertificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
-  certificateId String
-  category      String //        Performance | Functional | Tracking | UX | Conversion Goals
-  name          String
-  result        String        @default("NA") // CheckResult
-  valueDesktop  String?
-  valueMobile   String?
-  hasDualValue  Boolean       @default(false) // Desktop + Mobile inputs (browser tests, PageSpeed)
-  isMeasurement Boolean       @default(false) // free-text value (load time, page size)
-  notes         String?
-  order         Int           @default(0)
+  id               String        @id @default(cuid())
+  certificate      QACertificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  certificateId    String
+  category         String //        Performance | Functional | Tracking | UX | Conversion Goals
+  name             String
+  result           String        @default("NA") // CheckResult
+  valueDesktop     String?
+  valueMobile      String?
+  hasDualValue     Boolean       @default(false) // Desktop + Mobile inputs (browser tests, PageSpeed)
+  isMeasurement    Boolean       @default(false) // free-text value (load time, page size)
+  notes            String?
+  order            Int           @default(0)
   // Phase 3 (machine pre-fill + provenance). machine* are set only by the
   // human-confirm action (NEVER by background code — T4). confirmedSource records
   // whether a value was a human call or a confirmed machine result.
-  machineVerdict  String? //   holding | failing | couldnt_verify (from qa_prefills)
-  machineDetail   String?
+  machineVerdict   String? //   holding | failing | couldnt_verify (from qa_prefills)
+  machineDetail    String?
   machineCheckedAt DateTime?
-  confirmedSource String? //   'machine' | 'human'
-  confirmedBy     String?
-  confirmedAt     DateTime?
+  confirmedSource  String? //   'machine' | 'human'
+  confirmedBy      String?
+  confirmedAt      DateTime?
 
   @@index([certificateId])
 }
@@ -411,14 +419,14 @@ model LayoutSite {
 // how findings are shaped cannot rewrite history — the run records what the
 // tool actually said at the time.
 model LayoutRun {
-  id        String     @id @default(cuid())
-  site      LayoutSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  id        String       @id @default(cuid())
+  site      LayoutSite   @relation(fields: [siteId], references: [id], onDelete: Cascade)
   siteId    String
-  checkedAt DateTime   @default(now())
+  checkedAt DateTime     @default(now())
   findings  Json
-  worst     String     @default("PASS") // FAIL | WARN | SKIP | PASS — for the list
-  failCount Int        @default(0)
-  warnCount Int        @default(0)
+  worst     String       @default("PASS") // FAIL | WARN | SKIP | PASS — for the list
+  failCount Int          @default(0)
+  warnCount Int          @default(0)
   shots     LayoutShot[]
 
   @@index([siteId, checkedAt])
@@ -429,12 +437,12 @@ model LayoutRun {
 // at roughly 64MB across ten sites instead of growing indefinitely. Findings
 // history outlives the images; an older run still says what it found.
 model LayoutShot {
-  id     String    @id @default(cuid())
-  run    LayoutRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  runId  String
-  width  Int
-  image  Bytes //     JPEG, viewport width by full page height
-  bytes  Int //       recorded so storage can be reported without reading blobs
+  id    String    @id @default(cuid())
+  run   LayoutRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId String
+  width Int
+  image Bytes //     JPEG, viewport width by full page height
+  bytes Int //       recorded so storage can be reported without reading blobs
 
   @@unique([runId, width])
   @@index([runId])

@@ -15,11 +15,17 @@ import { bandFor, BAND_THRESHOLDS, MIN_N, type Cell } from "@/lib/metrics";
 //  · A month below MIN_N pages is HATCHED with its reason on hover — never a
 //    gap (which reads as "nothing shipped") and never a zero (which reads as
 //    "nothing went wrong").
-//  · Bars are NOT coloured to fill them. Height already encodes the value and
-//    the dashed rule already says which side of the mean it falls, so banding
-//    every bar painted seven of nine amber and said nothing. They are graphite;
-//    only a month that runs above the poor threshold takes colour, which is
-//    what makes that one bar mean something.
+//  · The columns are wide and close together. Thin bars with a number floating
+//    over each one read as a row of insects rather than a chart; a column
+//    chart wants its marks to carry visual weight, with the gap smaller than
+//    the mark. These fill their track to 82px with an 8px gutter.
+//  · The bars carry the three-step ramp: accent for a typical month, green
+//    below the good threshold, red above the poor one. An earlier pass had
+//    them all graphite with only the bad month coloured — correct, and far
+//    too austere to look at. The middle step is the ACCENT rather than amber,
+//    which is the distinction that matters: a typical month should read as
+//    ordinary, not as a warning. Colour is still never the only carrier —
+//    height, the dashed mean and the printed value all say it too.
 
 export function Trend({ months, mean }: { months: Cell[]; mean: number | null }) {
   const values = months.map((m) => m.value ?? 0);
@@ -34,7 +40,7 @@ export function Trend({ months, mean }: { months: Cell[]; mean: number | null })
         <span className="t-micro">issues per page · by delivery month</span>
       </div>
 
-      <div className="relative mt-6 flex items-end gap-2" style={{ height: 148 }}>
+      <div className="relative mt-6 flex items-end gap-2" style={{ height: 196 }}>
         {/* The mean, as a rule rather than a labelled rule: an inline label
             at the right edge collided with the last bar, and the footnote
             already names the number. */}
@@ -42,19 +48,19 @@ export function Trend({ months, mean }: { months: Cell[]; mean: number | null })
           <div
             aria-hidden
             className="pointer-events-none absolute inset-x-0 border-t border-dashed border-[var(--ink-3)]"
-            style={{ bottom: `calc(28px + ${meanPct} * 1.04px)` }}
+            style={{ bottom: `calc(30px + ${meanPct} * 1.46px)` }}
           />
         )}
 
         {months.map((m, i) => {
           const thin = m.confidence !== "high";
           const band = thin ? null : bandFor(m.value, mean);
-          const h = Math.max(3, Math.round(((m.value ?? 0) / max) * 104));
+          const h = Math.max(4, Math.round(((m.value ?? 0) / max) * 146));
           return (
-            <div key={m.key} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
+            <div key={m.key} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5">
               <span
                 className={cn(
-                  "fig text-[11px]",
+                  "fig text-[13px]",
                   thin ? "text-[var(--ink-3)]" : "text-[var(--ink)]",
                 )}
               >
@@ -68,12 +74,14 @@ export function Trend({ months, mean }: { months: Cell[]; mean: number | null })
                 }
                 style={{ height: h, animationDelay: `${i * 40}ms` }}
                 className={cn(
-                  "t-in w-full max-w-[34px] rounded-t-[var(--r-bar)] transition-opacity hover:opacity-80",
+                  "t-in w-full max-w-[82px] rounded-t-[var(--r-bar)] transition-opacity hover:opacity-80",
                   thin
                     ? "hatched border border-[var(--hairline-strong)]"
                     : band === "poor"
                       ? "bg-[var(--poor)]"
-                      : "bg-[color-mix(in_srgb,var(--ink)_70%,transparent)]",
+                      : band === "good"
+                        ? "bg-[var(--good)]"
+                        : "bg-[var(--focus)]",
                 )}
               />
               <span className="t-micro truncate text-[10px] text-[var(--ink-3)]">
@@ -90,8 +98,9 @@ export function Trend({ months, mean }: { months: Cell[]; mean: number | null })
       <p className="t-body mt-3 text-[var(--ink-3)]">
         <span className="fig">{total}</span> pages across{" "}
         <span className="fig">{months.length}</span> months. Dashed rule is the period mean,{" "}
-        <span className="fig">{mean}</span> issues per page; a coloured bar runs above{" "}
-        <span className="fig">{BAND_THRESHOLDS.watch}×</span> it.
+        <span className="fig">{mean}</span> issues per page. Green is under{" "}
+        <span className="fig">{BAND_THRESHOLDS.good}×</span> the mean, red over{" "}
+        <span className="fig">{BAND_THRESHOLDS.watch}×</span>.
         {months.some((m) => m.confidence !== "high") && " Hatched months carry too few pages to rank."}
       </p>
     </section>
