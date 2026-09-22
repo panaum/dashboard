@@ -46,7 +46,7 @@ export type Card = {
 
 export type Member = { id: string; name: string };
 
-export type MoveInput = { id: string; to: BoardStage; index: number };
+export type MoveInput = { id: string; to: BoardStage; index: number; reason?: string };
 export type DatesInput = { id: string; startAt: string | null; dueAt: string | null; dueReminderMinutes: number | null };
 
 export type Result = { ok?: boolean; error?: string };

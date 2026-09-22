@@ -113,7 +113,7 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
 
   const qa = role === "qa";
   const cover = coverOf(card.images);
-  const stages = BOARD_STAGES.filter((s) => s === card.boardStage || canMove(role, card.boardStage, s, { assigned: !!card.assigneeId }));
+  const stages = BOARD_STAGES.filter((s) => s === card.boardStage || canMove(role, card.boardStage, s));
   const tz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
 
   /** One write for the fields the developer never receives. */

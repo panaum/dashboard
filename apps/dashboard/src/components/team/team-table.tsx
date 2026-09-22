@@ -11,6 +11,7 @@ import { deleteMember } from "@/app/dashboard/team/actions";
 import { RankSelect } from "@/components/team/rank-select";
 import { LoginButton } from "@/components/team/login-button";
 import { memberLabel } from "@/lib/designations";
+import { buildsPages, testsPages } from "@/lib/roles";
 import type { Rank } from "@/lib/permissions";
 
 export type MemberRow = {
@@ -113,19 +114,18 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
                   </div>
                 </div>
               </Link>
-              <span className="text-right text-sm tabular-nums text-text-primary">
-                {m.built}
-              </span>
-              <span className="text-right text-sm tabular-nums text-text-primary">
-                {m.tested}
-              </span>
-              <span
-                className={`text-right text-sm tabular-nums ${
-                  m.repetitive ? "font-medium text-warning" : "text-text-muted"
-                }`}
-              >
-                {m.repetitive}
-              </span>
+              {/* A QA has no Built figure and a developer has no QA'd one, so
+                  those cells are a dash rather than a zero. A zero here reads
+                  as "built nothing", which is a judgement; a dash reads as
+                  "not their job", which is the truth. Repetitive counts bugs
+                  in work somebody built, so it follows Built. */}
+              <Metric value={m.built} applies={buildsPages(m.role)} />
+              <Metric value={m.tested} applies={testsPages(m.role)} />
+              <Metric
+                value={m.repetitive}
+                applies={buildsPages(m.role)}
+                tone={m.repetitive ? "warn" : undefined}
+              />
               <RankSelect
                 memberId={m.id}
                 rank={m.rank}
@@ -158,5 +158,32 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
         )}
       </div>
     </>
+  );
+}
+
+/** One numeric cell. Shows a dash when the metric does not apply to the role,
+ *  which is different from the metric being zero. */
+function Metric({
+  value, applies, tone,
+}: {
+  value: number;
+  applies: boolean;
+  tone?: "warn";
+}) {
+  if (!applies) {
+    return (
+      <span className="text-right text-sm text-text-muted" title="Not part of this role">
+        —
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`text-right text-sm tabular-nums ${
+        tone === "warn" ? "font-medium text-warning-strong" : "text-text-primary"
+      }`}
+    >
+      {value}
+    </span>
   );
 }

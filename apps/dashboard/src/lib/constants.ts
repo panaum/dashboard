@@ -56,7 +56,9 @@ export type BoardStage = (typeof BOARD_STAGES)[number];
 export const BOARD_STAGE_LABELS: Record<BoardStage, string> = {
   NEW: "New",
   ACTIVE: "Active",
-  NEEDS_CLARIFICATION: "Needs clarification",
+  // The stored value stays NEEDS_CLARIFICATION — renaming an enum that
+  // sits in a database column buys a migration for a word on a screen.
+  NEEDS_CLARIFICATION: "Discussed",
   COMPLETED: "Completed",
   CLOSED: "Closed",
 };

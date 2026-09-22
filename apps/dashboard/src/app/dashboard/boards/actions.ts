@@ -9,8 +9,8 @@ import { headers } from "next/headers";
 import { boardCardPatchSchema, boardCardSchema, boardDatesSchema, boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { conversationMembers, mentionMessage, parseMentions, participantsFor, plainText } from "@/lib/board-thread";
 import { notifySlack } from "@/lib/slack";
-import { canMove, isStage, nextOrder, reorder } from "@/lib/boards";
-import type { BoardStage } from "@/lib/constants";
+import { canMove, isStage, moveNeedsReason, nextOrder, reorder } from "@/lib/boards";
+import { BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constants";
 
 // QA's side of the board. Every write here happens inside the app shell,
 // behind the session, and is attributed to the signed-in member: reporterId on
@@ -119,7 +119,7 @@ export async function updateCard(formData: FormData): Promise<ActionResult> {
  * metric is computed from. A move that the rules refuse never reaches the DB.
  */
 export async function moveCard(input: {
-  id: string; to: BoardStage; index: number;
+  id: string; to: BoardStage; index: number; reason?: string;
 }): Promise<ActionResult> {
   const actor = await guard("issue:write");
   if (!actor) return CANNOT_EDIT;
@@ -131,6 +131,22 @@ export async function moveCard(input: {
   const from = isStage(issue.boardStage) ? issue.boardStage : null;
   const sameStage = from === input.to;
   if (!sameStage && !canMove("qa", from, input.to)) return { error: "That move is not allowed." };
+
+  // Enforced here, not only in the dialog that asks for it: a server action is
+  // POST-able directly, and a stage whose reason is optional is a stage that
+  // ends up with no reasons.
+  // The reason is written as a COMMENT, in the same transaction as the move.
+  //
+  // It could have been a column on IssueEvent, which would tie it to the
+  // transition more tightly — but that costs a migration, and a comment is
+  // already everything this needs: visible the moment the card opens, on the
+  // developer view as well as QA's (which hides bare stage changes), attributed,
+  // timestamped, and repliable. The lead-in makes it stand on its own in the
+  // thread, since the developer view will not show the move line beside it.
+  const reason = (input.reason ?? "").trim();
+  if (moveNeedsReason(input.to, from) && !reason) {
+    return { error: `Say why this is going to ${BOARD_STAGE_LABELS[input.to]}.` };
+  }
 
   const cards = await db.issue.findMany({
     where: { page: { projectId: issue.page.projectId }, boardStage: { not: null } },
@@ -146,6 +162,15 @@ export async function moveCard(input: {
       ...(sameStage ? [] : [db.issueEvent.create({
         data: { issueId: input.id, fromStage: from, toStage: input.to, actorId: memberId(actor) },
       })]),
+      ...(reason
+        ? [db.issueComment.create({
+            data: {
+              issueId: input.id,
+              body: `Moved to ${BOARD_STAGE_LABELS[input.to]} — ${reason}`,
+              authorId: memberId(actor),
+            },
+          })]
+        : []),
     ]);
   } catch {
     return { error: "Could not move the card." };
