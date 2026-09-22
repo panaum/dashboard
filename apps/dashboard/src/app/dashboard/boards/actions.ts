@@ -7,7 +7,7 @@ import { getActor } from "@/lib/auth";
 import { type Actor, type Capability, can } from "@/lib/permissions";
 import { headers } from "next/headers";
 import { boardCardPatchSchema, boardCardSchema, boardDatesSchema, boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
-import { conversationMembers, mentionMessage, parseMentions, participantsFor, plainText } from "@/lib/board-thread";
+import { conversationMembers, mentionMessage, parseMentions, participantsFor, plainText, moveReasonBody } from "@/lib/board-thread";
 import { notifySlack } from "@/lib/slack";
 import { canMove, isStage, moveNeedsReason, nextOrder, reorder } from "@/lib/boards";
 import { BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constants";
@@ -166,7 +166,7 @@ export async function moveCard(input: {
         ? [db.issueComment.create({
             data: {
               issueId: input.id,
-              body: `Moved to ${BOARD_STAGE_LABELS[input.to]} — ${reason}`,
+              body: moveReasonBody(BOARD_STAGE_LABELS[input.to], reason),
               authorId: memberId(actor),
             },
           })]

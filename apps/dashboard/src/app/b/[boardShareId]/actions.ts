@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { commentWithMentions, hasCover, removeImage, setCoverImage, storeImage, type ImageResult } from "@/app/dashboard/boards/actions";
 import { boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { canMove, isStage, moveNeedsReason, reorder } from "@/lib/boards";
+import { moveReasonBody } from "@/lib/board-thread";
 import { BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constants";
 
 // The developer's side. No session: the capability link IS the credential,
@@ -58,7 +59,7 @@ export async function developerMove(input: {
       ? [db.issueComment.create({
           data: {
             issueId: input.id,
-            body: `Moved to ${BOARD_STAGE_LABELS[input.to]} — ${reason}`,
+            body: moveReasonBody(BOARD_STAGE_LABELS[input.to], reason),
             authorId: card.assigneeId,
           },
         })]
@@ -153,5 +154,29 @@ export async function developerMarkViewed(input: { boardShareId: string; issueId
     create: { issueId: input.issueId, viewerId: card.assigneeId, viewedAt: new Date() },
     update: { viewedAt: new Date() },
   });
+  return { ok: true };
+}
+
+/**
+ * The link on a card, and nothing else.
+ *
+ * Deliberately its own action rather than a share of the QA save path: that
+ * one carries severity, assignee and the recurring flag, which the developer
+ * view does not show and has no business writing. Attaching a staging URL is
+ * not a reason to hand over the rest of the card.
+ */
+export async function developerSetLink(input: {
+  boardShareId: string; id: string; link: string;
+}): Promise<ActionResult> {
+  const board = await boardFor(input.boardShareId);
+  if (!board) return { error: "This link is no longer valid." };
+  const card = await cardIn(board.id, input.id);
+  if (!card) return { error: "Card not found on this board." };
+  const link = input.link.trim();
+  if (link && !/^https?:\/\//i.test(link)) {
+    return { error: "A link has to start with http:// or https://." };
+  }
+  await db.issue.update({ where: { id: input.id }, data: { link: link || null } });
+  revalidatePath(`/b/${input.boardShareId}`);
   return { ok: true };
 }

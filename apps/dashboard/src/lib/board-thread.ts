@@ -348,3 +348,45 @@ export function conversationMembers(
   if (authorId) ids.delete(authorId);
   return [...ids];
 }
+
+// ─── the reason a card stopped ──────────────────────────────────────────────
+//
+// Moving a card into Discussed requires a reason, and the reason is written as
+// a comment rather than a column — no migration, and it lands in the thread
+// where it can be replied to.
+//
+// That only works if the writer and the reader agree on the shape, so they
+// share this prefix and neither one builds the string by hand. The card dialog
+// lifts the most recent one out of the thread and shows it at the top of the
+// card, because "why is this stuck" is a property of the card, not a message
+// somebody has to scroll back to find.
+
+export const MOVE_REASON_MARK = "Moved to ";
+const SEP = " — ";
+
+/** The comment body written when a move needs a reason. */
+export function moveReasonBody(stageLabel: string, reason: string): string {
+  return `${MOVE_REASON_MARK}${stageLabel}${SEP}${reason.trim()}`;
+}
+
+/**
+ * The newest reason recorded for moving into `stageLabel`, or null.
+ *
+ * Comments arrive oldest-first, so this walks backwards and takes the first
+ * match — a card bounced in and out of Discussed three times shows the reason
+ * it is there NOW, not the first time it ever went.
+ */
+export function latestMoveReason(
+  comments: { body: string }[],
+  stageLabel: string,
+): string | null {
+  const head = `${MOVE_REASON_MARK}${stageLabel}${SEP}`;
+  for (let i = comments.length - 1; i >= 0; i--) {
+    const body = comments[i].body;
+    if (body.startsWith(head)) {
+      const reason = body.slice(head.length).trim();
+      if (reason) return reason;
+    }
+  }
+  return null;
+}

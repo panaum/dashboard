@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import {
-  AlignLeft, Bold, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Circle, Clock, Ellipsis, ExternalLink, Image as ImageIcon, Italic, Link2, List, ListOrdered, MessageSquare, Paperclip, Plus, Repeat, Strikethrough, Tag, Trash2, UserRound,
+  AlignLeft, Bold, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Circle, Clock, Ellipsis, ExternalLink, Image as ImageIcon, Italic, Link2, List, ListOrdered, MessageSquare, Paperclip, Plus, Repeat, Strikethrough, Tag, MessageCircleQuestion, Trash2, UserRound,
 } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { Popover } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { BOARD_STAGES, BOARD_STAGE_LABELS, SEVERITIES, type BoardStage } from "@/lib/constants";
-import { canMove, type Role } from "@/lib/boards";
-import { activityFeed, coverOf, formatStamp, initials, renderComment } from "@/lib/board-thread";
+import { canMove, STAGE_NEEDS_REASON, type Role } from "@/lib/boards";
+import { activityFeed, coverOf, formatStamp, initials, latestMoveReason, renderComment } from "@/lib/board-thread";
 import { REMINDER_OPTIONS, dayKey, dueLabel, dueStatus, monthGrid } from "@/lib/board-dates";
 import { prepareImage } from "./image-prep";
 import { ImageLightbox } from "./image-lightbox";
@@ -42,6 +42,10 @@ type Props = {
   imageSrc: (id: string) => string;
   onMove: (to: BoardStage) => void;
   onSave?: (fd: FormData) => Promise<Result>;
+  /** Setting the link on its own. The developer gets this and not onSave,
+   *  which would carry severity and assignee with it — attaching a link is
+   *  not a reason to hand over the fields the developer view hides. */
+  onLink?: (input: { id: string; link: string }) => Promise<Result>;
   onPatch?: (fd: FormData) => Promise<Result>;
   onComment: (fd: FormData) => Promise<CommentResult>;
   onImage: (fd: FormData) => Promise<ImageResult>;
@@ -86,7 +90,7 @@ const chip = "inline-flex items-center gap-1.5 rounded-md border border-border-s
 const heading = "flex items-center gap-2.5 text-[15px] font-semibold text-text-primary";
 const boxField = "w-full rounded-lg border border-border-soft bg-card px-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
 
-function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onComment, onImage, onCover, onDeleteImage, onDeleteComment, onDates, onDelete, viewerName, onMarkViewed, onOpen, onTyping, typingLine, close }: Props & { close: () => void }) {
+function Body({ role, card, members, imageSrc, onMove, onSave, onLink, onPatch, onComment, onImage, onCover, onDeleteImage, onDeleteComment, onDates, onDelete, viewerName, onMarkViewed, onOpen, onTyping, typingLine, close }: Props & { close: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(true);
@@ -112,6 +116,12 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
     start(async () => { setError(null); const r = await fn(); if (r.error) setError(r.error); else then?.(); });
 
   const qa = role === "qa";
+  // Only while the card is in that column — a reason from a previous visit is
+  // history, and history belongs in the thread.
+  const stoppedReason =
+    card.boardStage === STAGE_NEEDS_REASON
+      ? latestMoveReason(card.comments, BOARD_STAGE_LABELS[STAGE_NEEDS_REASON])
+      : null;
   const cover = coverOf(card.images);
   const stages = BOARD_STAGES.filter((s) => s === card.boardStage || canMove(role, card.boardStage, s));
   const tz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
@@ -271,11 +281,35 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
                     <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only"
                            onChange={(e) => { const f = e.target.files?.[0]; if (f) { upload(f); closeMenu(); } }} />
                   </label>
-                  {qa && onSave && (
-                    <form className="grid gap-2 rounded-md px-2 py-1.5" onSubmit={(e) => { e.preventDefault(); saveDetails({ link: String(new FormData(e.currentTarget).get("link") ?? "") }); closeMenu(); }}>
-                      <span className="flex items-center gap-3"><span className="flex size-8 items-center justify-center rounded-md border border-border-soft"><Link2 className="size-4" /></span><span className="font-medium">Link</span></span>
+                  {/* A link is an attachment too, and attaching one is not a
+                      QA-only act — the developer pasting the staging URL they
+                      are working against is the common case. One link per card
+                      for now: several would need a table of their own. */}
+                  {(onLink || (qa && onSave)) && (
+                    <form
+                      className="grid gap-2 border-t border-border-soft px-2 pb-1.5 pt-2.5"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const link = String(new FormData(e.currentTarget).get("link") ?? "");
+                        if (onLink) run(() => onLink({ id: card.id, link }));
+                        else saveDetails({ link });
+                        closeMenu();
+                      }}
+                    >
+                      <span className="flex items-center gap-3">
+                        <span className="flex size-8 items-center justify-center rounded-md border border-border-soft"><Link2 className="size-4" /></span>
+                        <span><span className="block font-medium">Link</span><span className="block text-[12px] text-text-secondary">Paste a URL — a staging page, a Figma frame, a doc</span></span>
+                      </span>
                       <input name="link" defaultValue={card.link ?? ""} placeholder="https://" className={boxField} />
-                      <Button type="submit" size="sm" className="justify-self-end">Save</Button>
+                      <div className="flex items-center justify-end gap-2">
+                        {card.link && (
+                          <button type="button" onClick={() => { if (onLink) run(() => onLink({ id: card.id, link: "" })); else saveDetails({ link: "" }); closeMenu(); }}
+                                  className="rounded-md px-2 py-1 text-[12px] text-text-secondary hover:text-error-strong">
+                            Remove
+                          </button>
+                        )}
+                        <Button type="submit" size="sm">Save</Button>
+                      </div>
                     </form>
                   )}
                 </div>
@@ -327,6 +361,24 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
               </button>
             </>)}
           </div>
+
+          {/* WHY THIS CARD IS STOPPED, where it cannot be missed.
+              The reason is written as a comment so it can be replied to, but a
+              reason buried in a thread is one nobody reads — "why is this
+              stuck" is a property of the card, so it is lifted out and shown
+              directly under the Add row. Amber, not red: the card is waiting
+              on an answer, which is not an error. */}
+          {stoppedReason && (
+            <div className="ml-8 flex items-start gap-2.5 rounded-lg border border-warning/40 bg-warning/[0.09] px-3 py-2.5">
+              <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-warning-strong" strokeWidth={2} />
+              <p className="min-w-0 text-[13px] text-text-primary">
+                <span className="font-semibold text-warning-strong">
+                  {BOARD_STAGE_LABELS[STAGE_NEEDS_REASON]}:
+                </span>{" "}
+                {stoppedReason}
+              </p>
+            </div>
+          )}
 
           {/* What is set: the reference's Labels / Members blocks under the title. */}
           {(sev || card.assigneeName || card.link || card.dueAt || card.startAt) && (

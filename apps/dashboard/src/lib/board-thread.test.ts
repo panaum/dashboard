@@ -2,8 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  activityFeed, conversationMembers, coverOf, dmText, eventLine, mentionMessage, formatStamp, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, plainText, renderComment, slackMentionText,
-} from "./board-thread";
+  activityFeed, conversationMembers, coverOf, dmText, eventLine, mentionMessage, formatStamp, formatWhen, initials, mentionLabelsFor, parseMentions, participantsFor, plainText, renderComment, slackMentionText, latestMoveReason, moveReasonBody } from "./board-thread";
 
 const card = { reporterId: "qa-1", reporterName: "Anaum", assigneeId: "dev-1", assigneeName: "Priya Sharma" };
 
@@ -223,4 +222,37 @@ test("the fallback text keeps the leading mention — a channel post needs it to
   assert.ok(m.text.startsWith("<@U0DEV> *Anaum* mentioned you on *image.png*"));
   // …and the DM drops it, because there the recipient is the conversation.
   assert.ok(dmText(m.text).startsWith("*Anaum* mentioned you on"));
+});
+
+// ─── the reason a card stopped ──────────────────────────────────────────────
+
+test("the writer and the reader agree on one shape", () => {
+  const body = moveReasonBody("Discussed", "  which spec is right?  ");
+  assert.equal(body, "Moved to Discussed — which spec is right?");
+  assert.equal(latestMoveReason([{ body }], "Discussed"), "which spec is right?");
+});
+
+test("the reason shown is the one it is stuck on now, not the first ever", () => {
+  const comments = [
+    { body: moveReasonBody("Discussed", "first time") },
+    { body: "unrelated chatter" },
+    { body: moveReasonBody("Discussed", "second time, different question") },
+  ];
+  assert.equal(latestMoveReason(comments, "Discussed"), "second time, different question");
+});
+
+test("a reason for another stage, or none at all, reads as none", () => {
+  assert.equal(latestMoveReason([{ body: moveReasonBody("Closed", "done") }], "Discussed"), null);
+  assert.equal(latestMoveReason([{ body: "just a comment" }], "Discussed"), null);
+  assert.equal(latestMoveReason([], "Discussed"), null);
+  // A prefix with nothing after it is not a reason.
+  assert.equal(latestMoveReason([{ body: "Moved to Discussed — " }], "Discussed"), null);
+});
+
+test("a comment that merely mentions the phrase is not mistaken for one", () => {
+  assert.equal(
+    latestMoveReason([{ body: "I think this should be Moved to Discussed — thoughts?" }], "Discussed"),
+    null,
+    "the mark has to open the comment, not appear in it",
+  );
 });

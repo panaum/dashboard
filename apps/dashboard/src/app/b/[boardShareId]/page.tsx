@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { Board } from "@/components/boards/board";
 import type { Card } from "@/components/boards/types";
 import { developerView, isStage, threadAuthorLabel } from "@/lib/boards";
-import { developerComment, developerCover, developerDeleteComment, developerDeleteImage, developerImage, developerMarkViewed, developerMove } from "./actions";
+import { developerComment, developerCover, developerDeleteComment, developerDeleteImage, developerImage, developerMarkViewed, developerMove, developerSetLink } from "./actions";
 import { participantsFor } from "@/lib/board-thread";
 import { isUnread } from "@/lib/board-alive";
 
@@ -102,6 +102,7 @@ export default async function DeveloperBoardPage({ params }: { params: Promise<{
           cards={cards}
           imageBase={`/api/board-image?share=${boardShareId}`}
           onMove={async (input) => { "use server"; return developerMove({ boardShareId, ...input }); }}
+          onLink={async (input) => { "use server"; return developerSetLink({ boardShareId, ...input }); }}
           onComment={async (fd) => { "use server"; fd.set("boardShareId", boardShareId); return developerComment(fd); }}
           onImage={async (fd) => { "use server"; fd.set("boardShareId", boardShareId); return developerImage(fd); }}
           onCover={async (input) => { "use server"; return developerCover({ boardShareId, ...input }); }}

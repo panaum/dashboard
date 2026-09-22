@@ -38,6 +38,7 @@ export function Board({
   imageBase,
   onMove,
   onSave,
+  onLink,
   onPatch,
   onComment,
   onImage,
@@ -65,6 +66,8 @@ export function Board({
   // rendered HERE rather than handed in as a render prop.
   onMove: (input: MoveInput) => Promise<Result>;
   onSave?: (fd: FormData) => Promise<Result>;
+  /** Setting just the link — the developer path; see CardDialog. */
+  onLink?: (input: { id: string; link: string }) => Promise<Result>;
   onPatch?: (fd: FormData) => Promise<Result>;
   onComment: (fd: FormData) => Promise<CommentResult>;
   onImage: (fd: FormData) => Promise<ImageResult>;
@@ -305,7 +308,8 @@ export function Board({
                           role={role} card={card} members={members} imageSrc={imageSrc}
                           initialOpen={card.id === justAdded}
                           onMove={(to) => drop(card.id, to, 9999)}
-                          onSave={onSave} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage} onDeleteComment={onDeleteComment} onDates={onDates} viewerName={viewerName}
+                          onSave={onSave}
+                  onLink={onLink} onPatch={onPatch} onComment={onComment} onImage={onImage} onCover={onCover} onDeleteImage={onDeleteImage} onDeleteComment={onDeleteComment} onDates={onDates} viewerName={viewerName}
                           onMarkViewed={onMarkViewed} onOpen={setOpenIssue} onTyping={setTyping} typingLine={typingLine}
                           onDelete={onDelete ? () => onDelete({ id: card.id }) : undefined}
                         />
