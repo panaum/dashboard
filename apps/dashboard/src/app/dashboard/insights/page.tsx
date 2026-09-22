@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { db } from "@/lib/db";
-import { CellTable, BandedFigure, type Column } from "@/components/insights/cell-table";
+import { CellTable, type Column } from "@/components/insights/cell-table";
 import { TSelect, TButton, TLink, Tile } from "@/components/insights/controls";
 import { Trend } from "@/components/insights/trend";
 import { ViewTabs, isView, type ViewKey } from "@/components/insights/view-tabs";
@@ -217,7 +217,7 @@ export default async function InsightsPage({
       ) : active === "clients" ? (
         <ClientsView {...{ pages, period }} nameOf={clientName} mean={rate.value} />
       ) : active === "people" ? (
-        <PeopleView {...{ pages, period, showRaw, href }} nameOf={nameOf} mean={rate.value} />
+        <PeopleView {...{ pages, period, showRaw, href }} nameOf={nameOf} />
       ) : (
         <DeliveryView rows={rows} period={period} />
       )}
@@ -348,27 +348,57 @@ function ClientsView({
 // ─── people ─────────────────────────────────────────────────────────────────
 
 function PeopleView({
-  pages, period, showRaw, nameOf, href, mean,
+  pages, period, showRaw, nameOf, href,
 }: {
   pages: PageRow[];
   period: ReturnType<typeof makePeriod>;
   showRaw: boolean;
   nameOf: Map<string, string>;
   href: (o: Record<string, string | null>) => string;
-  mean: number | null;
 }) {
   const adjusted = testerAdjustedDefectRate(pages, period);
   const testers = testerCalibration(pages, period);
   const usable = testerRates(pages, period).filter((t) => t.pages >= MIN_N).length;
   const name = (k: string) => nameOf.get(k) ?? k;
 
+  // ONE NUMBER PER PERSON.
+  //
+  // This table used to carry PAGES / RAW / ADJUSTED / REVIEWED BY, and on any
+  // filtered view — where nobody has enough pages to adjust against — the
+  // ADJUSTED column was an em-dash for every row beside a RAW column holding
+  // the real figure. Four columns to say one thing, and the one that looked
+  // like the answer was empty.
+  //
+  // Now there is a single "issues / page". It shows the adjusted rate when the
+  // reviewers can carry one and the raw rate when they cannot, marked so you
+  // always know which you are reading, with the other number on hover.
   const devCols: Column<AdjustedCell>[] = [
-    { head: "pages", width: "4rem", render: (c) => <span className="fig text-[var(--ink-2)]">{c.n}</span> },
-    { head: "raw", width: "4.5rem", render: (c) => <span className="fig text-[var(--ink-2)]">{c.raw ?? "—"}</span> },
+    { head: "pages", width: "4.5rem", render: (c) => <span className="fig text-[var(--ink-2)]">{c.n}</span> },
     {
-      head: showRaw ? "raw" : "adjusted",
-      width: "6.5rem",
-      render: (c) => <BandedFigure value={showRaw ? c.raw : c.value} mean={mean ?? null} />,
+      head: "issues / page",
+      width: "8rem",
+      render: (c) => {
+        const adjusted = !showRaw && c.value !== null;
+        const shown = adjusted ? c.value : c.raw;
+        return (
+          <span
+            title={
+              adjusted
+                ? `Raw rate ${c.raw} — adjusted to ${c.value} for who reviewed these pages`
+                : "Raw rate: not enough reviewer data to adjust it"
+            }
+            className="inline-flex items-baseline justify-end gap-1.5"
+          >
+            {/* Plain ink, deliberately. The platform and client tables band
+                their figures green-to-red, and that is right there: a platform
+                is not a person. Painting three developers red in a column is
+                socially expensive in a way the number itself is not, and the
+                ordering already says everything the colour would. */}
+            <span className="fig font-medium text-[var(--ink)]">{shown ?? "—"}</span>
+            {!adjusted && <span className="t-micro text-[10px] text-[var(--ink-3)]">raw</span>}
+          </span>
+        );
+      },
     },
     {
       head: "reviewed by",
@@ -406,17 +436,19 @@ function PeopleView({
             href={href({ view: "people", raw: showRaw ? null : "1" })}
             className="t-micro text-[var(--focus)] underline-offset-4 hover:underline"
           >
-            {showRaw ? "show tester-adjusted" : "show raw, unadjusted"}
+            {showRaw ? "show reviewer-adjusted" : "show raw, uncorrected"}
           </Link>
         </div>
-        <p className="t-body max-w-[68ch] text-[var(--ink-2)]">
-          Issues per page is a joint product of how much the developer got wrong and how hard their
-          reviewer looked. The adjusted column divides the reviewer back out; the raw column and the
-          reviewer mix sit in the same row so the adjustment is auditable.
+        <p className="t-body max-w-[72ch] text-[var(--ink-2)]">
+          Issues found per page built. Some reviewers look harder than others, so where the
+          numbers allow it this is corrected for who reviewed the work — hover any figure to
+          see the raw rate and what it was adjusted to.
           {usable < 3 && (
             <span className="text-[var(--watch)]">
-              {" "}Only <span className="fig">{usable}</span> reviewer{usable === 1 ? "" : "s"} has
-              enough pages to adjust against — treat the ordering as indicative.
+              {" "}
+              {usable === 0
+                ? "No reviewer here has enough pages to correct against, so these are raw rates."
+                : `Only ${usable} reviewer${usable === 1 ? " has" : "s have"} enough pages to correct against — treat the order as indicative.`}
             </span>
           )}
         </p>
@@ -461,17 +493,6 @@ function DeliveryView({
         <Tile label="Total delay" value={totalDelay} note="days, every page combined" />
       </div>
 
-      <section className="panel t-in bg-[var(--surface-sunken)] p-5">
-        <h2 className="t-card">Why this is not a headline number</h2>
-        <p className="t-body mt-1.5 max-w-[68ch] text-[var(--ink-2)]">
-          On-time delivery is saturated. <span className="fig">{late.length}</span> of{" "}
-          <span className="fig">{scoped.length}</span> pages in this scope were late at all, by{" "}
-          <span className="fig">{totalDelay}</span> day{totalDelay === 1 ? "" : "s"} between them. A
-          metric that reads <span className="fig">100%</span> for almost everybody cannot separate
-          anybody, so it lives here rather than at the top of the page. Cycle time would separate
-          them — it needs a build-start and a QA-start timestamp, and neither is recorded.
-        </p>
-      </section>
     </div>
   );
 }

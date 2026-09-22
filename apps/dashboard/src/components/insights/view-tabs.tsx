@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-// Process first, people third. The order is the argument: a defect rate by
+// Process first, the team third. The order is the argument: a defect rate by
 // platform has an n in the hundreds, a defect rate by person has an n in the
 // tens, and the page used to open on the one with the thinnest evidence and
 // the highest social cost.
+//
+// The key stays "people" so existing links keep working; only the label reads
+// "Team", which is what this team calls it.
 //
 // The accent appears here and on focus rings, and nowhere else. Current state
 // is one of the two jobs it is allowed to do.
@@ -12,7 +15,7 @@ import { cn } from "@/lib/utils";
 export const VIEWS = [
   { key: "process", label: "Process" },
   { key: "clients", label: "Clients" },
-  { key: "people", label: "People" },
+  { key: "people", label: "Team" },
   { key: "delivery", label: "Delivery" },
 ] as const;
 
