@@ -5,14 +5,18 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { Actor } from "@/lib/permissions";
+import type { Actor, Rank } from "@/lib/permissions";
 import { tourFor, type TourStep } from "@/lib/onboarding";
 import { completeOnboarding } from "@/app/dashboard/personalization/actions";
 
 /** Anything can start the tour — onboarding's last step, "Retake the tour" on
  *  the profile page — by dispatching this event; one host listens for it. */
 export const TOUR_EVENT = "tour:start";
-export const startTour = () => window.dispatchEvent(new Event(TOUR_EVENT));
+/** `rank` tours as that rank (an admin demoing a Viewer's tour); `demo`
+ *  means nobody's onboarding is being finished, so nothing is written. */
+export type TourStart = { rank?: Rank; demo?: boolean };
+export const startTour = (opts: TourStart = {}) =>
+  window.dispatchEvent(new CustomEvent<TourStart>(TOUR_EVENT, { detail: opts }));
 
 // A different entrance per step, so the tour reads as considered rather than
 // one template stamped six times. Cycled by index.
@@ -55,6 +59,7 @@ function rectOf(step: TourStep | undefined): Rect | null {
 export function TourHost({ actor, onEnd }: { actor: Actor; onEnd?: () => void }) {
   const [steps, setSteps] = useState<TourStep[] | null>(null);
   const [i, setI] = useState(0);
+  const [demo, setDemo] = useState(false);
   const [rect, setRect] = useState<Rect | null>(null);
   const [vw, setVw] = useState(0);
   const [vh, setVh] = useState(0);
@@ -62,7 +67,12 @@ export function TourHost({ actor, onEnd }: { actor: Actor; onEnd?: () => void })
   const reduce = useReducedMotion();
 
   useEffect(() => {
-    const start = () => { setSteps(tourFor(actor)); setI(0); };
+    const start = (e: Event) => {
+      const opts = (e as CustomEvent<TourStart>).detail ?? {};
+      setSteps(tourFor(opts.rank ? { ...actor, rank: opts.rank } : actor));
+      setDemo(Boolean(opts.demo));
+      setI(0);
+    };
     window.addEventListener(TOUR_EVENT, start);
     return () => window.removeEventListener(TOUR_EVENT, start);
   }, [actor]);
@@ -84,10 +94,11 @@ export function TourHost({ actor, onEnd }: { actor: Actor; onEnd?: () => void })
   const end = useCallback(() => {
     setSteps(null);
     setRect(null);
-    // Written once, server-side; harmless on a retake.
-    void completeOnboarding();
+    // Written once, server-side; harmless on a retake. A demo finishes
+    // nobody's onboarding, so it writes nothing.
+    if (!demo) void completeOnboarding();
     onEnd?.();
-  }, [onEnd]);
+  }, [onEnd, demo]);
 
   const next = useCallback(() => {
     if (!steps) return;
