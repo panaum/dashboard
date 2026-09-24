@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { commentWithMentions, hasCover, removeImage, setCoverImage, storeImage, type ImageResult } from "@/app/dashboard/boards/actions";
+import { commentWithMentions, hasCover, removeImage, setCoverImage, storeImage, type ImageResult } from "@/lib/board-writes";
 import { boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { canMove, isStage, moveNeedsReason, reorder } from "@/lib/boards";
 import { BOARD_STAGE_LABELS, type BoardStage } from "@/lib/constants";
