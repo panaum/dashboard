@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { createDeliverable } from "@/lib/registry";
-import { actorWith } from "@/lib/auth";
-import { CANNOT } from "@/lib/permissions";
+import { actorWith, refusal } from "@/lib/auth";
 
 type Path = { clientId: string; projectId: string; pageId: string };
 
@@ -23,7 +22,7 @@ export async function linkPageToRegistry(input: {
   name: string;
   url?: string | null;
 }): Promise<{ ok: true; siteId: string } | { error: string }> {
-  if (!(await actorWith("registry:write"))) return { error: CANNOT["registry:write"] };
+  if (!(await actorWith("registry:write"))) return { error: await refusal("registry:write") };
   const res = await createDeliverable({
     siteId: input.siteId, kind: "page", name: input.name,
     externalRef: input.path.pageId, url: input.url ?? undefined,
@@ -58,7 +57,7 @@ export async function linkPageToRegistry(input: {
 // place (orphan-tolerated — an eternal id with no back-reference is harmless;
 // a future reconcile may archive it). No mutation of any other QA field.
 export async function unlinkPageFromRegistry(input: { path: Path }): Promise<{ ok: true } | { error: string }> {
-  if (!(await actorWith("registry:write"))) return { error: CANNOT["registry:write"] };
+  if (!(await actorWith("registry:write"))) return { error: await refusal("registry:write") };
   await db.page.update({
     where: { id: input.path.pageId },
     data: { registryDeliverableId: null, registrySiteId: null },

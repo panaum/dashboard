@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
-import { getActor } from "@/lib/auth";
+import { getActor, refusal } from "@/lib/auth";
 import { type Actor, type Capability, can } from "@/lib/permissions";
 import { boardCardPatchSchema, boardCardSchema, boardDatesSchema, boardStageSchema, commentSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { checkImage, commentWithMentions, hasCover, removeImage, setCoverImage, storeImage, type ImageResult } from "@/lib/board-writes";
@@ -29,7 +29,6 @@ async function guard(capability: Capability): Promise<Actor | null> {
  *  row to point at, and a foreign key to nowhere is worse than null. */
 const memberId = (actor: Actor) => (actor.bootstrap ? null : actor.id);
 
-const CANNOT_EDIT = { error: "Your access level cannot edit boards." };
 
 async function projectOf(issueId: string): Promise<string | null> {
   const row = await db.issue.findUnique({
@@ -42,7 +41,7 @@ async function projectOf(issueId: string): Promise<string | null> {
  *  page issue onto it. Creation is itself the first IssueEvent. */
 export async function createCard(formData: FormData): Promise<ActionResult & { id?: string }> {
   const actor = await guard("issue:write");
-  if (!actor) return CANNOT_EDIT;
+  if (!actor) return { error: await refusal("issue:write") };
   const projectId = String(formData.get("projectId") ?? "");
   const pageId = String(formData.get("pageId") ?? "");
   if (!projectId || !pageId) return { error: "Choose the page this issue is on." };
@@ -93,7 +92,7 @@ export async function createCard(formData: FormData): Promise<ActionResult & { i
 }
 
 export async function updateCard(formData: FormData): Promise<ActionResult> {
-  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  if (!(await guard("issue:write"))) return { error: await refusal("issue:write") };
   const id = String(formData.get("id") ?? "");
   const parsed = parseForm(boardCardSchema, formData);
   if ("error" in parsed) return { error: parsed.error };
@@ -117,7 +116,7 @@ export async function moveCard(input: {
   id: string; to: BoardStage; index: number; reason?: string;
 }): Promise<ActionResult> {
   const actor = await guard("issue:write");
-  if (!actor) return CANNOT_EDIT;
+  if (!actor) return { error: await refusal("issue:write") };
   if (!isStage(input.to)) return { error: "Unknown stage." };
   const issue = await db.issue.findUnique({
     where: { id: input.id }, select: { boardStage: true, page: { select: { projectId: true } } },
@@ -175,7 +174,7 @@ export async function moveCard(input: {
 }
 
 export async function deleteCard(input: { id: string }): Promise<ActionResult> {
-  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  if (!(await guard("issue:write"))) return { error: await refusal("issue:write") };
   const projectId = await projectOf(input.id);
   if (!projectId) return { error: "Card not found." };
   await db.issue.delete({ where: { id: input.id } });
@@ -185,7 +184,7 @@ export async function deleteCard(input: { id: string }): Promise<ActionResult> {
 
 export async function addComment(formData: FormData): Promise<ActionResult> {
   const actor = await guard("issue:write");
-  if (!actor) return CANNOT_EDIT;
+  if (!actor) return { error: await refusal("issue:write") };
   const issueId = String(formData.get("issueId") ?? "");
   const parsed = parseForm(commentSchema, formData);
   if ("error" in parsed) return { error: parsed.error };
@@ -199,7 +198,7 @@ export async function addComment(formData: FormData): Promise<ActionResult> {
 }
 
 export async function addImage(formData: FormData): Promise<ImageResult> {
-  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  if (!(await guard("issue:write"))) return { error: await refusal("issue:write") };
   const issueId = String(formData.get("issueId") ?? "");
   const file = formData.get("image");
   if (!(file instanceof File) || !file.size) return { error: "Choose an image." };
@@ -215,7 +214,7 @@ export async function addImage(formData: FormData): Promise<ImageResult> {
 
 export async function mintBoardLink(input: { projectId: string }): Promise<ActionResult & { boardShareId?: string }> {
   const actor = await guard("sharelink:mint");
-  if (!actor) return { error: "Your access level cannot share boards." };
+  if (!actor) return { error: await refusal("sharelink:mint") };
   const existing = await db.project.findUnique({ where: { id: input.projectId }, select: { boardShareId: true } });
   if (!existing) return { error: "Project not found." };
   let boardShareId = existing.boardShareId ?? null;
@@ -233,7 +232,7 @@ export async function mintBoardLink(input: { projectId: string }): Promise<Actio
 }
 
 export async function revokeBoardLink(input: { projectId: string }): Promise<ActionResult> {
-  if (!(await guard("sharelink:mint"))) return { error: "Your access level cannot share boards." };
+  if (!(await guard("sharelink:mint"))) return { error: await refusal("sharelink:mint") };
   await db.project.update({
     where: { id: input.projectId },
     data: { boardShareId: null, boardShareCreatedById: null, boardShareCreatedAt: null },
@@ -246,7 +245,7 @@ export async function revokeBoardLink(input: { projectId: string }): Promise<Act
 
 /** Title or description edited in place. Only the keys sent are written. */
 export async function patchCard(formData: FormData): Promise<ActionResult> {
-  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  if (!(await guard("issue:write"))) return { error: await refusal("issue:write") };
   const id = String(formData.get("id") ?? "");
   const parsed = parseForm(boardCardPatchSchema, formData);
   if ("error" in parsed) return { error: parsed.error };
@@ -265,8 +264,9 @@ export async function patchCard(formData: FormData): Promise<ActionResult> {
  *  opened; unread is derived from it, so there is nothing to "mark read". */
 export async function markCardViewed(input: { issueId: string }): Promise<ActionResult> {
   const actor = await getActor();
-  // The shared login is nobody in particular and has no row to hang a view on.
-  if (!actor || actor.bootstrap) return { ok: true };
+  // The shared login is nobody in particular and has no row to hang a view on;
+  // an admin previewing as someone must not mark cards read on their behalf.
+  if (!actor || actor.bootstrap || actor.preview) return { ok: true };
   await db.issueView.upsert({
     where: { issueId_viewerId: { issueId: input.issueId, viewerId: actor.id } },
     create: { issueId: input.issueId, viewerId: actor.id, viewedAt: new Date() },
@@ -277,7 +277,7 @@ export async function markCardViewed(input: { issueId: string }): Promise<Action
 
 /** The board's accent. Null puts it back to the app's default purple. */
 export async function setAccent(input: { projectId: string; color: string | null }): Promise<ActionResult> {
-  if (!(await guard("client:edit"))) return { error: "Your access level cannot change this board." };
+  if (!(await guard("client:edit"))) return { error: await refusal("client:edit") };
   const color = input.color?.trim() ?? null;
   if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) return { error: "Use a six-digit hex colour." };
   await db.project.update({ where: { id: input.projectId }, data: { accentColor: color } });
@@ -288,7 +288,7 @@ export async function setAccent(input: { projectId: string; color: string | null
 /** Start, due and reminder from the Dates popover. Changing the due date
  *  re-arms the reminder: dueRemindedAt is cleared so the sweep sends again. */
 export async function setDates(input: { id: string; startAt: string | null; dueAt: string | null; dueReminderMinutes: number | null }): Promise<ActionResult> {
-  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  if (!(await guard("issue:write"))) return { error: await refusal("issue:write") };
   const parsed = boardDatesSchema.safeParse(input);
   if (!parsed.success) return { error: "Those dates do not make sense." };
   const { startAt, dueAt, dueReminderMinutes } = parsed.data;
@@ -315,7 +315,7 @@ export async function setDates(input: { id: string; startAt: string | null; dueA
  *  developer side deletes only its own (see developerDeleteComment). The
  *  mention rows go with it (cascade); a Slack ping already sent stays sent. */
 export async function deleteComment(input: { id: string }): Promise<ActionResult> {
-  if (!(await guard("comment:delete"))) return { error: "Your access level cannot delete comments." };
+  if (!(await guard("comment:delete"))) return { error: await refusal("comment:delete") };
   const c = await db.issueComment.findUnique({ where: { id: input.id }, select: { issueId: true } });
   if (!c) return { error: "Comment not found." };
   const projectId = await projectOf(c.issueId);
@@ -326,7 +326,7 @@ export async function deleteComment(input: { id: string }): Promise<ActionResult
 }
 
 export async function deleteImage(input: { issueId: string; imageId: string }): Promise<ActionResult> {
-  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  if (!(await guard("issue:write"))) return { error: await refusal("issue:write") };
   const projectId = await projectOf(input.issueId);
   if (!projectId) return { error: "Card not found." };
   const r = await removeImage(input.issueId, input.imageId);
@@ -335,7 +335,7 @@ export async function deleteImage(input: { issueId: string; imageId: string }): 
 }
 
 export async function setCover(input: { issueId: string; imageId: string | null }): Promise<ActionResult> {
-  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  if (!(await guard("issue:write"))) return { error: await refusal("issue:write") };
   const projectId = await projectOf(input.issueId);
   if (!projectId) return { error: "Card not found." };
   const r = await setCoverImage(input.issueId, input.imageId);
@@ -358,7 +358,7 @@ export async function setCover(input: { issueId: string; imageId: string | null 
 
 export async function archiveBoard(input: { projectId: string }): Promise<ActionResult> {
   const actor = await guard("board:archive");
-  if (!actor) return { error: "Your access level cannot archive boards." };
+  if (!actor) return { error: await refusal("board:archive") };
   const project = await db.project.findUnique({
     where: { id: input.projectId },
     select: { boardArchivedAt: true },
@@ -377,7 +377,7 @@ export async function archiveBoard(input: { projectId: string }): Promise<Action
 }
 
 export async function unarchiveBoard(input: { projectId: string }): Promise<ActionResult> {
-  if (!(await guard("board:archive"))) return { error: "Your access level cannot archive boards." };
+  if (!(await guard("board:archive"))) return { error: await refusal("board:archive") };
   await db.project.update({
     where: { id: input.projectId },
     data: { boardArchivedAt: null, boardArchivedById: null },

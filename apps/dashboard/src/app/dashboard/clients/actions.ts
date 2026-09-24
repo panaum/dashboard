@@ -4,14 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { clientSchema, parseForm, type ActionResult } from "@/lib/validation";
-import { actorWith } from "@/lib/auth";
-import { CANNOT } from "@/lib/permissions";
+import { actorWith, refusal } from "@/lib/auth";
 
 export async function saveClient(
   _prev: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  if (!(await actorWith("client:edit"))) return { error: CANNOT["client:edit"] };
+  if (!(await actorWith("client:edit"))) return { error: await refusal("client:edit") };
   const parsed = parseForm(clientSchema, formData);
   if ("error" in parsed) return { error: parsed.error };
 

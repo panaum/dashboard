@@ -115,10 +115,18 @@ export type Actor = {
    *  it. Treated as ADMIN so you cannot lock yourself out, but it can never
    *  sign QA — an unattributable signature is worth nothing. */
   bootstrap?: boolean;
+  /** Set while an admin is previewing ("view as"): who is really looking,
+   *  and what the banner says. The rest of the actor is the previewed one. */
+  preview?: { label: string; realName: string };
+  /** A preview on a request that would change something (a server action or
+   *  form post). can() then refuses everything, so every existing guard
+   *  refuses without knowing previews exist. Never set while rendering, so
+   *  the page still shows exactly what the previewed rank would see. */
+  readOnly?: boolean;
 };
 
 export function can(actor: Actor | null, capability: Capability): boolean {
-  if (!actor) return false;
+  if (!actor || actor.readOnly) return false;
   return BY_RANK[actor.rank].includes(capability);
 }
 

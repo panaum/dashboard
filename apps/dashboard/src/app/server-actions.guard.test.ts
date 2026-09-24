@@ -19,6 +19,7 @@ const EXEMPT: Record<string, string> = {
   "src/app/login/actions.ts#login": "signing in: there is no actor yet",
   "src/app/dashboard/actions.ts#logout": "signing out is never rank-gated",
   "src/app/dashboard/boards/actions.ts#markCardViewed": "records the caller's own view; every rank may read a board",
+  "src/app/dashboard/preview/actions.ts#exitPreview": "only deletes the caller's own preview cookie, and must work while a preview makes everything else read-only",
 };
 
 // Files authorised by something other than the session.

@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { actorWith } from "@/lib/auth";
-import { CANNOT } from "@/lib/permissions";
+import { actorWith, refusal } from "@/lib/auth";
 
 const BASE = "/dashboard/checklists";
 
@@ -23,7 +22,7 @@ export async function updateTemplate(input: {
   platform: string | null;
   isDefault: boolean;
 }) {
-  if (!(await actorWith("checklist:fill"))) return { error: CANNOT["checklist:fill"] };
+  if (!(await actorWith("checklist:fill"))) return { error: await refusal("checklist:fill") };
   if (input.isDefault) {
     await db.checklistTemplate.updateMany({
       where: { isDefault: true, NOT: { id: input.id } },
@@ -59,7 +58,7 @@ export async function addTemplateItem(input: {
   hasDualValue: boolean;
   isMeasurement: boolean;
 }) {
-  if (!(await actorWith("checklist:fill"))) return { error: CANNOT["checklist:fill"] };
+  if (!(await actorWith("checklist:fill"))) return { error: await refusal("checklist:fill") };
   const name = input.name.trim();
   if (!name) return { error: "Name is required." };
   const category = input.category.trim() || "General";
@@ -82,7 +81,7 @@ export async function addTemplateItem(input: {
 }
 
 export async function deleteTemplateItem(input: { id: string; templateId: string }) {
-  if (!(await actorWith("checklist:fill"))) return { error: CANNOT["checklist:fill"] };
+  if (!(await actorWith("checklist:fill"))) return { error: await refusal("checklist:fill") };
   await db.checklistTemplateItem.delete({ where: { id: input.id } });
   revalidatePath(`${BASE}/${input.templateId}`);
   return { ok: true };

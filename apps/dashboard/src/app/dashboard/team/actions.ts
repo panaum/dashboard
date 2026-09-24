@@ -61,7 +61,7 @@ export async function setAvatar(formData: FormData): Promise<ActionResult> {
   // Your own photo is never rank-gated (the profile page calls this same
   // action); anyone else's is team management.
   const actor = await getActor();
-  const self = !!actor && !actor.bootstrap && actor.id === id;
+  const self = !!actor && !actor.bootstrap && !actor.preview && actor.id === id;
   if (!self && !can(actor, "team:manage")) return { error: "You cannot manage the team." };
   const file = formData.get("avatar");
 

@@ -3,12 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { STATUSES } from "@/lib/constants";
-import { actorWith } from "@/lib/auth";
-import { CANNOT } from "@/lib/permissions";
+import { actorWith, refusal } from "@/lib/auth";
 
 /** Move a deliverable to a new pipeline status from the board (drag/drop). */
 export async function movePage(input: { pageId: string; status: string }) {
-  if (!(await actorWith("page:edit"))) return { error: CANNOT["page:edit"] };
+  if (!(await actorWith("page:edit"))) return { error: await refusal("page:edit") };
   if (!(STATUSES as readonly string[]).includes(input.status)) {
     return { error: "Invalid status." as const };
   }

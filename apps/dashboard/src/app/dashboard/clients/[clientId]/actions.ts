@@ -5,14 +5,13 @@ import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { projectSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { createPageWithCert } from "./[projectId]/actions";
-import { actorWith } from "@/lib/auth";
-import { CANNOT } from "@/lib/permissions";
+import { actorWith, refusal } from "@/lib/auth";
 
 export async function saveProject(
   _prev: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
-  if (!(await actorWith("client:edit"))) return { error: CANNOT["client:edit"] };
+  if (!(await actorWith("client:edit"))) return { error: await refusal("client:edit") };
   const clientId = String(formData.get("clientId") ?? "");
   if (!clientId) return { error: "Missing client." };
 
@@ -72,7 +71,7 @@ export async function saveProject(
  * certificate — no per-page links or login required.
  */
 export async function createPortalLink(input: { clientId: string }) {
-  if (!(await actorWith("sharelink:mint"))) return { error: CANNOT["sharelink:mint"] };
+  if (!(await actorWith("sharelink:mint"))) return { error: await refusal("sharelink:mint") };
   const existing = await db.client.findUnique({
     where: { id: input.clientId },
     select: { portalId: true },
@@ -91,7 +90,7 @@ export async function createPortalLink(input: { clientId: string }) {
 
 /** Revoke the portal — the link stops working immediately. */
 export async function revokePortalLink(input: { clientId: string }) {
-  if (!(await actorWith("sharelink:mint"))) return { error: CANNOT["sharelink:mint"] };
+  if (!(await actorWith("sharelink:mint"))) return { error: await refusal("sharelink:mint") };
   await db.client.update({
     where: { id: input.clientId },
     data: { portalId: null },

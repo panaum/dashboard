@@ -15,7 +15,8 @@ const NO_ROW = { error: "Sign in as yourself to change your profile." };
 
 async function self() {
   const actor = await getActor();
-  return actor && !actor.bootstrap ? actor : null;
+  // A preview is read-only: an admin viewing as someone edits nobody's profile.
+  return actor && !actor.bootstrap && !actor.preview ? actor : null;
 }
 
 /** Name and nickname. Validation is the same schema the admin dialog uses. */
