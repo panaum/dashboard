@@ -86,6 +86,7 @@ export default async function TeamPage() {
       title: m.title,
       avatarUpdatedAt: m.avatarUpdatedAt?.toISOString() ?? null,
       hasLogin: Boolean(m.email && m.passwordHash),
+      active: m.active,
       isSelf: m.id === actor.id,
       built: s?.built ?? 0,
       tested: s?.tested ?? 0,
@@ -108,7 +109,7 @@ export default async function TeamPage() {
 
 
       <div className="mb-7 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat value={members.length} unit="People" index={0} />
+        <Stat value={members.filter((m) => m.active).length} unit="People" index={0} />
         <Stat value={developers.length} unit="Developers" index={1} />
         <Stat value={totalBuilt} unit="Pages built" index={2} />
         <Stat

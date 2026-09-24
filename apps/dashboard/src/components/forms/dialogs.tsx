@@ -29,25 +29,6 @@ export function AddMemberButton() {
   );
 }
 
-export function EditMemberButton({
-  member,
-}: {
-  member: { id: string; name: string; nickname?: string | null; role: string; title?: string | null; slackUserId?: string | null; avatarUpdatedAt?: string | null };
-}) {
-  return (
-    <Dialog
-      title="Edit team member"
-      trigger={
-        <button className={iconBtn} aria-label="Edit member">
-          <Pencil className="size-4" />
-        </button>
-      }
-    >
-      {(close) => <MemberForm close={close} initial={member} />}
-    </Dialog>
-  );
-}
-
 export function AddClientButton() {
   if (!useCan("client:edit")) return null;
   return (

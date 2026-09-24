@@ -135,17 +135,17 @@ export function Sidebar({ actor, boardsUnread = 0, teamPending = 0 }: { actor?: 
       <div className="mt-2 border-t border-border-soft pt-3">
         {/* Personal settings, for every rank — never behind settings:manage. */}
         <Link
-          href="/dashboard/profile"
+          href="/dashboard/personalization"
           data-tour="profile"
           className={cn(
             "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-            pathname.startsWith("/dashboard/profile")
+            pathname.startsWith("/dashboard/personalization")
               ? "bg-accent/10 text-accent"
               : "text-text-secondary hover:bg-card-soft hover:text-text-primary",
           )}
         >
           <CircleUserRound className="size-[18px]" strokeWidth={1.5} />
-          Profile
+          Personalization
         </Link>
       </div>
 

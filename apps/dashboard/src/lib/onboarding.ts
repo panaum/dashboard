@@ -49,8 +49,8 @@ const STEPS: ReadonlyArray<TourStep | ((actor: Actor) => TourStep)> = [
       : "The record-keeping side: QA checklists you fill in, and the clients and projects they belong to.",
   }),
   (actor) => ({
-    id: "profile", href: "/dashboard/profile", target: "profile",
-    title: "Your profile",
+    id: "profile", href: "/dashboard/personalization", target: "profile",
+    title: "Personalization",
     body: actor.rank === "VIEWER"
       ? "Change your name, nickname and photo, retake this tour, or ask for Member access whenever you need it."
       : "Change your name, nickname and photo, or retake this tour.",

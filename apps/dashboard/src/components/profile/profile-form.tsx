@@ -3,7 +3,7 @@
 import { useActionState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { PhotoField, ProfileFields, type ProfileMember } from "@/components/forms/profile-fields";
-import { saveProfile } from "@/app/dashboard/profile/actions";
+import { saveProfile } from "@/app/dashboard/personalization/actions";
 
 /** A person editing themselves: the shared ProfileFields posting to
  *  saveProfile, which only ever writes the signed-in person's own row. */

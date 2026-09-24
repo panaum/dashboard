@@ -7,7 +7,7 @@ import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Actor } from "@/lib/permissions";
 import { tourFor, type TourStep } from "@/lib/onboarding";
-import { completeOnboarding } from "@/app/dashboard/profile/actions";
+import { completeOnboarding } from "@/app/dashboard/personalization/actions";
 
 /** Anything can start the tour — onboarding's last step, "Retake the tour" on
  *  the profile page — by dispatching this event; one host listens for it. */
@@ -37,7 +37,7 @@ function rectOf(step: TourStep | undefined): Rect | null {
   const el = document.querySelector<HTMLElement>(`[data-tour="${step.target}"]`);
   if (!el) return null;
   let r = el.getBoundingClientRect();
-  // On a long page the sidebar grows with it and Profile can sit below the
+  // On a long page the sidebar grows with it and Personalization can sit below the
   // fold; bring the target on screen before lighting it.
   if (r.top < 0 || r.bottom > window.innerHeight) {
     el.scrollIntoView({ block: "nearest" });
@@ -111,7 +111,7 @@ export function TourHost({ actor, onEnd }: { actor: Actor; onEnd?: () => void })
   // Beside the target when there is room (the sidebar is on the left, so
   // there usually is); otherwise above or below it, full width, at phone
   // sizes. A target in the lower half anchors the card by its bottom edge so
-  // it grows upward — Profile sits at the foot of the sidebar, and a card
+  // it grows upward — Personalization sits at the foot of the sidebar, and a card
   // hung from its middle ran off the screen with Finish out of reach.
   const low = rect ? rect.top + rect.height / 2 > vh / 2 : false;
   const beside = rect && vw - (rect.left + rect.width) >= CARD_W + GAP * 2;

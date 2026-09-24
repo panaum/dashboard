@@ -1,11 +1,12 @@
-import { Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Trash2, Pencil } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { EditMemberButton } from "@/components/forms/dialogs";
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { deleteMember } from "@/app/dashboard/team/actions";
 import { RankSelect } from "@/components/team/rank-select";
 import { ViewAsButton } from "@/components/team/view-as";
 import { RankRequestBadge } from "@/components/team/rank-request-badge";
+import { RestoreButton } from "@/components/team/restore-button";
 import { LoginButton } from "@/components/team/login-button";
 import type { MemberRow } from "@/components/team/team-table";
 import { memberLabel } from "@/lib/designations";
@@ -39,10 +40,12 @@ export function Managers({ members }: { members: MemberRow[] }) {
               <span className="truncate text-[12px] text-text-secondary">
                 {memberLabel(m)}
               </span>
-              {!m.hasLogin && <span className="text-[11px] text-text-muted">no login</span>}
+              {!m.active ? <span className="text-[11px] font-medium text-warning-strong">Left</span>
+                : !m.hasLogin && <span className="text-[11px] text-text-muted">no login</span>}
             </div>
           </div>
           {m.pendingRequest && <RankRequestBadge name={m.name} request={m.pendingRequest} />}
+          {!m.active && <RestoreButton id={m.id} name={m.name} />}
           <div className="ml-auto flex items-center gap-2">
             <RankSelect
               memberId={m.id}
@@ -53,13 +56,15 @@ export function Managers({ members }: { members: MemberRow[] }) {
             />
             <div className="flex items-center gap-0.5">
               {/* Admins see what you see; yourself, likewise. */}
-              {m.rank !== "ADMIN" && !m.isSelf && <ViewAsButton memberId={m.id} name={m.name} />}
+              {m.rank !== "ADMIN" && !m.isSelf && m.active && <ViewAsButton memberId={m.id} name={m.name} />}
               <LoginButton
                 member={{ id: m.id, name: m.name, email: m.email, hasLogin: m.hasLogin }}
               />
-              <EditMemberButton
-                member={{ id: m.id, name: m.name, nickname: m.nickname, role: m.role, title: m.title, slackUserId: m.slackUserId, avatarUpdatedAt: m.avatarUpdatedAt }}
-              />
+              {/* A page, not a dialog: Personalization has room to breathe. */}
+              <Link href={`/dashboard/team/${m.id}/personalize`} aria-label={`Edit ${m.name}`} title="Personalization"
+                    className="rounded-md p-1.5 text-text-secondary transition-colors hover:bg-card-soft hover:text-text-primary">
+                <Pencil className="size-4" />
+              </Link>
               <ConfirmDelete
                 action={deleteMember}
                 fields={{ id: m.id }}
