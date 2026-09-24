@@ -24,7 +24,7 @@ export default async function PersonalizeMemberPage({ params }: { params: Promis
     <>
       <Breadcrumbs items={[{ label: "Team", href: "/dashboard/team" }, { label: m.name, href: `/dashboard/team/${m.id}` }, { label: "Personalization" }]} />
       <PageHeader title="Personalization" subtitle={`${m.name}’s name, photo, role and Slack.`} />
-      <Card className="max-w-2xl p-6">
+      <Card className="p-6">
         <MemberPersonalization member={{ ...m, avatarUpdatedAt: m.avatarUpdatedAt?.toISOString() ?? null }} />
       </Card>
     </>
