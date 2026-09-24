@@ -315,7 +315,7 @@ export async function setDates(input: { id: string; startAt: string | null; dueA
  *  developer side deletes only its own (see developerDeleteComment). The
  *  mention rows go with it (cascade); a Slack ping already sent stays sent. */
 export async function deleteComment(input: { id: string }): Promise<ActionResult> {
-  if (!(await guard("issue:write"))) return CANNOT_EDIT;
+  if (!(await guard("comment:delete"))) return { error: "Your access level cannot delete comments." };
   const c = await db.issueComment.findUnique({ where: { id: input.id }, select: { issueId: true } });
   if (!c) return { error: "Comment not found." };
   const projectId = await projectOf(c.issueId);
@@ -357,7 +357,7 @@ export async function setCover(input: { issueId: string; imageId: string | null 
 // a visible decision rather than a forgotten one.
 
 export async function archiveBoard(input: { projectId: string }): Promise<ActionResult> {
-  const actor = await guard("issue:write");
+  const actor = await guard("board:archive");
   if (!actor) return { error: "Your access level cannot archive boards." };
   const project = await db.project.findUnique({
     where: { id: input.projectId },
@@ -377,7 +377,7 @@ export async function archiveBoard(input: { projectId: string }): Promise<Action
 }
 
 export async function unarchiveBoard(input: { projectId: string }): Promise<ActionResult> {
-  if (!(await guard("issue:write"))) return { error: "Your access level cannot archive boards." };
+  if (!(await guard("board:archive"))) return { error: "Your access level cannot archive boards." };
   await db.project.update({
     where: { id: input.projectId },
     data: { boardArchivedAt: null, boardArchivedById: null },

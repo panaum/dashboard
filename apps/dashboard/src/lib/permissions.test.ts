@@ -25,10 +25,23 @@ test("admin holds every capability", () => {
   }
 });
 
-test("viewer holds no capability at all", () => {
+test("viewer works boards and archives them, and holds nothing else", () => {
+  const viewerCaps = new Set(["issue:write", "board:archive"]);
   for (const c of CAPABILITIES) {
-    assert.equal(can(actor("VIEWER"), c), false, `viewer should not hold ${c}`);
+    assert.equal(can(actor("VIEWER"), c), viewerCaps.has(c), `viewer and ${c}`);
   }
+});
+
+test("deleting a comment is member-level, not part of working a card", () => {
+  assert.equal(can(actor("VIEWER"), "comment:delete"), false);
+  assert.equal(can(actor("MEMBER"), "comment:delete"), true);
+  assert.equal(can(actor("ADMIN"), "comment:delete"), true);
+});
+
+test("board configuration is admin-only", () => {
+  assert.equal(can(actor("MEMBER"), "board:configure"), false);
+  assert.equal(can(actor("VIEWER"), "board:configure"), false);
+  assert.equal(can(actor("ADMIN"), "board:configure"), true);
 });
 
 test("member does the work but cannot manage access", () => {
