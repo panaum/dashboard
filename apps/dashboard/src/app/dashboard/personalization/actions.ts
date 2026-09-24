@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { getActor } from "@/lib/auth";
+import { destroySession, getActor } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { profileSchema, rankRequestSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { accessState } from "@/lib/onboarding";
 
@@ -66,4 +67,32 @@ export async function completeOnboarding(): Promise<ActionResult> {
   await db.teamMember.update({ where: { id: actor.id }, data: { hasCompletedOnboarding: true } });
   revalidatePath("/dashboard", "layout");
   return { ok: true };
+}
+
+/**
+ * Leave the workspace. A Viewer or Member may; an admin hands over first (the
+ * last admin standing keeps the lights on, and rank is theirs to pass on).
+ *
+ * This DEACTIVATES rather than deletes. Deleting the row would null the
+ * person out of every page they built or tested, every issue, board event and
+ * comment — permanently, on a database with no point-in-time recovery. So the
+ * row stays, sign-in stops (active=false; the password is cleared), and they
+ * drop out of every assignment list. An admin can restore them from the Team
+ * page, or delete them for good there.
+ */
+export async function leaveWorkspace(): Promise<ActionResult> {
+  const actor = await self();
+  if (!actor) return NO_ROW;
+  if (actor.rank === "ADMIN") return { error: "Admins hand over before leaving — ask another admin to change your access first." };
+
+  await db.$transaction([
+    db.teamMember.update({ where: { id: actor.id }, data: { active: false, passwordHash: null } }),
+    // A request nobody will be around to use.
+    db.rankChangeRequest.updateMany({
+      where: { requestedById: actor.id, status: "pending" },
+      data: { status: "denied", reviewNote: "Left the workspace.", reviewedAt: new Date() },
+    }),
+  ]);
+  await destroySession();
+  redirect("/goodbye");
 }

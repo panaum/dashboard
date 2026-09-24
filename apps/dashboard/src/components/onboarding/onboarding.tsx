@@ -11,7 +11,7 @@ import { AccessRequest, type AccessView } from "@/components/profile/access-requ
 import type { ProfileMember } from "@/components/forms/profile-fields";
 import { startTour } from "@/components/onboarding/tour";
 import type { Actor } from "@/lib/permissions";
-import { completeOnboarding } from "@/app/dashboard/profile/actions";
+import { completeOnboarding } from "@/app/dashboard/personalization/actions";
 
 type Step = "welcome" | "profile" | "access";
 

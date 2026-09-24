@@ -68,7 +68,7 @@ export async function setAvatar(formData: FormData): Promise<ActionResult> {
   if (!(file instanceof File) || !file.size) {
     await db.teamMember.update({ where: { id }, data: { avatar: null, avatarType: null, avatarUpdatedAt: null } });
     revalidatePath("/dashboard/team");
-    revalidatePath("/dashboard/profile");
+    revalidatePath("/dashboard/personalization");
     return { ok: true };
   }
   if (!AVATAR_TYPES.has(file.type)) return { error: "PNG, JPEG or WebP only." };
@@ -80,7 +80,7 @@ export async function setAvatar(formData: FormData): Promise<ActionResult> {
     data: { avatar: buf, avatarType: file.type, avatarUpdatedAt: new Date() },
   });
   revalidatePath("/dashboard/team");
-  revalidatePath("/dashboard/profile");
+  revalidatePath("/dashboard/personalization");
   return { ok: true };
 }
 
@@ -91,6 +91,15 @@ export async function deleteMember(formData: FormData): Promise<void> {
   // automatically (onDelete: SetNull).
   if (id) await db.teamMember.delete({ where: { id } });
   revalidatePath("/dashboard/team");
+}
+
+/** Bring back someone who left (or was deactivated). Their login was cleared
+ *  when they left, so an admin sets a new one from the key button after. */
+export async function restoreMember(input: { id: string }): Promise<ActionResult> {
+  if (!(await guard("team:manage"))) return { error: "You cannot manage the team." };
+  await db.teamMember.update({ where: { id: input.id }, data: { active: true } });
+  revalidatePath("/dashboard/team");
+  return { ok: true };
 }
 
 /** Change what someone may do. */

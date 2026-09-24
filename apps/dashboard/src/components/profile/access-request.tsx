@@ -4,7 +4,7 @@ import { useActionState, useEffect } from "react";
 import { Clock, CircleCheck, CircleX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Textarea } from "@/components/ui/field";
-import { requestMemberAccess } from "@/app/dashboard/profile/actions";
+import { requestMemberAccess } from "@/app/dashboard/personalization/actions";
 import type { AccessState } from "@/lib/onboarding";
 
 /** Dates cross the server/client line as ISO strings. */
@@ -14,7 +14,7 @@ const day = (iso: Date | string | null, timeZone?: string) =>
   iso ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone }).format(new Date(iso)) : "";
 
 /**
- * The "ask for Member access" block. Rendered on /dashboard/profile for good
+ * The "ask for Member access" block. Rendered on /dashboard/personalization for good
  * and as step 4 of onboarding; what it shows comes from accessState(), the
  * same function requestMemberAccess checks, so the button never offers what
  * the server would refuse.

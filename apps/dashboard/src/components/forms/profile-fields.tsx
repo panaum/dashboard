@@ -8,7 +8,7 @@ import { setAvatar } from "@/app/dashboard/team/actions";
 
 // The fields a person edits about themselves — photo, name, nickname. ONE
 // implementation, rendered in three places: the admin's member dialog on the
-// Team page, /dashboard/profile, and the personalisation step of onboarding.
+// Team page, /dashboard/personalization, and the personalisation step of onboarding.
 // Same inputs, same schema (profileSchema), same storage (the TeamMember row;
 // the photo through the same setAvatar action).
 
