@@ -8,7 +8,7 @@ import { RANK_LABELS } from "@/lib/permissions";
  *  would get it — for walking the team through it. Nothing is saved. */
 export function ShowOnboarding() {
   return (
-    <div className="flex flex-wrap items-center gap-1 rounded-full border border-border-soft bg-card p-1 text-[13px] shadow-xs">
+    <div className="flex flex-wrap items-center gap-1 rounded-2xl border border-border-soft bg-card p-1 text-[13px] shadow-xs">
       <span className="flex items-center gap-1.5 px-2.5 text-text-secondary">
         <Presentation className="size-3.5" /> Show onboarding as
       </span>

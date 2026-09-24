@@ -49,7 +49,7 @@ export default async function PersonalizationPage() {
     <>
       <PageHeader title="Personalization" subtitle="Your name, photo and access." />
 
-      <div className="grid max-w-2xl gap-6">
+      <div className="grid gap-6">
         <section>
           <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">You</h2>
           <Card className="p-6">
