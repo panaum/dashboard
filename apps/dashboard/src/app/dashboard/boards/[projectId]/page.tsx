@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/page-header";
 import { Board } from "@/components/boards/board";
 import { BoardLinkControls } from "@/components/boards/board-link-controls";
@@ -21,6 +22,9 @@ import {
 
 export default async function ProjectBoardPage({ params }: { params: Promise<{ projectId: string }> }) {
   const actor = await requireAuth();
+  // Viewers work cards but cannot erase anyone's comment; the button is not
+  // rendered for them, and deleteComment refuses them regardless.
+  const canDeleteComments = can(actor, "comment:delete");
   const { projectId } = await params;
   const [project, members] = await Promise.all([
     db.project.findUnique({
@@ -62,7 +66,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     unread: actor.bootstrap ? false : isUnread(i.events.at(-1)?.createdAt ?? null, i.views[0]?.viewedAt ?? null),
     startAt: i.startAt?.toISOString() ?? null, dueAt: i.dueAt?.toISOString() ?? null, dueReminderMinutes: i.dueReminderMinutes,
     severity: i.severity, recurring: i.recurring, reporterName: i.reporter?.name ?? null,
-    comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: c.author?.name ?? null, createdAt: c.createdAt.toISOString(), deletable: true })),
+    comments: i.comments.map((c) => ({ id: c.id, body: c.body, authorName: c.author?.name ?? null, createdAt: c.createdAt.toISOString(), deletable: canDeleteComments })),
     events: i.events.flatMap((e) => isStage(e.toStage) ? [{
       id: e.id, actorName: e.actor?.name ?? null, fromStage: isStage(e.fromStage) ? e.fromStage : null, toStage: e.toStage, createdAt: e.createdAt.toISOString(),
     }] : []),
