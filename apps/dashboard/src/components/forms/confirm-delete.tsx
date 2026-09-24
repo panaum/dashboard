@@ -2,6 +2,8 @@
 
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useCan } from "@/components/shared/capabilities";
+import type { Capability } from "@/lib/permissions";
 
 export function ConfirmDelete({
   action,
@@ -9,13 +11,17 @@ export function ConfirmDelete({
   trigger,
   title,
   description,
+  cap,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   fields: Record<string, string>;
   trigger: React.ReactNode;
   title: string;
   description: string;
+  /** The capability the delete needs; without it the trigger does not render. */
+  cap?: Capability;
 }) {
+  if (!useCan(cap)) return null;
   return (
     <Dialog trigger={trigger} title={title}>
       {(close) => (

@@ -24,6 +24,8 @@ import { ProductionPresence } from "@/components/qa/production-presence";
 import { buildAnnotations } from "@/lib/linkspy/catalog-map";
 import { QARing } from "@/components/qa/qa-ring";
 import { CertStatusControl } from "@/components/qa/cert-status-control";
+import { requireAuth } from "@/lib/auth";
+import { canSignQa } from "@/lib/permissions";
 import { IssueLog } from "@/components/qa/issue-log";
 import { AiQaButton } from "@/components/qa/ai-qa";
 import { InlineUrl } from "@/components/qa/inline-url";
@@ -82,6 +84,10 @@ export default async function PageDetailPage({
     notFound();
 
   const path = { clientId, projectId, pageId };
+  // Signing is decided per page (you cannot sign what you built), so the
+  // control is told here rather than reading rank from context.
+  const actor = await requireAuth();
+  const sign = canSignQa(actor, { developerId: page.developerId });
   const basePath = `/dashboard/clients/${clientId}/${projectId}`;
   const registryOn = registryConfigured();
 
@@ -147,6 +153,7 @@ export default async function PageDetailPage({
               page={{ ...page, issueCount: page.issues.length }}
             />
             <ConfirmDelete
+              cap="page:edit"
               action={deletePage}
               fields={{ id: page.id, projectId, clientId, redirectTo: basePath }}
               title="Delete page"
@@ -276,6 +283,8 @@ export default async function PageDetailPage({
                     certId={page.certificate.id}
                     status={page.certificate.status}
                     path={path}
+                    canSign={sign.ok}
+                    cannotReason={sign.reason}
                   />
                   {page.certificate.completedAt && (
                     <span className="text-xs text-text-muted">

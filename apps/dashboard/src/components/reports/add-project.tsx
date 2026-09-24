@@ -9,6 +9,8 @@ import { FormFooter, useOnOk } from "@/components/forms/form-parts";
 import { PlatformField } from "@/components/forms/platform-field";
 import { saveProject } from "@/app/dashboard/clients/[clientId]/actions";
 import { STATUSES, label } from "@/lib/constants";
+import { useCan } from "@/components/shared/capabilities";
+import type { ComponentProps } from "react";
 
 type Client = { id: string; name: string };
 type Member = { id: string; name: string; role: string };
@@ -128,7 +130,7 @@ function MonthProjectForm({
 }
 
 /** "New deliverable" button on the Monthly report, pre-scoped to `month`. */
-export function AddProjectForMonth({
+function AddProjectForMonthInner({
   clients,
   members,
   platforms,
@@ -159,4 +161,10 @@ export function AddProjectForMonth({
       )}
     </Dialog>
   );
+}
+
+/** Only for someone who may use it (client:edit); otherwise it does not render.
+ *  A wrapper rather than an early return, so the inner hooks keep their order. */
+export function AddProjectForMonth(props: ComponentProps<typeof AddProjectForMonthInner>) {
+  return useCan("client:edit") ? <AddProjectForMonthInner {...props} /> : null;
 }

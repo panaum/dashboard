@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAuth } from "@/lib/auth";
+import { requireApiAuth, requireApiCapability } from "@/lib/auth";
 
 // Proxy for the in-dashboard URL checker (the key stays server-side).
 // POST starts a backend check job; GET polls its snapshot. Unavailable →
@@ -11,7 +11,7 @@ import { requireApiAuth } from "@/lib/auth";
 const TIMEOUT_MS = 20000;
 
 export async function POST(req: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = (await requireApiAuth()) ?? (await requireApiCapability("check:run"));
   if (denied) return denied;
   if (!configured()) return NextResponse.json({ unavailable: true });
   const body = await req.json().catch(() => ({}) as { url?: string; persist?: boolean; email?: string });

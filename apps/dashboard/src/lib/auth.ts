@@ -139,6 +139,24 @@ export async function requireCapability(capability: Capability): Promise<Actor> 
   return actor;
 }
 
+/** For server actions: the actor if they hold the capability, else null. An
+ *  action answers "no" with an error the form can show, not a redirect —
+ *  this is the one shared guard, so every action refuses the same way. */
+export async function actorWith(capability: Capability): Promise<Actor | null> {
+  const actor = await getActor();
+  return can(actor, capability) ? actor : null;
+}
+
+/** For API routes that change something: 401 without a session, 403 without
+ *  the capability, null to proceed. Reads stay on requireApiAuth — every
+ *  signed-in rank may read. */
+export async function requireApiCapability(capability: Capability): Promise<Response | null> {
+  const actor = await getActor();
+  if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
+  if (!can(actor, capability)) return Response.json({ error: "forbidden" }, { status: 403 });
+  return null;
+}
+
 // Guard for internal API routes. `src/proxy.ts` only matches /dashboard/* and
 // only sniffs for the cookie's presence, so route handlers under /api that serve
 // team-only data must verify the signature themselves — a redirect is the wrong

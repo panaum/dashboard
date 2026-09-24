@@ -6,6 +6,9 @@ import { ChevronDown } from "lucide-react";
 import { setPageStatus } from "@/app/dashboard/clients/[clientId]/[projectId]/actions";
 import { STATUSES, STATUS_TONE, label, type Status, type Tone } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { useCan } from "@/components/shared/capabilities";
+
+const useCanEdit = () => useCan("page:edit");
 
 const TONE_CLASS: Record<Tone, string> = {
   neutral: "bg-card-soft text-text-secondary",
@@ -30,6 +33,15 @@ export function StatusSelect({
 }) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+
+  // Without page:edit it is the badge alone — the status, not the dropdown.
+  if (!useCanEdit()) {
+    return (
+      <span className={cn("inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-semibold", TONE_CLASS[STATUS_TONE[status]])}>
+        {label(status)}
+      </span>
+    );
+  }
 
   return (
     <div

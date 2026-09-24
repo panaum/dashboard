@@ -8,6 +8,8 @@ import { buildChecklistItems } from "@/lib/qa-template";
 import { STATUSES } from "@/lib/constants";
 import { spineEmitEnabled, emitReadyForQa } from "@/lib/spine-emit";
 import { shouldEmitReady } from "@/lib/spine-contract";
+import { actorWith } from "@/lib/auth";
+import { CANNOT } from "@/lib/permissions";
 
 /** Inline status change from a page list (no full edit dialog). */
 export async function setPageStatus(input: {
@@ -16,6 +18,7 @@ export async function setPageStatus(input: {
   clientId: string;
   projectId: string;
 }) {
+  if (!(await actorWith("page:edit"))) return { error: CANNOT["page:edit"] };
   if (!(STATUSES as readonly string[]).includes(input.status)) {
     return { error: "Invalid status." };
   }
@@ -57,6 +60,9 @@ export async function createPageWithCert(
     deliveryMonth?: string | null;
   },
 ) {
+  // Also called by savePage and saveProject after their own checks; this
+  // guard is for direct calls, since every export here is an endpoint.
+  if (!(await actorWith("page:edit"))) throw new Error(CANNOT["page:edit"]);
   const page = await db.page.create({ data: { projectId, ...data } });
   const cert = await db.qACertificate.create({
     data: { pageId: page.id, status: "IN_PROGRESS" },
@@ -141,6 +147,7 @@ export async function savePage(
   _prev: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  if (!(await actorWith("page:edit"))) return { error: CANNOT["page:edit"] };
   const projectId = String(formData.get("projectId") ?? "");
   const clientId = String(formData.get("clientId") ?? "");
   if (!projectId) return { error: "Missing project." };
@@ -211,6 +218,7 @@ export async function savePage(
 }
 
 export async function deletePage(formData: FormData): Promise<void> {
+  if (!(await actorWith("page:edit"))) return;
   const id = String(formData.get("id") ?? "");
   const projectId = String(formData.get("projectId") ?? "");
   const clientId = String(formData.get("clientId") ?? "");

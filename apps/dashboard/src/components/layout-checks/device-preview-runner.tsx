@@ -8,6 +8,8 @@ import { saveDevicePreviewRun } from "@/app/dashboard/layout-checks/actions";
 import {
   IDLE_PROGRESS, isBusy, mergePoll, progressNote, progressPct, type RunProgress,
 } from "@/lib/layout-checks/run-progress";
+import { useCan } from "@/components/shared/capabilities";
+import type { ComponentProps } from "react";
 
 // Runs the page across the device matrix on the preview service, then saves
 // the result so it becomes history and the next run has something to diff
@@ -19,7 +21,7 @@ import {
 
 type Scope = "primary" | "all";
 
-export function DevicePreviewRunner({
+function DevicePreviewRunnerInner({
   url,
   baselineServiceRunId,
   darkBaselineServiceRunId = null,
@@ -142,4 +144,10 @@ export function DevicePreviewRunner({
       )}
     </div>
   );
+}
+
+/** Only for someone who may use it (check:run); otherwise it does not render.
+ *  A wrapper rather than an early return, so the inner hooks keep their order. */
+export function DevicePreviewRunner(props: ComponentProps<typeof DevicePreviewRunnerInner>) {
+  return useCan("check:run") ? <DevicePreviewRunnerInner {...props} /> : null;
 }

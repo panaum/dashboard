@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { actorWith, requireAuth } from "@/lib/auth";
 import { spineEmitEnabled, emitItemPromoted } from "@/lib/spine-emit";
+import { CANNOT } from "@/lib/permissions";
 
 // PROMOTE — the ONLY writer of ChecklistTemplateItem (T4), human-initiated.
 // Adds the item to the default template with origin='flywheel'; existing pages'
@@ -16,6 +17,7 @@ export async function promoteCandidate(input: {
   rationale: string;
   category?: string;
 }): Promise<{ ok?: true; error?: string }> {
+  if (!(await actorWith("checklist:fill"))) return { error: CANNOT["checklist:fill"] };
   await requireAuth();
   const wording = (input.wording ?? "").trim();
   const rationale = (input.rationale ?? "").trim();
@@ -73,6 +75,7 @@ export async function dismissCandidate(input: {
   candidateId: string;
   reason?: string;
 }): Promise<{ ok?: true; error?: string }> {
+  if (!(await actorWith("checklist:fill"))) return { error: CANNOT["checklist:fill"] };
   await requireAuth();
   try {
     await db.checklistCandidate.update({

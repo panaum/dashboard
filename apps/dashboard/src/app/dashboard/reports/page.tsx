@@ -360,6 +360,7 @@ export default async function ReportsPage({
                             }}
                           />
                           <ConfirmDelete
+                            cap="page:edit"
                             action={deletePage}
                             fields={{
                               id: p.id,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAuth } from "@/lib/auth";
+import { requireApiAuth, requireApiCapability } from "@/lib/auth";
 
 // Proxy for the devicepreview service (the key stays server-side). POST starts
 // a run; GET polls it (?id=) or lists retained runs (?view=runs&url=).
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = (await requireApiAuth()) ?? (await requireApiCapability("check:run"));
   if (denied) return denied;
   if (!configured()) return NextResponse.json({ unavailable: true });
   const body = await req.json().catch(() => ({}));

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { useCan } from "@/components/shared/capabilities";
 
 // The developer's way in. Same mechanism as the certificate link: mint once,
 // copy, revoke to kill it instantly. The URL is shown in full so QA can see
@@ -20,6 +21,9 @@ export function BoardLinkControls({
 }) {
   const [copied, setCopied] = useState(false);
   const [pending, start] = useTransition();
+  // Minting and revoking are admin-only (sharelink:mint); anyone working the
+  // board can still copy a link that exists.
+  const canMint = useCan("sharelink:mint");
   const url = boardShareId ? `${origin}/b/${boardShareId}` : null;
   return (
     <div className="flex flex-wrap items-center gap-2 text-[13px]">
@@ -30,10 +34,12 @@ export function BoardLinkControls({
                   onClick={async () => { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
             {copied ? "Copied" : "Copy developer link"}
           </Button>
-          <Button type="button" variant="ghost" disabled={pending}
-                  onClick={() => { if (confirm("Revoke the developer link? It stops working immediately.")) start(async () => { await onRevoke(); }); }}>
-            Revoke
-          </Button>
+          {canMint && (
+            <Button type="button" variant="ghost" disabled={pending}
+                    onClick={() => { if (confirm("Revoke the developer link? It stops working immediately.")) start(async () => { await onRevoke(); }); }}>
+              Revoke
+            </Button>
+          )}
           {createdAt && (
             <span className="basis-full text-[11px] text-text-secondary">
               Created {createdBy ? `by ${createdBy}, ` : "by the shared login, "}{createdAt}
@@ -43,9 +49,11 @@ export function BoardLinkControls({
       ) : (
         <>
           <span className="text-text-secondary">No developer link yet.</span>
-          <Button type="button" variant="ghost" disabled={pending} onClick={() => start(async () => { await onMint(); })}>
-            Create developer link
-          </Button>
+          {canMint && (
+            <Button type="button" variant="ghost" disabled={pending} onClick={() => start(async () => { await onMint(); })}>
+              Create developer link
+            </Button>
+          )}
         </>
       )}
     </div>

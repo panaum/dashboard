@@ -112,6 +112,40 @@ test("internal proxy routes verify the team session in the handler", () => {
   }
 });
 
+// Routes that change something or spend a service's quota. A session is not
+// enough: a Viewer holds one. Each write handler chains requireApiCapability
+// straight after requireApiAuth, so the order check above still holds.
+const WRITE_ROUTES: Record<string, string[]> = {
+  "src/app/api/linkspy/monitor/route.ts": ["POST", "DELETE"],
+  "src/app/api/linkspy/check/route.ts": ["POST"],
+  "src/app/api/devicepreview/monitor/route.ts": ["POST"],
+  "src/app/api/devicepreview/live-token/route.ts": ["POST"],
+  "src/app/api/registry/prefills/refresh/route.ts": ["POST"],
+};
+
+test("write routes check a capability, not just a session", () => {
+  for (const [f, methods] of Object.entries(WRITE_ROUTES)) {
+    const code = stripComments(read(f));
+    for (const m of methods) {
+      const start = code.indexOf(`export async function ${m}(`);
+      assert.ok(start >= 0, `${f} has no ${m} handler`);
+      const next = code.indexOf("export async function", start + 1);
+      const body = code.slice(start, next === -1 ? undefined : next);
+      assert.match(body, /requireApiCapability\(/, `${f} ${m} must call requireApiCapability()`);
+    }
+  }
+});
+
+test("every session-guarded write handler is listed as a write route", () => {
+  for (const f of SESSION_GUARDED) {
+    const code = stripComments(read(f));
+    for (const m of ["POST", "PUT", "PATCH", "DELETE"]) {
+      if (!code.includes(`export async function ${m}(`)) continue;
+      assert.ok(WRITE_ROUTES[f]?.includes(m), `${f} ${m} writes; add it to WRITE_ROUTES with a capability`);
+    }
+  }
+});
+
 test("requireApiAuth answers 401 rather than redirecting", () => {
   const src = read("src/lib/auth.ts");
   assert.match(src, /export async function requireApiAuth/);

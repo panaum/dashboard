@@ -13,6 +13,8 @@ import { middleTruncate } from "@/lib/linkspy/monitor-metrics";
 import { AnimatedNumber } from "@/components/shared/animated-number";
 import { ScannerXray } from "@/components/linkspy/scanner-xray";
 import { AttributionPanel } from "@/components/linkspy/attribution-panel";
+import { useCan } from "@/components/shared/capabilities";
+import type { ComponentProps } from "react";
 
 // IN-DASHBOARD SCANNER — the full LinkSpy scanner, no redirect: score ring,
 // stat strip, breakdown panels, and every link grouped by zone with filter +
@@ -45,7 +47,7 @@ const ACCENTS = [
   { dot: "bg-brand-yellow", tint: "bg-brand-yellow/25", hoverBorder: "hover:border-brand-yellow" },
 ] as const;
 
-export function UrlChecker({
+function UrlCheckerInner({
   onFocusChange,
 }: {
   /** Fires when the scanner takes over the page (a scan is running or its
@@ -666,4 +668,10 @@ function Panel({ title, rows, slot }: { title: string; rows: Array<[string, numb
       )}
     </div>
   );
+}
+
+/** Only for someone who may use it (check:run); otherwise it does not render.
+ *  A wrapper rather than an early return, so the inner hooks keep their order. */
+export function UrlChecker(props: ComponentProps<typeof UrlCheckerInner>) {
+  return useCan("check:run") ? <UrlCheckerInner {...props} /> : null;
 }

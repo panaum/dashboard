@@ -7,6 +7,7 @@ import {
   createShareLink,
   revokeShareLink,
 } from "@/app/dashboard/clients/[clientId]/[projectId]/[pageId]/actions";
+import { useCan } from "@/components/shared/capabilities";
 
 export function ShareCertificate({
   clientId,
@@ -24,6 +25,9 @@ export function ShareCertificate({
   const [copied, setCopied] = useState(false);
   const [embedCopied, setEmbedCopied] = useState(false);
   const [showEmbed, setShowEmbed] = useState(false);
+  // Creating or revoking a public link is admin-only; copying one that
+  // already exists is not — QA still needs to send it to the client.
+  const canMint = useCan("sharelink:mint");
 
   const path = { clientId, projectId, pageId };
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -59,6 +63,9 @@ export function ShareCertificate({
     setTimeout(() => setEmbedCopied(false), 1500);
   }
 
+  // Nothing to copy and not allowed to make one: nothing to show.
+  if (!shareId && !canMint) return null;
+
   return (
     <div className="mb-4 rounded-xl border border-border-soft bg-card p-4 print:hidden">
       <div className="flex items-center justify-between gap-3">
@@ -68,7 +75,7 @@ export function ShareCertificate({
             Client share link
           </span>
         </div>
-        {!shareId ? (
+        {!canMint ? null : !shareId ? (
           <Button size="sm" onClick={create} disabled={pending}>
             {pending ? "Creating…" : "Create link"}
           </Button>

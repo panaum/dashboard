@@ -13,6 +13,7 @@ import {
   updateTemplate,
 } from "@/app/dashboard/checklists/actions";
 import { PLATFORMS, label } from "@/lib/constants";
+import { useCan } from "@/components/shared/capabilities";
 
 type Item = {
   id: string;
@@ -42,6 +43,9 @@ export function TemplateEditor({
   const [newCategory, setNewCategory] = useState("");
   const [dual, setDual] = useState(false);
   const [measurement, setMeasurement] = useState(false);
+  // Without checklist:fill the template reads as a list: no settings form,
+  // no add-item form, no delete buttons.
+  const canEdit = useCan("checklist:fill");
 
   const categories = [...new Set(items.map((i) => i.category))];
 
@@ -84,6 +88,7 @@ export function TemplateEditor({
   return (
     <div className="flex flex-col gap-6">
       {/* Settings */}
+      {canEdit && (
       <Card className="flex flex-col gap-4 p-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
@@ -119,6 +124,7 @@ export function TemplateEditor({
           </Button>
         </div>
       </Card>
+      )}
 
       {/* Items */}
       <div className="flex flex-col gap-5">
@@ -151,14 +157,14 @@ export function TemplateEditor({
                       <MonitorSmartphone className="size-3" /> Desktop + Mobile
                     </Badge>
                   )}
-                  <button
+                  {canEdit && <button
                     onClick={() => removeItem(it.id)}
                     disabled={pending}
                     aria-label="Delete item"
                     className="rounded-md p-1.5 text-text-secondary transition-colors hover:bg-error/10 hover:text-error"
                   >
                     <Trash2 className="size-4" />
-                  </button>
+                  </button>}
                 </div>
               ))}
               {group.items.length === 0 && (
@@ -176,6 +182,7 @@ export function TemplateEditor({
       </div>
 
       {/* Add item */}
+      {canEdit && (
       <Card className="flex flex-col gap-3 p-5">
         <span className="text-sm font-semibold text-text-primary">Add a check</span>
         <div className="flex flex-wrap items-end gap-2">
@@ -228,6 +235,7 @@ export function TemplateEditor({
           </label>
         </div>
       </Card>
+      )}
     </div>
   );
 }

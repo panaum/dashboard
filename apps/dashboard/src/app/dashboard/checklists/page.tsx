@@ -7,6 +7,8 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { createTemplate, deleteTemplate } from "./actions";
+import { requireAuth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { label } from "@/lib/constants";
 
 export const metadata = { title: "QA checklists" };
@@ -17,7 +19,8 @@ export default async function ChecklistsPage() {
     include: { _count: { select: { items: true } } },
   });
 
-  const newButton = (
+  const actor = await requireAuth();
+  const newButton = can(actor, "checklist:fill") && (
     <form action={createTemplate}>
       <Button type="submit">
         <Plus /> New template
@@ -64,6 +67,7 @@ export default async function ChecklistsPage() {
                 {t.isDefault && <Badge tone="brand">Default</Badge>}
               </Link>
               <ConfirmDelete
+                cap="checklist:fill"
                 action={deleteTemplate}
                 fields={{ id: t.id }}
                 title="Delete template"

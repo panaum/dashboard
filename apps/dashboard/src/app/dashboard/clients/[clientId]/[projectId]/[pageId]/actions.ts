@@ -14,6 +14,8 @@ import {
 } from "@/lib/validation";
 import { runQaAgent, type QaProposal } from "@/lib/ai/qa-agent";
 import { SEVERITIES } from "@/lib/constants";
+import { actorWith, getActor } from "@/lib/auth";
+import { CANNOT, canSignQa } from "@/lib/permissions";
 
 type PathParts = { clientId: string; projectId: string; pageId: string };
 
@@ -31,6 +33,7 @@ export async function updateCheckItem(input: {
   notes?: string | null;
   path: PathParts;
 }) {
+  if (!(await actorWith("checklist:fill"))) return { error: CANNOT["checklist:fill"] };
   const data: Record<string, unknown> = {};
   if (input.result !== undefined) {
     const r = checkResultSchema.safeParse(input.result);
@@ -51,6 +54,19 @@ export async function setCertStatus(input: {
   status: string;
   path: PathParts;
 }) {
+  // A verdict is a signature: rank alone is not enough. canSignQa also
+  // refuses the page's own developer and the shared login, whose signature
+  // could not be attributed to anyone. Reopening (back to IN_PROGRESS) takes
+  // the same right, so a verdict cannot be undone by someone who could not
+  // have given it.
+  const actor = await getActor();
+  const signer = await db.qACertificate.findUnique({
+    where: { id: input.certId }, select: { page: { select: { developerId: true } } },
+  });
+  if (!signer) return { error: "Certificate not found." };
+  const verdict = canSignQa(actor, { developerId: signer.page.developerId });
+  if (!verdict.ok) return { error: verdict.reason! };
+
   const r = certStatusSchema.safeParse(input.status);
   if (!r.success) return { error: "Invalid status." };
   const completedAt = r.data === "IN_PROGRESS" ? null : new Date();
@@ -99,6 +115,7 @@ export async function saveIssue(
   _prev: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  if (!(await actorWith("issue:write"))) return { error: CANNOT["issue:write"] };
   const pageId = String(formData.get("pageId") ?? "");
   const clientId = String(formData.get("clientId") ?? "");
   const projectId = String(formData.get("projectId") ?? "");
@@ -128,6 +145,7 @@ export async function toggleIssue(input: {
   status: string;
   path: PathParts;
 }) {
+  if (!(await actorWith("issue:write"))) return { error: CANNOT["issue:write"] };
   await db.issue.update({
     where: { id: input.id },
     data: { status: input.status === "OPEN" ? "FIXED" : "OPEN" },
@@ -137,6 +155,7 @@ export async function toggleIssue(input: {
 }
 
 export async function setPageUrl(input: { pageId: string; url: string; path: PathParts }) {
+  if (!(await actorWith("page:edit"))) return { error: CANNOT["page:edit"] };
   const url = input.url.trim();
   await db.page.update({ where: { id: input.pageId }, data: { url: url || null } });
   revalidatePath(pagePath(input.path));
@@ -147,6 +166,7 @@ export async function setPageUrl(input: { pageId: string; url: string; path: Pat
 
 /** Create (or return existing) a public share token for this page's certificate. */
 export async function createShareLink(input: { pageId: string; path: PathParts }) {
+  if (!(await actorWith("sharelink:mint"))) return { error: CANNOT["sharelink:mint"] };
   const existing = await db.page.findUnique({
     where: { id: input.pageId },
     select: { shareId: true },
@@ -162,6 +182,7 @@ export async function createShareLink(input: { pageId: string; path: PathParts }
 
 /** Revoke the public link — the URL stops working immediately. */
 export async function revokeShareLink(input: { pageId: string; path: PathParts }) {
+  if (!(await actorWith("sharelink:mint"))) return { error: CANNOT["sharelink:mint"] };
   await db.page.update({ where: { id: input.pageId }, data: { shareId: null } });
   revalidatePath(`${pagePath(input.path)}/certificate`);
   return { ok: true as const };
@@ -170,6 +191,7 @@ export async function revokeShareLink(input: { pageId: string; path: PathParts }
 // --- AI QA agent ------------------------------------------------------------
 
 export async function analyzeUrl(url: string): Promise<QaProposal> {
+  if (!(await actorWith("check:run"))) throw new Error(CANNOT["check:run"]);
   const trimmed = url?.trim();
   if (!trimmed || !/^https?:\/\//i.test(trimmed)) {
     return { ok: false, error: "Enter a valid http(s) URL.", aiUsed: false, checks: [], issues: [] };
@@ -184,6 +206,7 @@ export async function applyProposal(input: {
   checks: { name: string; result: string; valueDesktop?: string | null }[];
   issues: { title: string; severity: string }[];
 }) {
+  if (!(await actorWith("checklist:fill"))) return { error: CANNOT["checklist:fill"] };
   // Update matching checklist items by name within this certificate.
   for (const c of input.checks) {
     await db.qACheckItem.updateMany({
@@ -218,6 +241,7 @@ export async function applyProposal(input: {
 }
 
 export async function deleteIssue(formData: FormData): Promise<void> {
+  if (!(await actorWith("issue:write"))) return;
   const id = String(formData.get("id") ?? "");
   const clientId = String(formData.get("clientId") ?? "");
   const projectId = String(formData.get("projectId") ?? "");
@@ -252,12 +276,14 @@ async function confirmOne(p: MachinePrefill) {
 }
 
 export async function confirmMachineItem(input: MachinePrefill & { path: PathParts }) {
+  if (!(await actorWith("checklist:fill"))) return { error: CANNOT["checklist:fill"] };
   await confirmOne(input);
   revalidatePath(pagePath(input.path));
   return { ok: true };
 }
 
 export async function confirmAllMachinePassed(input: { path: PathParts; items: MachinePrefill[] }) {
+  if (!(await actorWith("checklist:fill"))) return { error: CANNOT["checklist:fill"] };
   const passed = input.items.filter((i) => i.verdict === "holding");
   for (const it of passed) await confirmOne(it);
   revalidatePath(pagePath(input.path));

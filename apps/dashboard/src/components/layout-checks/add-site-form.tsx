@@ -4,11 +4,12 @@ import { useActionState, useEffect, useRef } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { addLayoutSite } from "@/app/dashboard/layout-checks/actions";
+import { useCan } from "@/components/shared/capabilities";
 
 const field =
   "h-10 rounded-lg border border-border-soft bg-card px-3 text-sm text-text-primary shadow-xs outline-none transition-colors placeholder:text-text-secondary focus:border-accent/50";
 
-export function AddSiteForm() {
+function AddSiteFormInner() {
   const [state, action, pending] = useActionState(addLayoutSite, {} as { error?: string; ok?: boolean });
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -30,4 +31,10 @@ export function AddSiteForm() {
       {state?.error && <p className="text-[13px] text-error-strong">{state.error}</p>}
     </form>
   );
+}
+
+/** Only for someone who may use it (check:run); otherwise it does not render.
+ *  A wrapper rather than an early return, so the inner hooks keep their order. */
+export function AddSiteForm() {
+  return useCan("check:run") ? <AddSiteFormInner /> : null;
 }

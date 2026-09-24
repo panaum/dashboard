@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
 import { CHECK_RESULTS, label, type CheckResult } from "@/lib/constants";
+import { useCan } from "@/components/shared/capabilities";
 import { updateCheckItem, confirmMachineItem, confirmAllMachinePassed } from "@/app/dashboard/clients/[clientId]/[projectId]/[pageId]/actions";
 import { LiveLine, fmtUtc } from "@/components/qa/still-true";
 import type { LiveStatus } from "@/lib/linkspy/catalog-map";
@@ -40,11 +41,22 @@ function Segmented({
   value,
   onChange,
   name,
+  readOnly,
 }: {
   value: string;
   onChange: (v: CheckResult) => void;
   name: string;
+  /** Without checklist:fill the result is shown, not offered: one static
+   *  pill, not three greyed-out buttons. */
+  readOnly?: boolean;
 }) {
+  if (readOnly) {
+    return (
+      <span className={`shrink-0 rounded-full bg-card-soft px-3 py-1 text-xs font-semibold ${RESULT_STYLE[value as CheckResult] ?? "text-text-secondary"}`}>
+        {label(value)}
+      </span>
+    );
+  }
   return (
     <div className="flex shrink-0 gap-0.5 rounded-full bg-card-soft p-0.5">
       {CHECK_RESULTS.map((r) => {
@@ -98,6 +110,10 @@ export function QAChecklist({
   deliverableId?: string | null;
 }) {
   const [state, setState] = React.useState(items);
+  // Filling and confirming are checklist:fill; re-running the machine checks
+  // is check:run. Without them the checklist reads, it does not offer.
+  const canFill = useCan("checklist:fill");
+  const canRun = useCan("check:run");
   const [, startTransition] = React.useTransition();
   const live = liveByName ?? {};
   const machine = machineByName ?? {};
@@ -182,7 +198,7 @@ export function QAChecklist({
         </div>
         {(machinePassedUnconfirmed.length > 0 || prefillRunAt) && (
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-            {machinePassedUnconfirmed.length > 0 && (
+            {canFill && machinePassedUnconfirmed.length > 0 && (
               <button
                 type="button"
                 onClick={confirmAllPassed}
@@ -194,7 +210,7 @@ export function QAChecklist({
             {prefillRunAt && (
               <span className="text-text-muted">machine checks as of {fmtUtc(prefillRunAt)}</span>
             )}
-            {stale && deliverableId && (
+            {canRun && stale && deliverableId && (
               <button type="button" onClick={refresh} disabled={refreshing} className="text-text-secondary underline underline-offset-2 hover:text-text-primary">
                 {refreshing ? "refreshing…" : "refresh checks"}
               </button>
@@ -238,7 +254,7 @@ export function QAChecklist({
                         </span>
                         {item.confirmedSource ? (
                           <span className="text-text-muted">confirmed ✓</span>
-                        ) : (
+                        ) : canFill && (
                           <button
                             type="button"
                             onClick={() => confirmItem(item, machine[item.name])}
@@ -251,7 +267,12 @@ export function QAChecklist({
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    {item.hasDualValue && (
+                    {!canFill && (item.hasDualValue || item.isMeasurement) && (
+                      <span className="text-xs tabular-nums text-text-secondary">
+                        {[item.valueDesktop, item.hasDualValue ? item.valueMobile : null].filter(Boolean).join(" · ") || "—"}
+                      </span>
+                    )}
+                    {canFill && item.hasDualValue && (
                       <>
                         <Input
                           aria-label={`${item.name} desktop`}
@@ -273,7 +294,7 @@ export function QAChecklist({
                         />
                       </>
                     )}
-                    {item.isMeasurement && !item.hasDualValue && (
+                    {canFill && item.isMeasurement && !item.hasDualValue && (
                       <Input
                         aria-label={`${item.name} value`}
                         placeholder="e.g. 2.3s"
@@ -288,6 +309,7 @@ export function QAChecklist({
                       name={item.id}
                       value={item.result}
                       onChange={(v) => setResult(item.id, v)}
+                      readOnly={!canFill}
                     />
                   </div>
                 </div>

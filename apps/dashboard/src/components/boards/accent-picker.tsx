@@ -4,6 +4,7 @@ import { useTransition } from "react";
 import { Check, Palette } from "lucide-react";
 import { Popover } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { useCan } from "@/components/shared/capabilities";
 
 // A board's accent. Presets rather than a colour wheel: this is for telling
 // two boards apart at a glance, not for design work, and every preset already
@@ -19,7 +20,7 @@ const PRESETS = [
   { hex: "#475569", name: "Slate" },
 ];
 
-export function AccentPicker({
+function AccentPickerInner({
   color,
   onPick,
 }: {
@@ -79,4 +80,10 @@ export function AccentPicker({
       )}
     </Popover>
   );
+}
+
+/** The board's colour is project configuration (client:edit, as setAccent
+ *  checks); without it the picker does not render. */
+export function AccentPicker(props: React.ComponentProps<typeof AccentPickerInner>) {
+  return useCan("client:edit") ? <AccentPickerInner {...props} /> : null;
 }

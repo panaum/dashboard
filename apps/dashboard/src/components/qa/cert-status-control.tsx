@@ -17,22 +17,46 @@ export function CertStatusControl({
   certId,
   status,
   path,
+  canSign,
+  cannotReason,
 }: {
   certId: string;
   status: string;
   path: Path;
+  /** canSignQa for this person on this page, decided on the server — it
+   *  depends on who built the page, not only on rank. */
+  canSign: boolean;
+  cannotReason?: string;
 }) {
   const [value, setValue] = React.useState(status);
+  const [error, setError] = React.useState<string | null>(null);
   const [, startTransition] = React.useTransition();
 
+  // Someone who may not give a verdict sees the verdict, not the switch.
+  if (!canSign) {
+    const s = (CERT_STATUSES as readonly string[]).includes(status) ? (status as CertStatus) : "IN_PROGRESS";
+    return (
+      <span className="rounded-full bg-card-soft px-3 py-1.5 text-xs font-semibold" title={cannotReason}>
+        <span className={TONE[s]}>{label(s)}</span>
+      </span>
+    );
+  }
+
   const choose = (s: CertStatus) => {
+    const before = value;
     setValue(s);
-    startTransition(() => {
-      setCertStatus({ certId, status: s, path });
+    setError(null);
+    startTransition(async () => {
+      // The server re-checks; if it refuses, put the switch back and say why
+      // rather than showing a verdict that was never saved.
+      const r = await setCertStatus({ certId, status: s, path });
+      if (r && "error" in r && r.error) { setValue(before); setError(r.error); }
     });
   };
 
   return (
+    <div className="flex flex-col items-end gap-1">
+    {error && <span className="text-xs text-error-strong" role="status">{error}</span>}
     <div className="flex gap-1 rounded-full bg-card-soft p-1">
       {CERT_STATUSES.map((s) => {
         const active = value === s;
@@ -56,6 +80,7 @@ export function CertStatusControl({
           </button>
         );
       })}
+    </div>
     </div>
   );
 }

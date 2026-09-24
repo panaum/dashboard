@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { actorWith, requireAuth } from "@/lib/auth";
 import type { ResponsiveFinding } from "@/lib/linkspy/responsive-view";
 import { countsOf, type DpReport } from "@/lib/devicepreview/history";
 import { devicePreviewBase, devicePreviewConfigured, devicePreviewHeaders } from "@/lib/devicepreview/client";
+import { CANNOT } from "@/lib/permissions";
 
 // Saving a checked page and its history. The sweep itself runs on the Railway
 // service; this only records what it found and keeps the screenshots for the
@@ -38,6 +39,7 @@ export async function addLayoutSite(
   _prev: { error?: string; ok?: boolean } | undefined,
   formData: FormData,
 ): Promise<{ error?: string; ok?: boolean }> {
+  if (!(await actorWith("check:run"))) return { error: CANNOT["check:run"] };
   await requireAuth();
   const url = normaliseUrl(String(formData.get("url") ?? ""));
   if (!url) return { error: "Enter a valid http(s) URL." };
@@ -56,6 +58,7 @@ export async function addLayoutSite(
 }
 
 export async function removeLayoutSite(formData: FormData): Promise<void> {
+  if (!(await actorWith("check:run"))) return;
   await requireAuth();
   const id = String(formData.get("id") ?? "");
   // Runs and their screenshots go with it (onDelete: Cascade).
@@ -69,6 +72,7 @@ export async function saveLayoutRun(input: {
   checkId: string;
   report: { findings?: ResponsiveFinding[]; shot_widths?: number[] };
 }): Promise<{ ok?: boolean; error?: string; runId?: string; siteId?: string }> {
+  if (!(await actorWith("check:run"))) return { error: CANNOT["check:run"] };
   await requireAuth();
   const url = normaliseUrl(input.url);
   if (!url) return { error: "Invalid URL." };
@@ -140,6 +144,7 @@ export async function saveDevicePreviewRun(input: {
   url: string;
   serviceRunId: string;
 }): Promise<{ ok?: boolean; error?: string; runId?: string }> {
+  if (!(await actorWith("check:run"))) return { error: CANNOT["check:run"] };
   await requireAuth();
   const url = normaliseUrl(input.url);
   if (!url) return { error: "Invalid URL." };

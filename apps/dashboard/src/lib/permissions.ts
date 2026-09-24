@@ -69,6 +69,26 @@ export const CAPABILITIES = [
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
+/** What an action says when it refuses — one sentence per capability, so a
+ *  refusal reads the same wherever it happens. */
+export const CANNOT: Record<Capability, string> = {
+  "team:view": "Only an admin can see the team list.",
+  "team:manage": "Only an admin can manage the team.",
+  "rank:assign": "Only an admin can change access levels.",
+  "client:edit": "Your access level cannot change clients or projects.",
+  "page:edit": "Your access level cannot change pages.",
+  "issue:write": "Your access level cannot change issues.",
+  "comment:delete": "Your access level cannot delete comments.",
+  "board:archive": "Your access level cannot archive boards.",
+  "board:configure": "Only an admin can configure boards.",
+  "checklist:fill": "Your access level cannot fill checklists.",
+  "qa:sign": "Your access level cannot sign off QA.",
+  "check:run": "Your access level cannot run checks.",
+  "sharelink:mint": "Only an admin can create or revoke public links.",
+  "registry:write": "Only an admin can link pages or clients to LinkSpy.",
+  "settings:manage": "Only an admin can change workspace settings.",
+};
+
 const MEMBER_CAPS: Capability[] = [
   "client:edit", "page:edit", "issue:write", "comment:delete",
   "board:archive", "checklist:fill", "qa:sign", "check:run",

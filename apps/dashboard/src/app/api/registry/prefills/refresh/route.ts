@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { registryConfigured } from "@/lib/registry";
-import { requireApiAuth } from "@/lib/auth";
+import { requireApiAuth, requireApiCapability } from "@/lib/auth";
 
 // Proxy: re-run the LinkSpy battery for a deliverable (rate-limited on the
 // LinkSpy side). Key stays server-side.
 export async function POST(req: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = (await requireApiAuth()) ?? (await requireApiCapability("check:run"));
   if (denied) return denied;
   const deliverableId = req.nextUrl.searchParams.get("deliverable_id");
   if (!deliverableId) return NextResponse.json({ error: "deliverable_id required" }, { status: 400 });

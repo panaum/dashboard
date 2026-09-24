@@ -6,7 +6,8 @@ import { CommandPaletteLoader } from "@/components/shared/command-palette-loader
 import { PageTransition } from "@/components/shared/page-transition";
 import { Onboarding } from "@/components/onboarding/onboarding";
 import { TourHost } from "@/components/onboarding/tour";
-import { can } from "@/lib/permissions";
+import { CAPABILITIES, can } from "@/lib/permissions";
+import { CapabilityProvider } from "@/components/shared/capabilities";
 import { accessState } from "@/lib/onboarding";
 
 export default async function DashboardLayout({
@@ -54,7 +55,10 @@ export default async function DashboardLayout({
     },
   });
 
+  const caps = CAPABILITIES.filter((c) => can(actor, c));
+
   return (
+    <CapabilityProvider caps={caps}>
     <div className="flex min-h-screen">
       <Sidebar actor={actor} boardsUnread={boardsUnread} teamPending={teamPending} />
       <main className="flex-1 px-8 py-7">
@@ -72,5 +76,6 @@ export default async function DashboardLayout({
         />
       )}
     </div>
+    </CapabilityProvider>
   );
 }

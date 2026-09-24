@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, Cpu } from "lucide-react";
 import { promoteCandidate, dismissCandidate } from "./actions";
+import { useCan } from "@/components/shared/capabilities";
 
 export type CandidateView = {
   id: string;
@@ -21,6 +22,8 @@ export function CandidateCard({ candidate, linkspyBase }: { candidate: Candidate
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // Promoting or dismissing edits the checklist library: checklist:fill.
+  const canAct = useCan("checklist:fill");
 
   const promote = () => {
     setError(null);
@@ -55,6 +58,7 @@ export function CandidateCard({ candidate, linkspyBase }: { candidate: Candidate
         Proposed wording (editable before promotion)
         <textarea
           value={wording}
+          readOnly={!canAct}
           onChange={(e) => setWording(e.target.value)}
           rows={2}
           className="mt-1 w-full rounded-md border border-border-soft bg-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent"
@@ -71,6 +75,7 @@ export function CandidateCard({ candidate, linkspyBase }: { candidate: Candidate
         )}
       </p>
 
+      {canAct && (
       <div className="flex flex-col gap-2 border-t border-border-soft pt-3">
         <input
           value={rationale}
@@ -92,6 +97,7 @@ export function CandidateCard({ candidate, linkspyBase }: { candidate: Candidate
         </div>
         {error && <p className="text-[13px] text-error">{error}</p>}
       </div>
+      )}
     </Card>
   );
 }

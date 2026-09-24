@@ -128,6 +128,7 @@ export function IssueLog({ issues, path }: { issues: Issue[]; path: Path }) {
                 </Dialog>
 
                 <ConfirmDelete
+                  cap="issue:write"
                   action={deleteIssue}
                   fields={{
                     id: issue.id,
