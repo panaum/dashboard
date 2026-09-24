@@ -285,6 +285,15 @@ model TeamMember {
   // explicit finish or skip, never on first render: someone interrupted
   // mid-flow sees it again next login.
   hasCompletedOnboarding Boolean             @default(false)
+  // Personal preferences, set on /dashboard/personalization. Slack pings
+  // are on by default (the behaviour before these existed); a person may
+  // turn each kind off. The senders report who opted out, never skip quietly.
+  notifyMentions         Boolean             @default(true)
+  notifyReplies          Boolean             @default(true)
+  notifyDueReminders     Boolean             @default(true)
+  // IANA zone ("Asia/Kolkata") for their dates and reminder text; null means
+  // follow the browser, as before.
+  timeZone               String?
   active                 Boolean             @default(true)
   devPages               Page[]              @relation("Dev")
   testerPages            Page[]              @relation("Tester")

@@ -9,6 +9,7 @@ import { AccessRequest } from "@/components/profile/access-request";
 import { RetakeTourButton } from "@/components/profile/retake-tour";
 import { ShowOnboarding } from "@/components/profile/show-onboarding";
 import { LeaveWorkspace } from "@/components/profile/leave-workspace";
+import { NotificationSettings, TimeZoneSetting } from "@/components/profile/preferences";
 
 export const metadata = { title: "Personalization" };
 
@@ -35,7 +36,8 @@ export default async function PersonalizationPage() {
   const me = await db.teamMember.findUnique({
     where: { id: actor.id },
     select: {
-      id: true, name: true, nickname: true, avatarUpdatedAt: true,
+      id: true, name: true, nickname: true, avatarUpdatedAt: true, slackUserId: true,
+      notifyMentions: true, notifyReplies: true, notifyDueReminders: true, timeZone: true,
       rankRequests: { orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
@@ -53,7 +55,21 @@ export default async function PersonalizationPage() {
         <section>
           <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">You</h2>
           <Card className="p-6">
-            <ProfileForm member={{ id: me.id, name: me.name, nickname: me.nickname, avatarUpdatedAt: me.avatarUpdatedAt?.toISOString() ?? null }} />
+            <ProfileForm member={{ id: me.id, name: me.name, nickname: me.nickname, slackUserId: me.slackUserId, avatarUpdatedAt: me.avatarUpdatedAt?.toISOString() ?? null }} />
+          </Card>
+        </section>
+
+        <section>
+          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">Slack notifications</h2>
+          <Card className="p-6">
+            <NotificationSettings initial={{ notifyMentions: me.notifyMentions, notifyReplies: me.notifyReplies, notifyDueReminders: me.notifyDueReminders }} />
+          </Card>
+        </section>
+
+        <section>
+          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">Time zone</h2>
+          <Card className="p-6">
+            <TimeZoneSetting initial={me.timeZone} />
           </Card>
         </section>
 

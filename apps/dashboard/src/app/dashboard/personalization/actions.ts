@@ -6,6 +6,7 @@ import { destroySession, getActor } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { profileSchema, rankRequestSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { accessState } from "@/lib/onboarding";
+import { NOTIFY_KINDS, type NotifyColumn, isTimeZone } from "@/lib/preferences";
 
 // The signed-in person acting on their OWN row. None of this is rank-gated —
 // personal settings never are — but every action refuses the shared-password
@@ -95,4 +96,27 @@ export async function leaveWorkspace(): Promise<ActionResult> {
   ]);
   await destroySession();
   redirect("/goodbye");
+}
+
+/** Turn one kind of Slack ping on or off, for yourself. Only the known
+ *  columns are accepted — the column name comes from the client. */
+export async function saveNotification(input: { column: string; on: boolean }): Promise<ActionResult> {
+  const actor = await self();
+  if (!actor) return NO_ROW;
+  const known = NOTIFY_KINDS.map((k) => k.column) as readonly string[];
+  if (!known.includes(input.column)) return { error: "Unknown notification." };
+  await db.teamMember.update({ where: { id: actor.id }, data: { [input.column as NotifyColumn]: Boolean(input.on) } });
+  revalidatePath("/dashboard/personalization");
+  return { ok: true };
+}
+
+/** Your time zone, or null to follow the browser again. */
+export async function saveTimeZone(input: { timeZone: string | null }): Promise<ActionResult> {
+  const actor = await self();
+  if (!actor) return NO_ROW;
+  const tz = input.timeZone || null;
+  if (tz !== null && !isTimeZone(tz)) return { error: "That is not a time zone this app recognises." };
+  await db.teamMember.update({ where: { id: actor.id }, data: { timeZone: tz } });
+  revalidatePath("/dashboard", "layout");
+  return { ok: true };
 }

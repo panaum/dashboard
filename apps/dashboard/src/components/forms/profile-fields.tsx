@@ -16,6 +16,7 @@ export type ProfileMember = {
   id: string;
   name: string;
   nickname?: string | null;
+  slackUserId?: string | null;
   avatarUpdatedAt?: string | null;
 };
 
@@ -33,6 +34,12 @@ export function ProfileFields({ member, autoFocus }: { member?: ProfileMember; a
       </Field>
       <Field label="Nickname" htmlFor={`${uid}-nickname`} hint="Optional — what people call you day to day.">
         <Input id={`${uid}-nickname`} name="nickname" defaultValue={member?.nickname ?? ""} placeholder="e.g. Sam" maxLength={40} />
+      </Field>
+      {/* Here, not only in the admin's form: an @mention on a board reaches
+          only people whose Slack id is set, and each person can copy their
+          own in a few seconds. */}
+      <Field label="Slack member ID" htmlFor={`${uid}-slack`} hint="In Slack: profile → ⋮ → Copy member ID (starts with U). Board @mentions and reminders are sent here.">
+        <Input id={`${uid}-slack`} name="slackUserId" defaultValue={member?.slackUserId ?? ""} placeholder="U0123ABCD" pattern="[UW][A-Z0-9]{5,}" maxLength={40} />
       </Field>
     </>
   );
@@ -84,7 +91,7 @@ export function PhotoField({ member, demo }: { member: ProfileMember; /** Previe
 
   return (
     <div className="flex items-center gap-4">
-      <Avatar name={member.name} src={src} size="lg" />
+      <Avatar name={member.name} src={src} size="xl" />
       <div className="flex min-w-0 flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <label className="cursor-pointer rounded-full border border-border-soft bg-card px-4 py-2 text-[13px] font-medium text-text-primary transition-colors hover:border-accent/50 hover:bg-accent/[0.06]">

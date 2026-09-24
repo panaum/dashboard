@@ -8,6 +8,8 @@ import { Onboarding } from "@/components/onboarding/onboarding";
 import { TourHost } from "@/components/onboarding/tour";
 import { CAPABILITIES, can } from "@/lib/permissions";
 import { CapabilityProvider } from "@/components/shared/capabilities";
+import { TimeZoneProvider } from "@/components/shared/time-zone";
+import { zoneFor } from "@/lib/preferences";
 import { PreviewBanner } from "@/components/shared/preview-banner";
 import { accessState } from "@/lib/onboarding";
 
@@ -53,7 +55,7 @@ export default async function DashboardLayout({
   const me = actor.bootstrap || actor.preview ? null : await db.teamMember.findUnique({
     where: { id: actor.id },
     select: {
-      id: true, name: true, nickname: true, avatarUpdatedAt: true, hasCompletedOnboarding: true,
+      id: true, name: true, nickname: true, avatarUpdatedAt: true, hasCompletedOnboarding: true, timeZone: true, slackUserId: true,
       rankRequests: { orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
@@ -63,6 +65,7 @@ export default async function DashboardLayout({
 
   return (
     <CapabilityProvider caps={caps}>
+    <TimeZoneProvider zone={zoneFor(me?.timeZone) ?? null}>
     <div className="flex min-h-screen">
       <Sidebar actor={actor} boardsUnread={boardsUnread} teamPending={teamPending} />
       <main className="flex-1">
@@ -84,7 +87,7 @@ export default async function DashboardLayout({
           <Onboarding
             actor={actor}
             member={me
-              ? { id: me.id, name: me.name, nickname: me.nickname, avatarUpdatedAt: me.avatarUpdatedAt?.toISOString() ?? null }
+              ? { id: me.id, name: me.name, nickname: me.nickname, slackUserId: me.slackUserId, avatarUpdatedAt: me.avatarUpdatedAt?.toISOString() ?? null }
               : { id: "bootstrap", name: actor.name, nickname: null, avatarUpdatedAt: null }}
             access={accessState(actor.rank, me?.rankRequests[0] ?? null)}
             autoStart={Boolean(me && !me.hasCompletedOnboarding)}
@@ -92,6 +95,7 @@ export default async function DashboardLayout({
         </>
       )}
     </div>
+    </TimeZoneProvider>
     </CapabilityProvider>
   );
 }

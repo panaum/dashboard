@@ -29,6 +29,7 @@ const SIZES = {
   sm: "size-7 text-[11px]",
   md: "size-9 text-[13px]",
   lg: "size-12 text-base",
+  xl: "size-24 text-2xl",
 } as const;
 
 export function Avatar({
