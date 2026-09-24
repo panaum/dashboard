@@ -13,6 +13,7 @@ import { LoginButton } from "@/components/team/login-button";
 import { compareManagement, memberLabel } from "@/lib/designations";
 import { buildsPages, doesPageWork, testsPages } from "@/lib/roles";
 import { Managers } from "@/components/team/managers";
+import { RankRequestBadge, type PendingRequest } from "@/components/team/rank-request-badge";
 import type { Rank } from "@/lib/permissions";
 
 export type MemberRow = {
@@ -34,6 +35,9 @@ export type MemberRow = {
   built: number;
   tested: number;
   repetitive: number;
+  nickname: string | null;
+  /** A rank request waiting on an admin, shown as a badge on the row. */
+  pendingRequest: PendingRequest | null;
 };
 
 // ONE BOX PER KIND OF WORK.
@@ -148,6 +152,7 @@ function Group({
               style={{ ...grid, animationDelay: `${Math.min(i, 14) * 30}ms` }}
               className={`${row} animate-in border-t border-border-soft py-3 transition-colors first:border-t-0 hover:bg-card-soft`}
             >
+              <div className="flex min-w-0 items-center gap-2">
               <Link
                 href={`/dashboard/team/${m.id}`}
                 className="group flex min-w-0 items-center gap-3"
@@ -173,6 +178,8 @@ function Group({
                   </div>
                 </div>
               </Link>
+              {m.pendingRequest && <RankRequestBadge name={m.name} request={m.pendingRequest} />}
+              </div>
 
               {metrics.map((metric) => {
                 const value = metric.get(m);
@@ -202,7 +209,7 @@ function Group({
                   member={{ id: m.id, name: m.name, email: m.email, hasLogin: m.hasLogin }}
                 />
                 <EditMemberButton
-                  member={{ id: m.id, name: m.name, role: m.role, title: m.title, slackUserId: m.slackUserId, avatarUpdatedAt: m.avatarUpdatedAt }}
+                  member={{ id: m.id, name: m.name, nickname: m.nickname, role: m.role, title: m.title, slackUserId: m.slackUserId, avatarUpdatedAt: m.avatarUpdatedAt }}
                 />
                 <ConfirmDelete
                   action={deleteMember}

@@ -4,6 +4,7 @@ import { EditMemberButton } from "@/components/forms/dialogs";
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { deleteMember } from "@/app/dashboard/team/actions";
 import { RankSelect } from "@/components/team/rank-select";
+import { RankRequestBadge } from "@/components/team/rank-request-badge";
 import { LoginButton } from "@/components/team/login-button";
 import type { MemberRow } from "@/components/team/team-table";
 import { memberLabel } from "@/lib/designations";
@@ -40,6 +41,7 @@ export function Managers({ members }: { members: MemberRow[] }) {
               {!m.hasLogin && <span className="text-[11px] text-text-muted">no login</span>}
             </div>
           </div>
+          {m.pendingRequest && <RankRequestBadge name={m.name} request={m.pendingRequest} />}
           <div className="ml-auto flex items-center gap-2">
             <RankSelect
               memberId={m.id}
@@ -53,7 +55,7 @@ export function Managers({ members }: { members: MemberRow[] }) {
                 member={{ id: m.id, name: m.name, email: m.email, hasLogin: m.hasLogin }}
               />
               <EditMemberButton
-                member={{ id: m.id, name: m.name, role: m.role, title: m.title, slackUserId: m.slackUserId, avatarUpdatedAt: m.avatarUpdatedAt }}
+                member={{ id: m.id, name: m.name, nickname: m.nickname, role: m.role, title: m.title, slackUserId: m.slackUserId, avatarUpdatedAt: m.avatarUpdatedAt }}
               />
               <ConfirmDelete
                 action={deleteMember}

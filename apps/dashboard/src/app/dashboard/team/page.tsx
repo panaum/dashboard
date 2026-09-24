@@ -21,7 +21,7 @@ export default async function TeamPage() {
   // This month's board activity, for the second performance panel.
   const month = new Date().toISOString().slice(0, 7);
   const period = monthPeriod(month);
-  const [members, pages, boardIssues, boardEvents] = await Promise.all([
+  const [members, pages, boardIssues, boardEvents, pendingRequests] = await Promise.all([
     db.teamMember.findMany({ omit: { avatar: true }, orderBy: { name: "asc" } }),
     db.page.findMany({
       select: {
@@ -38,7 +38,12 @@ export default async function TeamPage() {
       where: { createdAt: { gte: period.from, lt: period.to } },
       select: { issueId: true, fromStage: true, toStage: true, actorId: true, createdAt: true },
     }),
+    db.rankChangeRequest.findMany({
+      where: { status: "pending" },
+      select: { id: true, requestedById: true, toRank: true, reason: true, createdAt: true },
+    }),
   ]);
+  const pendingBy = new Map(pendingRequests.map((r) => [r.requestedById, r]));
   const boardPerf = computeBoardPerformance(
     boardIssues,
     boardEvents.flatMap((e) => isStage(e.toStage)
@@ -84,6 +89,11 @@ export default async function TeamPage() {
       built: s?.built ?? 0,
       tested: s?.tested ?? 0,
       repetitive: s?.repetitive ?? 0,
+      nickname: m.nickname,
+      pendingRequest: (() => {
+        const r = pendingBy.get(m.id);
+        return r ? { id: r.id, toRank: r.toRank, reason: r.reason, createdAt: r.createdAt.toISOString() } : null;
+      })(),
     };
   });
 

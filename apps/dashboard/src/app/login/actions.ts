@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { checkMemberPassword, checkPassword, createSession } from "@/lib/auth";
+import { db } from "@/lib/db";
 
 export async function login(
   _prev: { error?: string } | undefined,
@@ -16,6 +17,10 @@ export async function login(
   if (email) {
     const memberId = await checkMemberPassword(email, password);
     if (!memberId) return { error: "Incorrect email or password." };
+    // The column existed from the start but nothing wrote it, so there was no
+    // way to tell who had ever signed in (the onboarding backfill had to fall
+    // back to "has a password").
+    await db.teamMember.update({ where: { id: memberId }, data: { lastLoginAt: new Date() } });
     await createSession(memberId);
     redirect("/dashboard");
   }

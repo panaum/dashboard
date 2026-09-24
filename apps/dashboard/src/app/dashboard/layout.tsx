@@ -4,6 +4,10 @@ import { unreadCount } from "@/lib/board-alive";
 import { Sidebar } from "@/components/shared/sidebar";
 import { CommandPaletteLoader } from "@/components/shared/command-palette-loader";
 import { PageTransition } from "@/components/shared/page-transition";
+import { Onboarding } from "@/components/onboarding/onboarding";
+import { TourHost } from "@/components/onboarding/tour";
+import { can } from "@/lib/permissions";
+import { accessState } from "@/lib/onboarding";
 
 export default async function DashboardLayout({
   children,
@@ -34,15 +38,39 @@ export default async function DashboardLayout({
     })));
   }
 
+  // Pending rank requests, counted on the Team nav item for whoever can
+  // answer them — the same badge the Boards item uses, not a second mechanism.
+  const teamPending = can(actor, "rank:assign")
+    ? await db.rankChangeRequest.count({ where: { status: "pending" } })
+    : 0;
+
+  // First-run onboarding for a person signed in as themselves who has not
+  // finished or skipped it. The shared login has no row, so it never sees it.
+  const me = actor.bootstrap ? null : await db.teamMember.findUnique({
+    where: { id: actor.id },
+    select: {
+      id: true, name: true, nickname: true, avatarUpdatedAt: true, hasCompletedOnboarding: true,
+      rankRequests: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
+  });
+
   return (
     <div className="flex min-h-screen">
-      <Sidebar actor={actor} boardsUnread={boardsUnread} />
+      <Sidebar actor={actor} boardsUnread={boardsUnread} teamPending={teamPending} />
       <main className="flex-1 px-8 py-7">
         <div className="mx-auto max-w-6xl has-[[data-wide]]:max-w-[1500px]">
           <PageTransition>{children}</PageTransition>
         </div>
       </main>
       <CommandPaletteLoader />
+      {me && <TourHost actor={actor} />}
+      {me && !me.hasCompletedOnboarding && (
+        <Onboarding
+          actor={actor}
+          member={{ id: me.id, name: me.name, nickname: me.nickname, avatarUpdatedAt: me.avatarUpdatedAt?.toISOString() ?? null }}
+          access={accessState(actor.rank, me.rankRequests[0] ?? null)}
+        />
+      )}
     </div>
   );
 }

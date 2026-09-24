@@ -84,10 +84,21 @@ export const commentSchema = z.object({
 
 // `role` is deliberately absent: the form has one field, and saveMember
 // derives the work role from the designation. See src/lib/designations.ts.
-export const memberSchema = z.object({
+/** Name and nickname — the fields a person edits about themselves. The admin
+ *  member dialog and /dashboard/profile render the same fields
+ *  (ProfileFields) and validate with this same schema. */
+export const profileSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(80),
+  nickname: optionalText(40),
+});
+
+export const memberSchema = profileSchema.extend({
   title: z.string().trim().min(1, "A role is required").max(60),
   slackUserId: optionalText(40),
+});
+
+export const rankRequestSchema = z.object({
+  reason: optionalText(500),
 });
 
 export const checkResultSchema = z.enum(CHECK_RESULTS);
