@@ -15,6 +15,7 @@ import {
   type DashboardSite,
 } from "@/lib/linkspy/monitor-metrics";
 import { healthTone } from "@/lib/linkspy/sites-view";
+import { useCan } from "@/components/shared/capabilities";
 
 // MONITORING GRID (spec §2) — every monitored LinkSpy site as a card:
 // status, health score + delta, sparkline, streaks, re-scan / settings /
@@ -36,6 +37,9 @@ export function MonitorGrid({ initialSites, bands, unavailable }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<DashboardSite | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Adding, scanning and deleting monitored sites spend LinkSpy's quota or
+  // change what it watches: check:run. Without it the grid is for reading.
+  const canRun = useCan("check:run");
   const [now, setNow] = useState(() => Date.now());
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
@@ -156,6 +160,7 @@ export function MonitorGrid({ initialSites, bands, unavailable }: Props) {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold text-text-primary">All sites</h2>
         <span className="flex-1" />
+        {canRun && (
         <button
           type="button"
           onClick={scanAll}
@@ -164,6 +169,7 @@ export function MonitorGrid({ initialSites, bands, unavailable }: Props) {
         >
           <RefreshCw className="size-4" strokeWidth={1.5} /> Scan all
         </button>
+        )}
         <button
           type="button"
           disabled
@@ -172,6 +178,7 @@ export function MonitorGrid({ initialSites, bands, unavailable }: Props) {
         >
           Export
         </button>
+        {canRun && (
         <Dialog
           title="Add site"
           trigger={
@@ -182,6 +189,7 @@ export function MonitorGrid({ initialSites, bands, unavailable }: Props) {
         >
           {(close) => <AddSiteForm defaultEmail={commonEmail} onSubmit={(f) => addSite(f, close)} />}
         </Dialog>
+        )}
       </div>
 
       {actionError && <p className="mb-3 text-[13px] text-error">{actionError}</p>}
@@ -250,6 +258,7 @@ function SiteCard({
   const streak = cleanStreakDays(site, now);
   const spark = sparkScores(site);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const canRun = useCan("check:run");
   const [dropUp, setDropUp] = useState(false);
 
   useEffect(() => {
@@ -343,6 +352,7 @@ function SiteCard({
         <span className="flex-1" title={site.last_scanned_at ?? undefined}>
           {site.last_scanned_at ? `Scanned ${relativeTime(site.last_scanned_at, now)}` : "Never scanned"}
         </span>
+        {canRun && (
         <button
           type="button"
           onClick={onRescan}
@@ -352,6 +362,7 @@ function SiteCard({
           {scanning ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" strokeWidth={1.5} />}
           Re-scan
         </button>
+        )}
         <div className="relative" ref={menuRef}>
           <button
             type="button"
@@ -382,6 +393,7 @@ function SiteCard({
               >
                 Site settings
               </Link>
+              {canRun && (
               <button
                 role="menuitem"
                 type="button"
@@ -398,6 +410,8 @@ function SiteCard({
               >
                 <ScanSearch className="size-3.5" strokeWidth={1.5} /> Open in scanner
               </button>
+              )}
+              {canRun && (
               <button
                 role="menuitem"
                 type="button"
@@ -406,6 +420,7 @@ function SiteCard({
               >
                 <Trash2 className="size-3.5" strokeWidth={1.5} /> Delete site
               </button>
+              )}
             </div>
           )}
         </div>

@@ -9,6 +9,7 @@ import { EditMemberButton } from "@/components/forms/dialogs";
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { deleteMember } from "@/app/dashboard/team/actions";
 import { RankSelect } from "@/components/team/rank-select";
+import { ViewAsButton } from "@/components/team/view-as";
 import { LoginButton } from "@/components/team/login-button";
 import { compareManagement, memberLabel } from "@/lib/designations";
 import { buildsPages, doesPageWork, testsPages } from "@/lib/roles";
@@ -118,7 +119,7 @@ function Group({
   // The columns are built from the metric list, so a box never has to leave
   // room for a number it does not carry.
   const grid = {
-    gridTemplateColumns: `minmax(0,1fr) ${metrics.map(() => "6rem").join(" ")} 9.5rem 5.5rem`,
+    gridTemplateColumns: `minmax(0,1fr) ${metrics.map(() => "6rem").join(" ")} 9.5rem 7.5rem`,
   };
   const row = "grid items-center gap-4 px-4";
 
@@ -205,6 +206,8 @@ function Group({
                 disabledReason="You cannot change your own access level."
               />
               <div className="flex items-center justify-end gap-0.5">
+                {/* Admins see what you see; yourself, likewise. */}
+                {m.rank !== "ADMIN" && !m.isSelf && <ViewAsButton memberId={m.id} name={m.name} />}
                 <LoginButton
                   member={{ id: m.id, name: m.name, email: m.email, hasLogin: m.hasLogin }}
                 />

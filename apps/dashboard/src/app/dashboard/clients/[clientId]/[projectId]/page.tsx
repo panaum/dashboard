@@ -99,6 +99,7 @@ export default async function ProjectDetailPage({
               }}
             />
             <ConfirmDelete
+              cap="client:edit"
               action={deleteProject}
               fields={{ id: project.id, clientId }}
               title="Delete project"
@@ -216,6 +217,7 @@ export default async function ProjectDetailPage({
                   page={{ ...pg, issueCount: pg._count.issues }}
                 />
                 <ConfirmDelete
+                  cap="page:edit"
                   action={deletePage}
                   fields={{ id: pg.id, projectId, clientId }}
                   title="Delete page"

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAuth } from "@/lib/auth";
+import { requireApiAuth, requireApiCapability } from "@/lib/auth";
 
 // Proxy for the monitoring dashboard (the key stays server-side). GET serves
 // the read views; POST adds a site; DELETE removes one. Unavailable →
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = (await requireApiAuth()) ?? (await requireApiCapability("check:run"));
   if (denied) return denied;
   if (!configured()) return NextResponse.json({ unavailable: true });
   const body = await req.json().catch(() => ({}));
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = (await requireApiAuth()) ?? (await requireApiCapability("check:run"));
   if (denied) return denied;
   if (!configured()) return NextResponse.json({ unavailable: true });
   const id = req.nextUrl.searchParams.get("id");

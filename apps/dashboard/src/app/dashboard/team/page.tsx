@@ -3,6 +3,7 @@ import { requireCapability } from "@/lib/auth";
 import { RANKS, type Rank } from "@/lib/permissions";
 import { PageHeader } from "@/components/shared/page-header";
 import { AddMemberButton } from "@/components/forms/dialogs";
+import { PreviewAsRank } from "@/components/team/view-as";
 import { TeamTable, type MemberRow } from "@/components/team/team-table";
 import { AnimatedNumber } from "@/components/shared/animated-number";
 import { BoardPerformancePanel } from "@/components/team/board-performance-panel";
@@ -102,7 +103,7 @@ export default async function TeamPage() {
       <PageHeader
         title="Team"
         subtitle="Workload and quality across developers and testers."
-        action={<AddMemberButton />}
+        action={<div className="flex flex-wrap items-center justify-end gap-3"><PreviewAsRank /><AddMemberButton /></div>}
       />
 
 

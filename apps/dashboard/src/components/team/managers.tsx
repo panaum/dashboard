@@ -4,6 +4,7 @@ import { EditMemberButton } from "@/components/forms/dialogs";
 import { ConfirmDelete } from "@/components/forms/confirm-delete";
 import { deleteMember } from "@/app/dashboard/team/actions";
 import { RankSelect } from "@/components/team/rank-select";
+import { ViewAsButton } from "@/components/team/view-as";
 import { RankRequestBadge } from "@/components/team/rank-request-badge";
 import { LoginButton } from "@/components/team/login-button";
 import type { MemberRow } from "@/components/team/team-table";
@@ -51,6 +52,8 @@ export function Managers({ members }: { members: MemberRow[] }) {
               disabledReason="You cannot change your own access level."
             />
             <div className="flex items-center gap-0.5">
+              {/* Admins see what you see; yourself, likewise. */}
+              {m.rank !== "ADMIN" && !m.isSelf && <ViewAsButton memberId={m.id} name={m.name} />}
               <LoginButton
                 member={{ id: m.id, name: m.name, email: m.email, hasLogin: m.hasLogin }}
               />

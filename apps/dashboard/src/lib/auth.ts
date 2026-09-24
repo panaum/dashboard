@@ -1,10 +1,11 @@
 import "server-only";
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { db } from "./db";
-import { type Actor, type Capability, type Rank, RANKS, can } from "./permissions";
+import { type Actor, type Capability, type Rank, CANNOT, RANKS, RANK_LABELS, can } from "./permissions";
+import { PREVIEW_COOKIE, type PreviewTarget, isPreviewableRank, makePreviewToken, readPreviewToken } from "./preview";
 
 const COOKIE = "session";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
@@ -110,6 +111,12 @@ export async function getActor(): Promise<Actor | null> {
   const store = await cookies();
   const subject = subjectOf(store.get(COOKIE)?.value);
   if (!subject) return null;
+  const real = await actorFor(subject);
+  if (!real) return null;
+  return (await previewOf(real, subject, store.get(PREVIEW_COOKIE)?.value)) ?? real;
+}
+
+async function actorFor(subject: string): Promise<Actor | null> {
   if (subject === "team") {
     return { id: "bootstrap", name: "Shared team login", rank: "ADMIN", bootstrap: true };
   }
@@ -126,6 +133,57 @@ export async function getActor(): Promise<Actor | null> {
   return { id: member.id, name: member.name, rank };
 }
 
+// ── view as ─────────────────────────────────────────────────────────────────
+// An admin previewing the app as a rank, or as one person. The previewed
+// actor flows through every existing check — nav, buttons, data — so there is
+// one implementation of "what a rank sees", reached two ways. Honoured only
+// while the real session holds rank:assign; a cookie minted by someone else,
+// or kept after a demotion, does nothing.
+
+async function previewOf(real: Actor, subject: string, token: string | undefined): Promise<Actor | null> {
+  if (!token || !can(real, "rank:assign")) return null;
+  const target = readPreviewToken(token, subject, secret());
+  if (!target) return null;
+
+  let seen: Actor;
+  if (target.kind === "rank") {
+    // A rank in general, not a person: an id no row has, so nothing personal
+    // (unread cards, onboarding, "you built this") belongs to it.
+    seen = { id: "preview", name: RANK_LABELS[target.rank], rank: target.rank };
+    seen.preview = { label: RANK_LABELS[target.rank], realName: real.name };
+  } else {
+    const m = await db.teamMember.findUnique({
+      where: { id: target.memberId }, select: { id: true, name: true, rank: true, active: true },
+    });
+    if (!m || !m.active || !isPreviewableRank(m.rank)) return null;
+    seen = { id: m.id, name: m.name, rank: m.rank };
+    seen.preview = { label: `${m.name} (${RANK_LABELS[m.rank]})`, realName: real.name };
+  }
+  // Read-only, enforced here: a request that could change something gets an
+  // actor for whom can() is always false. Server actions carry a Next-Action
+  // header; a form posted without JavaScript carries a form body.
+  const h = await headers();
+  const ct = h.get("content-type") ?? "";
+  if (h.has("next-action") || /multipart\/form-data|x-www-form-urlencoded/.test(ct)) seen.readOnly = true;
+  return seen;
+}
+
+/** Start previewing. The caller has checked rank:assign. */
+export async function startPreviewCookie(target: PreviewTarget) {
+  const store = await cookies();
+  const subject = subjectOf(store.get(COOKIE)?.value);
+  if (!subject) return;
+  store.set(PREVIEW_COOKIE, makePreviewToken(subject, target, secret()), {
+    httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/",
+    maxAge: 60 * 60 * 8, // a working day; a forgotten preview ends on its own
+  });
+}
+
+export async function endPreviewCookie() {
+  const store = await cookies();
+  store.delete(PREVIEW_COOKIE);
+}
+
 export async function requireAuth(): Promise<Actor> {
   const actor = await getActor();
   if (!actor) redirect("/login");
@@ -137,6 +195,34 @@ export async function requireCapability(capability: Capability): Promise<Actor> 
   const actor = await requireAuth();
   if (!can(actor, capability)) redirect("/dashboard");
   return actor;
+}
+
+/** For server actions: the actor if they hold the capability, else null. An
+ *  action answers "no" with an error the form can show, not a redirect —
+ *  this is the one shared guard, so every action refuses the same way. */
+export async function actorWith(capability: Capability): Promise<Actor | null> {
+  const actor = await getActor();
+  return can(actor, capability) ? actor : null;
+}
+
+/** The sentence an action refuses with. During a preview the rank is not
+ *  the reason — the preview is — so it says that instead of blaming an
+ *  access level the previewed person may well have. */
+export async function refusal(capability: Capability): Promise<string> {
+  const actor = await getActor();
+  return actor?.preview ? "This is a preview — nothing is saved." : CANNOT[capability];
+}
+
+/** For API routes that change something: 401 without a session, 403 without
+ *  the capability, null to proceed. Reads stay on requireApiAuth — every
+ *  signed-in rank may read. */
+export async function requireApiCapability(capability: Capability): Promise<Response | null> {
+  const actor = await getActor();
+  if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
+  // A route handler's method is not visible to getActor, and these are the
+  // write handlers, so a preview is refused here outright: read-only.
+  if (actor.preview || !can(actor, capability)) return Response.json({ error: "forbidden" }, { status: 403 });
+  return null;
 }
 
 // Guard for internal API routes. `src/proxy.ts` only matches /dashboard/* and

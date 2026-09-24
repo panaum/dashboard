@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAuth } from "@/lib/auth";
+import { requireApiAuth, requireApiCapability } from "@/lib/auth";
 import { liveSocketUrl, signLiveToken } from "@/lib/devicepreview/live-token";
 import { qaUrl } from "@/lib/layout-checks/embed";
 
@@ -13,7 +13,7 @@ import { qaUrl } from "@/lib/layout-checks/embed";
 // requireApiAuth() call precedes any env or network use in source order.
 
 export async function POST(req: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = (await requireApiAuth()) ?? (await requireApiCapability("check:run"));
   if (denied) return denied;
 
   const base = (process.env.DEVICEPREVIEW_URL || "").replace(/\/+$/, "");

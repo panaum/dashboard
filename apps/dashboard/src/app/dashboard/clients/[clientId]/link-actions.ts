@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { presenceChipsEnabled } from "@/lib/linkspy/client-presence-chips-shape";
+import { actorWith, refusal } from "@/lib/auth";
 
 // Link a Dashboard client to a LinkSpy registry client. The ONE write path this
 // feature has, and it only ever runs from a human pressing "Link to LinkSpy" on
@@ -19,6 +20,7 @@ export async function linkClientToLinkSpy(
   clientId: string,
   linkspyClientId?: string,
 ): Promise<LinkResult> {
+  if (!(await actorWith("registry:write"))) return { ok: false, error: await refusal("registry:write") };
   if (!presenceChipsEnabled()) {
     return { ok: false, error: "Client presence chips are off." };
   }

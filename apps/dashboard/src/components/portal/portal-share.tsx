@@ -7,6 +7,7 @@ import {
   createPortalLink,
   revokePortalLink,
 } from "@/app/dashboard/clients/[clientId]/actions";
+import { useCan } from "@/components/shared/capabilities";
 
 export function PortalShare({
   clientId,
@@ -18,6 +19,9 @@ export function PortalShare({
   const [portalId, setPortalId] = useState<string | null>(initialPortalId);
   const [pending, startTransition] = useTransition();
   const [copied, setCopied] = useState(false);
+  // Same rule as the certificate link: an admin creates or revokes it,
+  // anyone can copy one that exists.
+  const canMint = useCan("sharelink:mint");
 
   const url =
     portalId && typeof window !== "undefined"
@@ -44,6 +48,8 @@ export function PortalShare({
     setTimeout(() => setCopied(false), 1500);
   }
 
+  if (!portalId && !canMint) return null;
+
   return (
     <div className="mb-6 rounded-xl border border-border-soft bg-card p-4">
       <div className="flex items-center justify-between gap-3">
@@ -53,7 +59,7 @@ export function PortalShare({
             Client portal link
           </span>
         </div>
-        {!portalId ? (
+        {!canMint ? null : !portalId ? (
           <Button size="sm" onClick={create} disabled={pending}>
             {pending ? "Creating…" : "Create portal"}
           </Button>

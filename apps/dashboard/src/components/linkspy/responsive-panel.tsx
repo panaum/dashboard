@@ -18,6 +18,7 @@ import {
   summarize,
   widthLabel,
 } from "@/lib/linkspy/responsive-view";
+import { useCan } from "@/components/shared/capabilities";
 
 // Eight page loads take 60-90s, so this starts a job on the backend and polls.
 // The screenshots are the point: the findings say where to look, the images say
@@ -47,6 +48,9 @@ export function ResponsivePanel({
   const [report, setReport] = useState<ResponsiveReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Running a responsive check spends the service's time: check:run. Without
+  // it there is no run, so nothing to keep either.
+  const canRun = useCan("check:run");
 
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
@@ -165,7 +169,8 @@ export function ResponsivePanel({
               </p>
             )}
           </div>
-          <Button onClick={start} disabled={phase === "running"}>
+{canRun && (
+                    <Button onClick={start} disabled={phase === "running"}>
             {phase === "running" ? (
               <>
                 <RefreshCw className="size-4 animate-spin" /> Checking…
@@ -176,6 +181,7 @@ export function ResponsivePanel({
               "Check all screen sizes"
             )}
           </Button>
+          )}
         </div>
 
         {phase === "running" && (

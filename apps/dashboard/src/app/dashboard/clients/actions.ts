@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { clientSchema, parseForm, type ActionResult } from "@/lib/validation";
+import { actorWith, refusal } from "@/lib/auth";
 
 export async function saveClient(
   _prev: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  if (!(await actorWith("client:edit"))) return { error: await refusal("client:edit") };
   const parsed = parseForm(clientSchema, formData);
   if ("error" in parsed) return { error: parsed.error };
 
@@ -31,6 +33,7 @@ export async function saveClient(
 }
 
 export async function deleteClient(formData: FormData): Promise<void> {
+  if (!(await actorWith("client:edit"))) return;
   const id = String(formData.get("id") ?? "");
   if (id) await db.client.delete({ where: { id } });
   revalidatePath("/dashboard/clients");

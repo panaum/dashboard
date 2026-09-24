@@ -19,6 +19,7 @@ import {
   analyzeUrl,
   applyProposal,
 } from "@/app/dashboard/clients/[clientId]/[projectId]/[pageId]/actions";
+import { useCan } from "@/components/shared/capabilities";
 
 type Path = { clientId: string; projectId: string; pageId: string };
 type Proposal = {
@@ -179,7 +180,7 @@ function Flow({
   );
 }
 
-export function AiQaButton({
+function AiQaButtonInner({
   certId,
   pageId,
   defaultUrl,
@@ -211,4 +212,10 @@ export function AiQaButton({
       )}
     </Dialog>
   );
+}
+
+/** Only for someone who may use it (check:run); otherwise it does not render.
+ *  A wrapper rather than an early return, so the inner hooks keep their order. */
+export function AiQaButton(props: React.ComponentProps<typeof AiQaButtonInner>) {
+  return useCan("check:run") ? <AiQaButtonInner {...props} /> : null;
 }

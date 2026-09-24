@@ -100,6 +100,7 @@ export default async function ClientDetailPage({
           <div className="flex items-center gap-1">
             <EditClientButton client={client} />
             <ConfirmDelete
+              cap="client:edit"
               action={deleteClient}
               fields={{ id: client.id }}
               title="Delete client"
@@ -185,6 +186,7 @@ export default async function ClientDetailPage({
                   }}
                 />
                 <ConfirmDelete
+                  cap="client:edit"
                   action={deleteProject}
                   fields={{ id: p.id, clientId: client.id }}
                   title="Delete project"

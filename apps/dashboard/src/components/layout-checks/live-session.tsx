@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RotateCw, ChevronLeft, X, CornerDownLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useCan } from "@/components/shared/capabilities";
+import type { ComponentProps } from "react";
 
 // A real browser on the other end of a socket: the service runs a Chromium
 // context at this profile's viewport, density, user agent and touch, and sends
@@ -43,7 +45,7 @@ function clean(raw: string): string {
   }
 }
 
-export function LiveSession({
+function LiveSessionInner({
   url,
   profileId,
   viewport,
@@ -260,4 +262,10 @@ export function LiveSession({
       </p>
     </div>
   );
+}
+
+/** Only for someone who may use it (check:run); otherwise it does not render.
+ *  A wrapper rather than an early return, so the inner hooks keep their order. */
+export function LiveSession(props: ComponentProps<typeof LiveSessionInner>) {
+  return useCan("check:run") ? <LiveSessionInner {...props} /> : null;
 }

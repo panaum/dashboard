@@ -69,6 +69,26 @@ export const CAPABILITIES = [
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
+/** What an action says when it refuses — one sentence per capability, so a
+ *  refusal reads the same wherever it happens. */
+export const CANNOT: Record<Capability, string> = {
+  "team:view": "Only an admin can see the team list.",
+  "team:manage": "Only an admin can manage the team.",
+  "rank:assign": "Only an admin can change access levels.",
+  "client:edit": "Your access level cannot change clients or projects.",
+  "page:edit": "Your access level cannot change pages.",
+  "issue:write": "Your access level cannot change issues.",
+  "comment:delete": "Your access level cannot delete comments.",
+  "board:archive": "Your access level cannot archive boards.",
+  "board:configure": "Only an admin can configure boards.",
+  "checklist:fill": "Your access level cannot fill checklists.",
+  "qa:sign": "Your access level cannot sign off QA.",
+  "check:run": "Your access level cannot run checks.",
+  "sharelink:mint": "Only an admin can create or revoke public links.",
+  "registry:write": "Only an admin can link pages or clients to LinkSpy.",
+  "settings:manage": "Only an admin can change workspace settings.",
+};
+
 const MEMBER_CAPS: Capability[] = [
   "client:edit", "page:edit", "issue:write", "comment:delete",
   "board:archive", "checklist:fill", "qa:sign", "check:run",
@@ -95,10 +115,18 @@ export type Actor = {
    *  it. Treated as ADMIN so you cannot lock yourself out, but it can never
    *  sign QA — an unattributable signature is worth nothing. */
   bootstrap?: boolean;
+  /** Set while an admin is previewing ("view as"): who is really looking,
+   *  and what the banner says. The rest of the actor is the previewed one. */
+  preview?: { label: string; realName: string };
+  /** A preview on a request that would change something (a server action or
+   *  form post). can() then refuses everything, so every existing guard
+   *  refuses without knowing previews exist. Never set while rendering, so
+   *  the page still shows exactly what the previewed rank would see. */
+  readOnly?: boolean;
 };
 
 export function can(actor: Actor | null, capability: Capability): boolean {
-  if (!actor) return false;
+  if (!actor || actor.readOnly) return false;
   return BY_RANK[actor.rank].includes(capability);
 }
 

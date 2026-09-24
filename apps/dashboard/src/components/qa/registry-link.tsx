@@ -7,6 +7,7 @@ import {
   linkPageToRegistry,
   unlinkPageFromRegistry,
 } from "@/app/dashboard/clients/[clientId]/[projectId]/[pageId]/registry-actions";
+import { useCan } from "@/components/shared/capabilities";
 
 type Path = { clientId: string; projectId: string; pageId: string };
 type RClient = { id: string; name: string };
@@ -32,6 +33,9 @@ export function RegistryLink({
   const [q, setQ] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
+  // Linking writes to the registry — admin-only. Everyone sees whether the
+  // page is linked; only an admin is offered the link and unlink.
+  const canLink = useCan("registry:write");
 
   if (!configured) {
     return (
@@ -81,9 +85,19 @@ export function RegistryLink({
           <Check className="size-3.5" /> Linked to LinkSpy
         </span>
         <span className="font-mono text-text-muted">{linkedSiteId.slice(0, 8)}…</span>
-        <button onClick={doUnlink} disabled={busy} className="text-text-muted underline underline-offset-2 hover:text-text-secondary">
-          {busy ? "…" : "Unlink"}
-        </button>
+        {canLink && (
+          <button onClick={doUnlink} disabled={busy} className="text-text-muted underline underline-offset-2 hover:text-text-secondary">
+            {busy ? "…" : "Unlink"}
+          </button>
+        )}
+      </span>
+    );
+  }
+
+  if (!canLink) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-text-muted">
+        <Link2 className="size-3.5" /> Not linked to LinkSpy
       </span>
     );
   }

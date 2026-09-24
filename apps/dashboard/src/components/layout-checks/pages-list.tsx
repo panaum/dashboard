@@ -124,6 +124,7 @@ function PageRow({ row, first }: { row: ListRow; first: boolean }) {
       <div className="flex shrink-0 items-center gap-1">
         <CheckRunner url={row.url} label="Run widths" size="sm" variant="secondary" />
         <ConfirmDelete
+          cap="check:run"
           action={removeLayoutSite}
           fields={{ id: row.id }}
           title="Stop watching this page"

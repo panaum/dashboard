@@ -5,11 +5,13 @@ import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { projectSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { createPageWithCert } from "./[projectId]/actions";
+import { actorWith, refusal } from "@/lib/auth";
 
 export async function saveProject(
   _prev: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  if (!(await actorWith("client:edit"))) return { error: await refusal("client:edit") };
   const clientId = String(formData.get("clientId") ?? "");
   if (!clientId) return { error: "Missing client." };
 
@@ -69,6 +71,7 @@ export async function saveProject(
  * certificate — no per-page links or login required.
  */
 export async function createPortalLink(input: { clientId: string }) {
+  if (!(await actorWith("sharelink:mint"))) return { error: await refusal("sharelink:mint") };
   const existing = await db.client.findUnique({
     where: { id: input.clientId },
     select: { portalId: true },
@@ -87,6 +90,7 @@ export async function createPortalLink(input: { clientId: string }) {
 
 /** Revoke the portal — the link stops working immediately. */
 export async function revokePortalLink(input: { clientId: string }) {
+  if (!(await actorWith("sharelink:mint"))) return { error: await refusal("sharelink:mint") };
   await db.client.update({
     where: { id: input.clientId },
     data: { portalId: null },
@@ -96,6 +100,7 @@ export async function revokePortalLink(input: { clientId: string }) {
 }
 
 export async function deleteProject(formData: FormData): Promise<void> {
+  if (!(await actorWith("client:edit"))) return;
   const id = String(formData.get("id") ?? "");
   const clientId = String(formData.get("clientId") ?? "");
   if (id) await db.project.delete({ where: { id } });

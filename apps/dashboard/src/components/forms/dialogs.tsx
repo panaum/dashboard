@@ -2,6 +2,7 @@
 
 import { Plus, Pencil } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
+import { useCan } from "@/components/shared/capabilities";
 import { Button } from "@/components/ui/button";
 import { ClientForm } from "@/components/forms/client-form";
 import { ProjectForm } from "@/components/forms/project-form";
@@ -48,6 +49,7 @@ export function EditMemberButton({
 }
 
 export function AddClientButton() {
+  if (!useCan("client:edit")) return null;
   return (
     <Dialog
       title="New client"
@@ -67,6 +69,7 @@ export function EditClientButton({
 }: {
   client: { id: string; name: string; notes: string | null };
 }) {
+  if (!useCan("client:edit")) return null;
   return (
     <Dialog
       title="Edit client"
@@ -90,6 +93,7 @@ export function AddProjectButton({
   members?: Member[];
   platforms: string[];
 }) {
+  if (!useCan("client:edit")) return null;
   return (
     <Dialog
       title="New project"
@@ -132,6 +136,7 @@ export function EditProjectButton({
     deliveryMonth?: string | null;
   };
 }) {
+  if (!useCan("client:edit")) return null;
   return (
     <Dialog
       title="Edit project"
@@ -163,6 +168,7 @@ export function AddPageButton({
   projectId: string;
   members: Member[];
 }) {
+  if (!useCan("page:edit")) return null;
   return (
     <Dialog
       title="New page"
@@ -205,6 +211,7 @@ export function EditPageButton({
     issueCount?: number;
   };
 }) {
+  if (!useCan("page:edit")) return null;
   return (
     <Dialog
       title="Edit page"

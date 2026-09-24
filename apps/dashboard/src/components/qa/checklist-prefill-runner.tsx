@@ -13,6 +13,8 @@ import {
   proposalsFromSweep,
   toFindings,
 } from "@/lib/linkspy/pagecheck-map";
+import { useCan } from "@/components/shared/capabilities";
+import type { ComponentProps } from "react";
 
 // Runs the page in a real browser and proposes answers for the checklist rows
 // it can honestly answer. It never writes: the Confirm click calls the same
@@ -34,7 +36,7 @@ const VERDICT_LABEL = {
   couldnt_verify: "Needs your eyes",
 } as const;
 
-export function ChecklistPrefillRunner({
+function ChecklistPrefillRunnerInner({
   url,
   items,
   path,
@@ -206,4 +208,10 @@ export function ChecklistPrefillRunner({
       </div>
     </Card>
   );
+}
+
+/** Only for someone who may use it (checklist:fill); otherwise it does not render.
+ *  A wrapper rather than an early return, so the inner hooks keep their order. */
+export function ChecklistPrefillRunner(props: ComponentProps<typeof ChecklistPrefillRunnerInner>) {
+  return useCan("checklist:fill") ? <ChecklistPrefillRunnerInner {...props} /> : null;
 }

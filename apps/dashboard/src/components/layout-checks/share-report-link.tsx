@@ -4,11 +4,13 @@ import { useState } from "react";
 import { Check, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mintReportLink } from "@/app/dashboard/layout-checks/share-actions";
+import { useCan } from "@/components/shared/capabilities";
+import type { ComponentProps } from "react";
 
 // The deliverable used to be a screenshot of this page. Now it is a link: the
 // button mints one for this run and puts it on the clipboard, and says how
 // long the link lives. Minting is a server action; nothing secret is here.
-export function ShareReportLink({ runId }: { runId: string }) {
+function ShareReportLinkInner({ runId }: { runId: string }) {
   const [state, setState] = useState<{ kind: "idle" } | { kind: "done"; expiry: string } | { kind: "failed"; why: string }>({ kind: "idle" });
   const share = async () => {
     const r = await mintReportLink(runId);
@@ -40,4 +42,10 @@ export function ShareReportLink({ runId }: { runId: string }) {
       {state.kind === "failed" && <span className="max-w-[40ch] text-[11px] text-error-strong">{state.why}</span>}
     </span>
   );
+}
+
+/** Only for someone who may use it (sharelink:mint); otherwise it does not render.
+ *  A wrapper rather than an early return, so the inner hooks keep their order. */
+export function ShareReportLink(props: ComponentProps<typeof ShareReportLinkInner>) {
+  return useCan("sharelink:mint") ? <ShareReportLinkInner {...props} /> : null;
 }

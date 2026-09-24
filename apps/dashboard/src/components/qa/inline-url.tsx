@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Link2, Check, Pencil } from "lucide-react";
 import { Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
+import { useCan } from "@/components/shared/capabilities";
 import { setPageUrl } from "@/app/dashboard/clients/[clientId]/[projectId]/[pageId]/actions";
 
 type Path = { clientId: string; projectId: string; pageId: string };
@@ -22,6 +23,7 @@ export function InlineUrl({
   const [editing, setEditing] = React.useState(false);
   const [value, setValue] = React.useState(url ?? "");
   const [saving, setSaving] = React.useState(false);
+  const canEdit = useCan("page:edit");
 
   async function save() {
     setSaving(true);
@@ -47,13 +49,13 @@ export function InlineUrl({
         ) : (
           <span className="text-text-muted">No URL set</span>
         )}
-        <button
+        {canEdit && <button
           onClick={() => setEditing(true)}
           className="rounded p-1 text-text-secondary hover:bg-card-soft hover:text-text-primary"
           aria-label="Edit URL"
         >
           <Pencil className="size-3.5" />
-        </button>
+        </button>}
       </div>
     );
   }

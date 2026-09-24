@@ -6,6 +6,8 @@ import { RefreshCw, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saveLayoutRun } from "@/app/dashboard/layout-checks/actions";
 import { progressPercent } from "@/lib/linkspy/responsive-view";
+import { useCan } from "@/components/shared/capabilities";
+import type { ComponentProps } from "react";
 
 // Runs the sweep on the checker service, then saves the result so it becomes
 // history. The save is what makes "I asked the developer to fix it, retest"
@@ -13,7 +15,7 @@ import { progressPercent } from "@/lib/linkspy/responsive-view";
 
 type Phase = "idle" | "running" | "saving" | "done" | "failed";
 
-export function CheckRunner({
+function CheckRunnerInner({
   url,
   label,
   size = "md",
@@ -114,4 +116,10 @@ export function CheckRunner({
       )}
     </div>
   );
+}
+
+/** Only for someone who may use it (check:run); otherwise it does not render.
+ *  A wrapper rather than an early return, so the inner hooks keep their order. */
+export function CheckRunner(props: ComponentProps<typeof CheckRunnerInner>) {
+  return useCan("check:run") ? <CheckRunnerInner {...props} /> : null;
 }

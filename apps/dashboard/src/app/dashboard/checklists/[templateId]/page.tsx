@@ -45,6 +45,7 @@ export default async function TemplateEditorPage({
         subtitle={`${template.items.length} check${template.items.length === 1 ? "" : "s"}${template.isDefault ? " · default" : ""}`}
         action={
           <ConfirmDelete
+            cap="checklist:fill"
             action={deleteTemplate}
             fields={{ id: template.id }}
             title="Delete template"

@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Link2, Loader2 } from "lucide-react";
 import { linkClientToLinkSpy } from "@/app/dashboard/clients/[clientId]/link-actions";
+import { useCan } from "@/components/shared/capabilities";
+import type { ComponentProps } from "react";
 
 // "Link to LinkSpy" — a DELIBERATE operator action, one client at a time.
 // There is no bulk sweep and no auto-linking anywhere in this feature: linking
@@ -11,7 +13,7 @@ import { linkClientToLinkSpy } from "@/app/dashboard/clients/[clientId]/link-act
 // one wrong is expensive to undo, so a human presses this per client.
 //
 // Mirrors the page-level RegistryLink affordance from Phase 1.
-export function LinkClientButton({
+function LinkClientButtonInner({
   clientId,
   clientName,
 }: {
@@ -75,4 +77,10 @@ export function LinkClientButton({
       {error && <span className="text-xs text-error">{error}</span>}
     </div>
   );
+}
+
+/** Only for someone who may use it (registry:write); otherwise it does not render.
+ *  A wrapper rather than an early return, so the inner hooks keep their order. */
+export function LinkClientButton(props: ComponentProps<typeof LinkClientButtonInner>) {
+  return useCan("registry:write") ? <LinkClientButtonInner {...props} /> : null;
 }

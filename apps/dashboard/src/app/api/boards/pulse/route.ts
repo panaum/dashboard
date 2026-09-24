@@ -58,7 +58,8 @@ export async function POST(req: NextRequest) {
   if (actor) {
     // The shared team login is nobody in particular, so it watches without
     // being watched: it reads presence and writes none of its own.
-    viewerId = actor.bootstrap ? null : actor.id;
+    // Nor does an admin previewing as someone: that is not them on the board.
+    viewerId = actor.bootstrap || actor.preview ? null : actor.id;
     projectId = body.projectId ?? null;
   }
 
