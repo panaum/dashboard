@@ -256,43 +256,52 @@ model IssueImage {
 }
 
 model TeamMember {
-  id               String         @id @default(cuid())
-  name             String         @unique
-  role             String         @default("DEVELOPER") // MemberRole — the work they do
+  id                     String              @id @default(cuid())
+  name                   String              @unique
+  role                   String              @default("DEVELOPER") // MemberRole — the work they do
   // Access, independent of role. See src/lib/permissions.ts. Defaults to MEMBER
   // so an existing person gains a login without gaining any admin power.
-  rank             String         @default("MEMBER") // Rank
-  email            String?        @unique // null until an admin gives them a login
-  passwordHash     String? // scrypt; null means "cannot sign in yet"
-  lastLoginAt      DateTime?
+  rank                   String              @default("MEMBER") // Rank
+  email                  String?             @unique // null until an admin gives them a login
+  passwordHash           String? // scrypt; null means "cannot sign in yet"
+  lastLoginAt            DateTime?
   // Slack member id (U…), so a board @mention can ping them by name in the
   // channel the webhook posts to. Set from the team page; null = not pinged.
-  slackUserId      String?
+  slackUserId            String?
   // What it says on their card: "CEO", "Project Manager", "QA Lead". Free text,
   // independent of `role` (the work) and `rank` (the access), because a title
   // is neither of those and pretending otherwise corrupts both.
-  title            String?
+  title                  String?
   // Profile photo, stored like every other image here — bytes in the row, no
   // object store on the free tier. Resized to 256×256 in the browser before
   // upload, so these stay a few KB. avatarUpdatedAt busts the cache.
-  avatar           Bytes?
-  avatarType       String?
-  avatarUpdatedAt  DateTime?
-  active           Boolean        @default(true)
-  devPages         Page[]         @relation("Dev")
-  testerPages      Page[]         @relation("Tester")
+  avatar                 Bytes?
+  avatarType             String?
+  avatarUpdatedAt        DateTime?
+  // What they'd rather be called day to day; set by the person themselves on
+  // /dashboard/profile (or by an admin from the Team row — the same form).
+  nickname               String?
+  // Server-side so it follows the person across devices. Flips only on an
+  // explicit finish or skip, never on first render: someone interrupted
+  // mid-flow sees it again next login.
+  hasCompletedOnboarding Boolean             @default(false)
+  active                 Boolean             @default(true)
+  devPages               Page[]              @relation("Dev")
+  testerPages            Page[]              @relation("Tester")
   // Boards. A developer keeps a TeamMember row for assignment and attribution
   // even with no login: their capability link resolves to it.
-  assignedIssues   Issue[]        @relation("Assignee")
-  reportedIssues   Issue[]        @relation("Reporter")
-  issueEvents      IssueEvent[]   @relation("EventActor")
-  issueComments    IssueComment[] @relation("CommentAuthor")
-  mentionedIn      IssueMention[] @relation("Mentioned")
-  issueViews       IssueView[]    @relation("Viewer")
-  presence         BoardPresence? @relation("Presence")
-  mintedBoardLinks Project[]      @relation("BoardLinkMinter")
-  archivedBoards   Project[]      @relation("BoardArchiver")
-  createdAt        DateTime       @default(now())
+  assignedIssues         Issue[]             @relation("Assignee")
+  reportedIssues         Issue[]             @relation("Reporter")
+  issueEvents            IssueEvent[]        @relation("EventActor")
+  issueComments          IssueComment[]      @relation("CommentAuthor")
+  mentionedIn            IssueMention[]      @relation("Mentioned")
+  issueViews             IssueView[]         @relation("Viewer")
+  presence               BoardPresence?      @relation("Presence")
+  mintedBoardLinks       Project[]           @relation("BoardLinkMinter")
+  archivedBoards         Project[]           @relation("BoardArchiver")
+  rankRequests           RankChangeRequest[] @relation("RankRequester")
+  rankReviews            RankChangeRequest[] @relation("RankReviewer")
+  createdAt              DateTime            @default(now())
 }
 
 model QACertificate {
@@ -480,4 +489,28 @@ model DevicePreviewShot {
 
   @@unique([runId, profileId])
   @@index([runId])
+}
+
+// A person asking for a different rank — in practice a Viewer asking to be a
+// Member. Approving one IS rank:assign (the same code the Team page's rank
+// dropdown runs), with this row as the audit trail; there is no separate
+// permission. Both ranks are stored rather than assumed, so the table works
+// for any jump later. `status` is pending | approved | denied (strings, like
+// every enum here — see constants.ts).
+model RankChangeRequest {
+  id            String      @id @default(cuid())
+  requestedById String
+  requestedBy   TeamMember  @relation("RankRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  fromRank      String
+  toRank        String
+  reason        String?
+  status        String      @default("pending")
+  reviewedById  String?
+  reviewedBy    TeamMember? @relation("RankReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt    DateTime?
+  reviewNote    String?
+  createdAt     DateTime    @default(now())
+
+  @@index([requestedById, createdAt])
+  @@index([status])
 }

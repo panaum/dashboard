@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getActor, hashPassword } from "@/lib/auth";
-import { RANKS, type Rank, can } from "@/lib/permissions";
+import { type Actor, RANKS, type Rank, can } from "@/lib/permissions";
 import { memberSchema, parseForm, type ActionResult } from "@/lib/validation";
 import { roleForDesignation } from "@/lib/designations";
 
@@ -56,14 +56,19 @@ const MAX_AVATAR_BYTES = 512 * 1024; // the browser resizes to 256px first; this
 /** Set or replace a member's photo. The browser sends a 256×256 crop, so the
  *  cap is generous rather than load-bearing. Passing no file clears it. */
 export async function setAvatar(formData: FormData): Promise<ActionResult> {
-  if (!(await guard("team:manage"))) return { error: "You cannot manage the team." };
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Missing member." };
+  // Your own photo is never rank-gated (the profile page calls this same
+  // action); anyone else's is team management.
+  const actor = await getActor();
+  const self = !!actor && !actor.bootstrap && actor.id === id;
+  if (!self && !can(actor, "team:manage")) return { error: "You cannot manage the team." };
   const file = formData.get("avatar");
 
   if (!(file instanceof File) || !file.size) {
     await db.teamMember.update({ where: { id }, data: { avatar: null, avatarType: null, avatarUpdatedAt: null } });
     revalidatePath("/dashboard/team");
+    revalidatePath("/dashboard/profile");
     return { ok: true };
   }
   if (!AVATAR_TYPES.has(file.type)) return { error: "PNG, JPEG or WebP only." };
@@ -75,6 +80,7 @@ export async function setAvatar(formData: FormData): Promise<ActionResult> {
     data: { avatar: buf, avatarType: file.type, avatarUpdatedAt: new Date() },
   });
   revalidatePath("/dashboard/team");
+  revalidatePath("/dashboard/profile");
   return { ok: true };
 }
 
@@ -94,9 +100,13 @@ export async function setRank(
 ): Promise<ActionResult> {
   const actor = await guard("rank:assign");
   if (!actor) return { error: "You cannot change access levels." };
+  return applyRank(actor, String(formData.get("id") ?? ""), String(formData.get("rank") ?? ""));
+}
 
-  const id = String(formData.get("id") ?? "");
-  const rank = String(formData.get("rank") ?? "");
+/** The one place a rank changes. The Team page's dropdown and approving a
+ *  request both come through here, so the safety rules cannot drift apart.
+ *  Callers have already checked rank:assign. */
+async function applyRank(actor: Actor, id: string, rank: string): Promise<ActionResult> {
   if (!id || !(RANKS as readonly string[]).includes(rank)) {
     return { error: "Pick a valid access level." };
   }
@@ -114,8 +124,47 @@ export async function setRank(
     }
   }
 
-  await db.teamMember.update({ where: { id }, data: { rank: rank as Rank } });
-  revalidatePath("/dashboard/team");
+  const reviewer = actor.bootstrap ? null : actor.id;
+  await db.$transaction([
+    db.teamMember.update({ where: { id }, data: { rank: rank as Rank } }),
+    // Giving someone, by the dropdown, the rank they had asked for answers
+    // their request — it should not sit on the Team page waiting for a click
+    // that no longer means anything.
+    db.rankChangeRequest.updateMany({
+      where: { requestedById: id, status: "pending", toRank: rank },
+      data: { status: "approved", reviewedById: reviewer, reviewedAt: new Date() },
+    }),
+  ]);
+  revalidatePath("/dashboard", "layout"); // the Team nav badge counts pending requests
+  return { ok: true };
+}
+
+/** Approve a pending rank request: rank:assign, with the request as its
+ *  audit trail. */
+export async function approveRankRequest(input: { id: string }): Promise<ActionResult> {
+  const actor = await guard("rank:assign");
+  if (!actor) return { error: "You cannot change access levels." };
+  const req = await db.rankChangeRequest.findUnique({
+    where: { id: input.id }, select: { requestedById: true, toRank: true, status: true },
+  });
+  if (!req) return { error: "That request no longer exists." };
+  if (req.status !== "pending") return { error: "That request has already been answered." };
+  // applyRank marks this request approved in the same transaction.
+  return applyRank(actor, req.requestedById, req.toRank);
+}
+
+/** Deny a pending rank request, optionally saying why. The rank is untouched;
+ *  the note is shown to the requester on their profile. */
+export async function denyRankRequest(input: { id: string; note?: string }): Promise<ActionResult> {
+  const actor = await guard("rank:assign");
+  if (!actor) return { error: "You cannot change access levels." };
+  const note = (input.note ?? "").trim().slice(0, 500) || null;
+  const r = await db.rankChangeRequest.updateMany({
+    where: { id: input.id, status: "pending" },
+    data: { status: "denied", reviewNote: note, reviewedById: actor.bootstrap ? null : actor.id, reviewedAt: new Date() },
+  });
+  if (!r.count) return { error: "That request has already been answered." };
+  revalidatePath("/dashboard", "layout");
   return { ok: true };
 }
 

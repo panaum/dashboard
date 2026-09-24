@@ -31,7 +31,7 @@ export function AddMemberButton() {
 export function EditMemberButton({
   member,
 }: {
-  member: { id: string; name: string; role: string; title?: string | null; slackUserId?: string | null; avatarUpdatedAt?: string | null };
+  member: { id: string; name: string; nickname?: string | null; role: string; title?: string | null; slackUserId?: string | null; avatarUpdatedAt?: string | null };
 }) {
   return (
     <Dialog

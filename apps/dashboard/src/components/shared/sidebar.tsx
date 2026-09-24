@@ -3,26 +3,29 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { LayoutDashboard, Users, BarChart3, UsersRound, Search, ListChecks, Lightbulb, Sparkles, LogOut, Radar, ExternalLink, Globe, MonitorSmartphone, SquareKanban } from "lucide-react";
+import { LayoutDashboard, Users, BarChart3, UsersRound, Search, ListChecks, Lightbulb, Sparkles, LogOut, Radar, CircleUserRound, ExternalLink, Globe, MonitorSmartphone, SquareKanban } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Actor, visibleNav } from "@/lib/permissions";
 import { Logo } from "@/components/shared/logo";
 import { logout } from "@/app/dashboard/actions";
 
-const NAV = [
+const NAV: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/reports", label: "Monthly", icon: BarChart3 },
   { href: "/dashboard/clients", label: "Clients", icon: Users },
   { href: "/dashboard/sites", label: "Sites", icon: Globe },
-  { href: "/dashboard/layout-checks", label: "Layout checks", icon: MonitorSmartphone },
-  { href: "/dashboard/boards", label: "Boards", icon: SquareKanban },
-  { href: "/dashboard/team", label: "Team", icon: UsersRound },
-  { href: "/dashboard/checklists", label: "Checklists", icon: ListChecks },
+  { tour: "layout-checks", href: "/dashboard/layout-checks", label: "Layout checks", icon: MonitorSmartphone },
+  { tour: "boards", href: "/dashboard/boards", label: "Boards", icon: SquareKanban },
+  { tour: "team", href: "/dashboard/team", label: "Team", icon: UsersRound },
+  { tour: "checklists", href: "/dashboard/checklists", label: "Checklists", icon: ListChecks },
   { href: "/dashboard/checklists/candidates", label: "Candidates", icon: Lightbulb },
-  { href: "/dashboard/insights", label: "Insights", icon: Sparkles },
+  { tour: "insights", href: "/dashboard/insights", label: "Insights", icon: Sparkles },
 ];
 
-export function Sidebar({ actor, boardsUnread = 0 }: { actor?: Actor | null; boardsUnread?: number }) {
+// The tour spotlights these by `data-tour` (see src/lib/onboarding.ts).
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; tour?: string };
+
+export function Sidebar({ actor, boardsUnread = 0, teamPending = 0 }: { actor?: Actor | null; boardsUnread?: number; teamPending?: number }) {
   const pathname = usePathname();
   // Hiding an unreachable link is a courtesy to the reader. The control is
   // `requireCapability` on the route and the guard inside each server action —
@@ -68,6 +71,7 @@ export function Sidebar({ actor, boardsUnread = 0 }: { actor?: Actor | null; boa
             <Link
               key={item.href}
               href={item.href}
+              data-tour={item.tour}
               className={cn(
                 "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 active
@@ -97,6 +101,15 @@ export function Sidebar({ actor, boardsUnread = 0 }: { actor?: Actor | null; boa
                   {boardsUnread}
                 </span>
               )}
+              {/* Same badge, for rank requests waiting on an admin. */}
+              {item.href === "/dashboard/team" && teamPending > 0 && (
+                <span
+                  className="relative z-10 ml-auto min-w-5 rounded-full bg-accent px-1.5 py-0.5 text-center text-[10px] font-semibold tabular-nums text-text-on-dark"
+                  title={`${teamPending} access request${teamPending === 1 ? "" : "s"} waiting`}
+                >
+                  {teamPending}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -119,7 +132,24 @@ export function Sidebar({ actor, boardsUnread = 0 }: { actor?: Actor | null; boa
         </a>
       </nav>
 
-      <form action={logout} className="mt-2 border-t border-border-soft pt-3">
+      <div className="mt-2 border-t border-border-soft pt-3">
+        {/* Personal settings, for every rank — never behind settings:manage. */}
+        <Link
+          href="/dashboard/profile"
+          data-tour="profile"
+          className={cn(
+            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            pathname.startsWith("/dashboard/profile")
+              ? "bg-accent/10 text-accent"
+              : "text-text-secondary hover:bg-card-soft hover:text-text-primary",
+          )}
+        >
+          <CircleUserRound className="size-[18px]" strokeWidth={1.5} />
+          Profile
+        </Link>
+      </div>
+
+      <form action={logout} className="pt-0.5">
         <button
           type="submit"
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-error/10 hover:text-error"
