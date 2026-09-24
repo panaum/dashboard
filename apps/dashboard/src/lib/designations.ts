@@ -32,7 +32,18 @@ export const DESIGNATIONS: readonly { title: string; role: MemberRole }[] = [
   { title: "Head of Accounts", role: "MANAGER" },
   { title: "Chief Delivery Officer", role: "MANAGER" },
   { title: "CEO", role: "MANAGER" },
+  // Takes no page work — neither builds nor QAs — so the non-work role, like
+  // the managers; the Team page gives marketing its own box (isMarketing).
+  { title: "Marketer", role: "MANAGER" },
 ];
+
+/** Non-work designations that are not management, shown in their own Team
+ *  box rather than under "Management". */
+export const MARKETING_TITLES: readonly string[] = ["Marketer"];
+
+export function isMarketing(member: { title?: string | null; role: string }): boolean {
+  return MARKETING_TITLES.includes(memberLabel(member));
+}
 
 /**
  * The order the management block reads in, most senior first. Everything else
