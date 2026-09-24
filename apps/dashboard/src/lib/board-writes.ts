@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { conversationMembers, mentionMessage, parseMentions, participantsFor, plainText } from "@/lib/board-thread";
 import { notifySlack } from "@/lib/slack";
+import { wantsPing } from "@/lib/preferences";
 import type { ActionResult } from "@/lib/validation";
 
 // Board writes shared by both sides of the board: QA's (app session, in
@@ -119,7 +120,8 @@ export async function commentWithMentions(input: {
   if (!recipients.length) return { ok: true, mentioned: 0, notified: 0 };
 
   const members = await db.teamMember.findMany({
-    where: { id: { in: recipients } }, select: { id: true, name: true, slackUserId: true, role: true },
+    where: { id: { in: recipients } },
+    select: { id: true, name: true, slackUserId: true, role: true, notifyMentions: true, notifyReplies: true },
   });
   const h = await headers();
   const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host") ?? ""}`;
@@ -135,6 +137,10 @@ export async function commentWithMentions(input: {
   const notes: string[] = [];
   let notified = 0;
   for (const m of members) {
+    // Their choice, reported rather than hidden — the sender should know the
+    // ping did not go, and why.
+    const kind = mentioned.includes(m.id) ? "mentions" : "replies";
+    if (!wantsPing(m, kind)) { notes.push(`${m.name} has ${kind === "mentions" ? "mention" : "reply"} pings turned off`); continue; }
     if (!m.slackUserId) { notes.push(`${m.name} has no Slack id`); continue; }
     // A developer opens the card through the board link; QA through the app.
     const url = m.role === "DEVELOPER" && project.boardShareId

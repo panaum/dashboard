@@ -90,11 +90,11 @@ export const commentSchema = z.object({
 export const profileSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(80),
   nickname: optionalText(40),
+  slackUserId: optionalText(40),
 });
 
 export const memberSchema = profileSchema.extend({
   title: z.string().trim().min(1, "A role is required").max(60),
-  slackUserId: optionalText(40),
 });
 
 export const rankRequestSchema = z.object({

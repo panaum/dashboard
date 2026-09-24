@@ -16,6 +16,7 @@ import { REMINDER_OPTIONS, dayKey, dueLabel, dueStatus, monthGrid } from "@/lib/
 import { prepareImage } from "./image-prep";
 import { ImageLightbox } from "./image-lightbox";
 import type { Card, CommentResult, DatesInput, ImageResult, Member, Result } from "./types";
+import { useTimeZone } from "@/components/shared/time-zone";
 
 // The card back, laid out like the reference: the cover bleeds to the edges
 // with the stage pill on it top-left and the controls top-right; below, two
@@ -114,7 +115,8 @@ function Body({ role, card, members, imageSrc, onMove, onSave, onPatch, onCommen
   const qa = role === "qa";
   const cover = coverOf(card.images);
   const stages = BOARD_STAGES.filter((s) => s === card.boardStage || canMove(role, card.boardStage, s));
-  const tz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+  // Their chosen zone from Personalization, else the browser's.
+  const tz = useTimeZone();
 
   /** One write for the fields the developer never receives. */
   const saveDetails = (patch: Partial<{ link: string; severity: string; assigneeId: string; recurring: boolean }>) => {

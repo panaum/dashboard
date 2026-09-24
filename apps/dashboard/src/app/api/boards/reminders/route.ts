@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { remindersDue } from "@/lib/board-dates";
+import { dueLabel, remindersDue } from "@/lib/board-dates";
+import { wantsPing, zoneFor } from "@/lib/preferences";
 import { escapeSlack } from "@/lib/board-thread";
 import { notifySlack } from "@/lib/slack";
 
@@ -33,8 +34,8 @@ export async function POST(req: NextRequest) {
     where: { dueAt: { not: null }, dueReminderMinutes: { not: null }, dueRemindedAt: null, boardStage: { in: ["NEW", "ACTIVE", "NEEDS_CLARIFICATION"] } },
     select: {
       id: true, title: true, dueAt: true, dueReminderMinutes: true, dueRemindedAt: true, boardStage: true,
-      assignee: { select: { name: true, slackUserId: true, role: true } },
-      reporter: { select: { name: true, slackUserId: true } },
+      assignee: { select: { name: true, slackUserId: true, role: true, notifyDueReminders: true, timeZone: true } },
+      reporter: { select: { name: true, slackUserId: true, notifyDueReminders: true, timeZone: true } },
       page: { select: { project: { select: { id: true, name: true, boardShareId: true } } } },
     },
   });
@@ -45,17 +46,24 @@ export async function POST(req: NextRequest) {
   let sent = 0;
   for (const c of due) {
     const project = c.page.project;
-    const when = c.dueAt!.toISOString();
-    const targets = [
-      c.assignee?.slackUserId ? { id: c.assignee.slackUserId, url: project.boardShareId ? `${origin}/b/${project.boardShareId}` : `${origin}/dashboard/boards/${project.id}` } : null,
-      c.reporter?.slackUserId ? { id: c.reporter.slackUserId, url: `${origin}/dashboard/boards/${project.id}` } : null,
-    ].filter((t): t is { id: string; url: string } => !!t);
-    if (!targets.length) { skipped.push(`${c.title}: nobody on the card has a Slack id`); continue; }
+    const people = [
+      c.assignee?.slackUserId ? { ...c.assignee, slackUserId: c.assignee.slackUserId, url: project.boardShareId ? `${origin}/b/${project.boardShareId}` : `${origin}/dashboard/boards/${project.id}` } : null,
+      c.reporter?.slackUserId ? { ...c.reporter, slackUserId: c.reporter.slackUserId, url: `${origin}/dashboard/boards/${project.id}` } : null,
+    ].filter((t): t is NonNullable<typeof t> => !!t);
+    if (!people.length) { skipped.push(`${c.title}: nobody on the card has a Slack id`); continue; }
+    // Each person's own switch. If everyone turned due reminders off there is
+    // nothing left to retry, so the card counts as reminded.
+    const targets = people.filter((p) => wantsPing(p, "dueReminders"));
+    for (const p of people) if (!targets.includes(p)) skipped.push(`${c.title} → ${p.name}: due reminders turned off`);
+    if (!targets.length) { await db.issue.update({ where: { id: c.id }, data: { dueRemindedAt: now } }); continue; }
     let delivered = 0;
     for (const t of targets) {
-      const r = await notifySlack(t.id, `<@${t.id}> *${escapeSlack(c.title)}* (${escapeSlack(project.name)}) is due ${when.slice(0, 16).replace("T", " ")} UTC — <${t.url}|Open card>`);
-      if (r.sent) { delivered++; if (r.reason) skipped.push(`${c.title} → <@${t.id}>: ${r.reason}`); }
-      else skipped.push(`${c.title} → <@${t.id}>: ${r.reason}`);
+      // The due time in the reader's own zone when they set one; UTC otherwise.
+      const zone = zoneFor(t.timeZone, "UTC")!;
+      const when = `${dueLabel(c.dueAt!, zone)} (${zone === "UTC" ? "UTC" : zone})`;
+      const r = await notifySlack(t.slackUserId, `<@${t.slackUserId}> *${escapeSlack(c.title)}* (${escapeSlack(project.name)}) is due ${when} — <${t.url}|Open card>`);
+      if (r.sent) { delivered++; if (r.reason) skipped.push(`${c.title} → <@${t.slackUserId}>: ${r.reason}`); }
+      else skipped.push(`${c.title} → <@${t.slackUserId}>: ${r.reason}`);
     }
     if (delivered) {
       await db.issue.update({ where: { id: c.id }, data: { dueRemindedAt: now } });
