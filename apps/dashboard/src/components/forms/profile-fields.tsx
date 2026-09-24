@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { Field, Input } from "@/components/ui/field";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -22,13 +22,17 @@ export type ProfileMember = {
 /** Name and nickname inputs, named for profileSchema. They sit inside the
  *  caller's <form>, which decides which action they post to. */
 export function ProfileFields({ member, autoFocus }: { member?: ProfileMember; autoFocus?: boolean }) {
+  // Unique per copy: the profile page and the onboarding dialog can both be
+  // on screen, and a shared id sent the dialog's labels (and typing, for
+  // anyone clicking a label) to the fields behind it.
+  const uid = useId();
   return (
     <>
-      <Field label="Name" htmlFor="name">
-        <Input id="name" name="name" defaultValue={member?.name} placeholder="e.g. Samiya" autoFocus={autoFocus} required maxLength={80} />
+      <Field label="Name" htmlFor={`${uid}-name`}>
+        <Input id={`${uid}-name`} name="name" defaultValue={member?.name} placeholder="e.g. Samiya" autoFocus={autoFocus} required maxLength={80} />
       </Field>
-      <Field label="Nickname" htmlFor="nickname" hint="Optional — what people call you day to day.">
-        <Input id="nickname" name="nickname" defaultValue={member?.nickname ?? ""} placeholder="e.g. Sam" maxLength={40} />
+      <Field label="Nickname" htmlFor={`${uid}-nickname`} hint="Optional — what people call you day to day.">
+        <Input id={`${uid}-nickname`} name="nickname" defaultValue={member?.nickname ?? ""} placeholder="e.g. Sam" maxLength={40} />
       </Field>
     </>
   );
@@ -55,7 +59,7 @@ async function square(file: File): Promise<File> {
 
 /** The photo sits outside the main form: it is a file, it saves on its own,
  *  and nesting a second <form> inside the first is invalid HTML. */
-export function PhotoField({ member }: { member: ProfileMember }) {
+export function PhotoField({ member, demo }: { member: ProfileMember; /** Preview the pick locally, upload nothing. */ demo?: boolean }) {
   const [version, setVersion] = useState(member.avatarUpdatedAt ?? null);
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +69,7 @@ export function PhotoField({ member }: { member: ProfileMember }) {
   const src = preview ?? (version ? `/api/team-avatar?id=${member.id}&v=${encodeURIComponent(version)}` : null);
 
   const send = (file: File | null) => {
+    if (demo) { if (!file) setPreview(null); return; }
     const fd = new FormData();
     fd.set("id", member.id);
     if (file) fd.set("avatar", file);

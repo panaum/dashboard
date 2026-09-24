@@ -12,20 +12,28 @@ export function ProfileForm({
   submitLabel = "Save changes",
   onSaved,
   secondary,
+  demo,
 }: {
   member: ProfileMember;
   submitLabel?: string;
   onSaved?: () => void;
   /** An extra action beside the submit button (onboarding's "Skip"). */
   secondary?: React.ReactNode;
+  /** An admin showing onboarding: the same form, but nothing is saved —
+   *  Continue just moves on. */
+  demo?: boolean;
 }) {
   const [state, action, pending] = useActionState(saveProfile, {});
   useEffect(() => { if (state.ok) onSaved?.(); }, [state, onSaved]);
 
   return (
     <div className="flex flex-col gap-5">
-      <PhotoField member={member} />
-      <form action={action} className="flex flex-col gap-4">
+      <PhotoField member={member} demo={demo} />
+      <form
+        action={demo ? undefined : action}
+        onSubmit={demo ? (e) => { e.preventDefault(); onSaved?.(); } : undefined}
+        className="flex flex-col gap-4"
+      >
         <ProfileFields member={member} />
         <div className="flex flex-wrap items-center justify-end gap-3">
           <span className="mr-auto text-xs" role="status">

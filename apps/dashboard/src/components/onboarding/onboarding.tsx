@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Sparkles } from "lucide-react";
@@ -10,10 +10,16 @@ import { ProfileForm } from "@/components/profile/profile-form";
 import { AccessRequest, type AccessView } from "@/components/profile/access-request";
 import type { ProfileMember } from "@/components/forms/profile-fields";
 import { startTour } from "@/components/onboarding/tour";
-import type { Actor } from "@/lib/permissions";
+import { type Actor, type Rank, RANK_LABELS } from "@/lib/permissions";
 import { completeOnboarding } from "@/app/dashboard/personalization/actions";
 
 type Step = "welcome" | "profile" | "access";
+
+/** An admin showing the first-run experience — in a meeting, say — as the
+ *  rank they pick. Same screens; nothing saved, nobody's flag written. */
+export const ONBOARDING_DEMO_EVENT = "onboarding:demo";
+export const showOnboarding = (rank: Rank) =>
+  window.dispatchEvent(new CustomEvent<{ rank: Rank }>(ONBOARDING_DEMO_EVENT, { detail: { rank } }));
 
 const subscribeNever = () => () => {};
 
@@ -31,30 +37,52 @@ export function Onboarding({
   member,
   access,
   timeZone,
+  autoStart,
 }: {
   actor: Actor;
   member: ProfileMember;
   access: AccessView;
   timeZone?: string;
+  /** A real first sign-in: open straight away. Otherwise it waits for an
+   *  admin's "Show onboarding". */
+  autoStart: boolean;
 }) {
-  const [step, setStep] = useState<Step | null>("welcome");
+  const [step, setStep] = useState<Step | null>(autoStart ? "welcome" : null);
+  // Set while an admin is demoing: the rank being shown.
+  const [demoRank, setDemoRank] = useState<Rank | null>(null);
+  const rank = demoRank ?? actor.rank;
+
+  useEffect(() => {
+    const show = (e: Event) => {
+      setDemoRank((e as CustomEvent<{ rank: Rank }>).detail.rank);
+      setStep("welcome");
+    };
+    window.addEventListener(ONBOARDING_DEMO_EVENT, show);
+    return () => window.removeEventListener(ONBOARDING_DEMO_EVENT, show);
+  }, []);
   // Portal only once there is a document — the same pattern as Dialog.
   const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
   const reduce = useReducedMotion();
   const steps = useMemo<Step[]>(
-    () => (actor.rank === "VIEWER" ? ["welcome", "profile", "access"] : ["welcome", "profile"]),
-    [actor.rank],
+    () => (rank === "VIEWER" ? ["welcome", "profile", "access"] : ["welcome", "profile"]),
+    [rank],
   );
 
-  const toTour = useCallback(() => { setStep(null); startTour(); }, []);
+  const toTour = useCallback(() => {
+    setStep(null);
+    startTour(demoRank ? { rank: demoRank, demo: true } : {});
+  }, [demoRank]);
   const advance = useCallback(() => {
     const n = steps.indexOf(step!);
     if (n < steps.length - 1) setStep(steps[n + 1]); else toTour();
   }, [steps, step, toTour]);
-  const skipAll = useCallback(() => { setStep(null); void completeOnboarding(); }, []);
+  const skipAll = useCallback(() => {
+    setStep(null);
+    if (!demoRank) void completeOnboarding();
+  }, [demoRank]);
 
   const skip = (
-    <button type="button" onClick={skipAll} className="text-xs font-medium text-text-secondary underline-offset-2 hover:text-text-primary hover:underline">
+    <button type="button" onClick={skipAll} className="whitespace-nowrap text-xs font-medium text-text-secondary underline-offset-2 hover:text-text-primary hover:underline">
       Skip setup
     </button>
   );
@@ -81,12 +109,17 @@ export function Onboarding({
                     transition={reduce ? { duration: 0.15 } : { type: "spring", stiffness: 320, damping: 28 }}
                   >
                     <Card className="p-6 shadow-lg">
-                      <div className="mb-4 flex items-center justify-between">
+                      <div className="mb-4 flex items-center justify-between gap-3">
                         <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-text-muted">
                           Step {steps.indexOf(step) + 1} of {steps.length}
                         </span>
                         {skip}
                       </div>
+                      {demoRank && (
+                        <p className="-mt-2 mb-4 w-fit rounded-full bg-accent/[0.08] px-2.5 py-1 text-[11px] font-medium text-accent">
+                          Showing as a {RANK_LABELS[demoRank]} · nothing is saved
+                        </p>
+                      )}
 
                       {step === "welcome" && (
                         <div className="flex flex-col items-start gap-3">
@@ -99,7 +132,7 @@ export function Onboarding({
                             <Sparkles className="size-5" />
                           </motion.span>
                           <h2 id="onboarding-title" className="text-xl font-semibold text-text-primary">
-                            Welcome, {member.nickname || member.name.split(" ")[0]}
+                            Welcome{member.id === "bootstrap" ? "" : `, ${member.nickname || member.name.split(" ")[0]}`}
                           </h2>
                           <p className="text-sm leading-relaxed text-text-secondary">
                             This is where Apexure tracks every page it builds and the QA behind it. A minute to set up your profile, then a short look around.
@@ -116,6 +149,7 @@ export function Onboarding({
                           </div>
                           <ProfileForm
                             member={member}
+                            demo={Boolean(demoRank)}
                             submitLabel="Continue"
                             onSaved={advance}
                             secondary={<Button type="button" variant="ghost" onClick={advance}>Not now</Button>}
@@ -132,7 +166,8 @@ export function Onboarding({
                             </p>
                           </div>
                           <AccessRequest
-                            state={access}
+                            state={demoRank ? { kind: "none", canRequest: true } : access}
+                            demo={Boolean(demoRank)}
                             timeZone={timeZone}
                             onDone={advance}
                             secondary={<Button type="button" variant="ghost" onClick={advance}>Skip for now</Button>}

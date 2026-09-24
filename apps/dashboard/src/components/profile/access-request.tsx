@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useId } from "react";
 import { Clock, CircleCheck, CircleX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Textarea } from "@/components/ui/field";
@@ -24,14 +24,18 @@ export function AccessRequest({
   timeZone,
   onDone,
   secondary,
+  demo,
 }: {
   state: AccessView;
   timeZone?: string;
   /** Called after a request is filed (onboarding moves on). */
   onDone?: () => void;
   secondary?: React.ReactNode;
+  /** Showing onboarding: the button moves on, nothing is filed. */
+  demo?: boolean;
 }) {
   const [result, action, pending] = useActionState(requestMemberAccess, {});
+  const reasonId = useId();
   useEffect(() => { if (result.ok) onDone?.(); }, [result, onDone]);
 
   return (
@@ -62,9 +66,13 @@ export function AccessRequest({
       )}
 
       {state.canRequest && (
-        <form action={action} className="flex flex-col gap-3">
-          <Field label="Why you need it" htmlFor="reason" hint="Optional — a line for the admin who reviews it.">
-            <Textarea id="reason" name="reason" rows={2} maxLength={500} placeholder="e.g. I'll be filling in QA checklists for the Savvio pages." />
+        <form
+          action={demo ? undefined : action}
+          onSubmit={demo ? (e) => { e.preventDefault(); onDone?.(); } : undefined}
+          className="flex flex-col gap-3"
+        >
+          <Field label="Why you need it" htmlFor={reasonId} hint="Optional — a line for the admin who reviews it.">
+            <Textarea id={reasonId} name="reason" rows={2} maxLength={500} placeholder="e.g. I'll be filling in QA checklists for the Savvio pages." />
           </Field>
           <div className="flex flex-wrap items-center justify-end gap-3">
             {result.error && <span className="mr-auto text-xs text-error-strong" role="status">{result.error}</span>}

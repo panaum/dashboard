@@ -59,6 +59,7 @@ export default async function DashboardLayout({
   });
 
   const caps = CAPABILITIES.filter((c) => can(actor, c));
+  const canShowOnboarding = can(actor, "rank:assign");
 
   return (
     <CapabilityProvider caps={caps}>
@@ -73,13 +74,22 @@ export default async function DashboardLayout({
         </div>
       </main>
       <CommandPaletteLoader />
-      {me && <TourHost actor={actor} />}
-      {me && !me.hasCompletedOnboarding && (
-        <Onboarding
-          actor={actor}
-          member={{ id: me.id, name: me.name, nickname: me.nickname, avatarUpdatedAt: me.avatarUpdatedAt?.toISOString() ?? null }}
-          access={accessState(actor.rank, me.rankRequests[0] ?? null)}
-        />
+      {/* Mounted for anyone signed in as themselves (their tour, and their
+          first-run flow if unfinished) and for admins, the shared login
+          included, who can show the onboarding to others — never inside a
+          preview, which is someone else's view. */}
+      {(me || (canShowOnboarding && !actor.preview)) && (
+        <>
+          <TourHost actor={actor} />
+          <Onboarding
+            actor={actor}
+            member={me
+              ? { id: me.id, name: me.name, nickname: me.nickname, avatarUpdatedAt: me.avatarUpdatedAt?.toISOString() ?? null }
+              : { id: "bootstrap", name: actor.name, nickname: null, avatarUpdatedAt: null }}
+            access={accessState(actor.rank, me?.rankRequests[0] ?? null)}
+            autoStart={Boolean(me && !me.hasCompletedOnboarding)}
+          />
+        </>
       )}
     </div>
     </CapabilityProvider>
