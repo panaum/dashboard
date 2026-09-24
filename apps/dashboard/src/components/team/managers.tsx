@@ -24,7 +24,7 @@ import { memberLabel } from "@/lib/designations";
 export function Managers({ members }: { members: MemberRow[] }) {
   if (members.length === 0) return null;
   return (
-    <div className="mb-6 overflow-hidden rounded-xl border border-border-soft bg-card">
+    <div className="overflow-hidden rounded-xl border border-border-soft bg-card">
       {members.map((m) => (
         <div
           key={m.id}

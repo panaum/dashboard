@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { MEMBER_ROLES } from "./constants";
 import {
-  compareManagement, DESIGNATIONS, designationFor, MANAGEMENT_ORDER, memberLabel, roleForDesignation,
+  compareManagement, DESIGNATIONS, designationFor, MANAGEMENT_ORDER, memberLabel, roleForDesignation, isMarketing,
 } from "./designations";
 import { buildsPages, doesPageWork, testsPages } from "./roles";
 
@@ -144,4 +144,12 @@ test("a retired designation is forgotten as a rule, not as a person", () => {
     assert.ok(!DESIGNATIONS.some((d) => d.title === gone), `${gone} should be off the list`);
     assert.equal(memberLabel({ title: gone, role: "TESTER" }), gone, "still shown as theirs");
   }
+});
+
+test("a marketer takes no page work and is not management", () => {
+  assert.equal(roleForDesignation("Marketer"), "MANAGER");
+  assert.equal(isMarketing({ title: "Marketer", role: "MANAGER" }), true);
+  assert.equal(isMarketing({ title: "CEO", role: "MANAGER" }), false);
+  assert.equal(isMarketing({ title: "Developer", role: "DEVELOPER" }), false);
+  assert.ok(!MANAGEMENT_ORDER.includes("Marketer"));
 });

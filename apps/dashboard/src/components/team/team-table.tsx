@@ -10,7 +10,7 @@ import { deleteMember } from "@/app/dashboard/team/actions";
 import { RankSelect } from "@/components/team/rank-select";
 import { ViewAsButton } from "@/components/team/view-as";
 import { LoginButton } from "@/components/team/login-button";
-import { compareManagement, memberLabel } from "@/lib/designations";
+import { compareManagement, isMarketing, memberLabel } from "@/lib/designations";
 import { buildsPages, doesPageWork, testsPages } from "@/lib/roles";
 import { Managers } from "@/components/team/managers";
 import { RankRequestBadge, type PendingRequest } from "@/components/team/rank-request-badge";
@@ -76,7 +76,9 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
 
   // Seniority, not the alphabet — CEO first. The page used to sort this
   // before handing it over; the grouping lives here now, so the sort does too.
-  const managers = filtered.filter((m) => !doesPageWork(m.role)).sort(compareManagement);
+  const managers = filtered.filter((m) => !doesPageWork(m.role) && !isMarketing(m)).sort(compareManagement);
+  // Marketing does no page work either, but is not management.
+  const marketing = filtered.filter((m) => !doesPageWork(m.role) && isMarketing(m)).sort((a, b) => a.name.localeCompare(b.name));
   const qa = filtered.filter((m) => testsPages(m.role) && !buildsPages(m.role));
   const devs = filtered.filter((m) => buildsPages(m.role));
 
@@ -101,6 +103,12 @@ export function TeamTable({ members }: { members: MemberRow[] }) {
           <section>
             <GroupHeading title="Management" count={managers.length} />
             <Managers members={managers} />
+          </section>
+        )}
+        {marketing.length > 0 && (
+          <section>
+            <GroupHeading title="Marketing" count={marketing.length} />
+            <Managers members={marketing} />
           </section>
         )}
         <Group title="QA" members={qa} metrics={QA_METRICS} term={q} />
